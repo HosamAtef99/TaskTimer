@@ -242,6 +242,8 @@ struct DoneSheet: View {
     @Local var clientID: UUID? = nil
     @Local var date = Date()
     @Local var hours: Double = 0
+    @Local var deliverables = 1
+    @Local var rating = 5
     @Local var loaded = false
 
     private var task: TaskItem? { store.task(taskID) }
@@ -283,6 +285,32 @@ struct DoneSheet: View {
                 Spacer()
             }
 
+            HStack(alignment: .top, spacing: 18) {
+                FieldRow(label: "Deliverables") {
+                    HStack(spacing: 6) {
+                        TextField("", value: $deliverables, format: .number)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 56)
+                            .multilineTextAlignment(.trailing)
+                        Stepper("", value: $deliverables, in: 0...999).labelsHidden()
+                    }
+                }
+                FieldRow(label: "Happy with this task?") {
+                    HStack(spacing: 4) {
+                        ForEach(1...5, id: \.self) { n in
+                            Button { rating = n } label: {
+                                Image(systemName: n <= rating ? "star.fill" : "star")
+                                    .font(.system(size: 16))
+                                    .foregroundStyle(n <= rating ? AnyShapeStyle(Theme.orange) : AnyShapeStyle(HierarchicalShapeStyle.tertiary))
+                            }
+                            .buttonStyle(.plain)
+                            .help("\(n) of 5")
+                        }
+                    }
+                }
+                Spacer()
+            }
+
             if let t = task {
                 Text("Timer: \(Fmt.clock(t.totalSeconds(at: store.now))) (≈ \(Fmt.hours(t.totalSeconds(at: store.now))) h). Hours are filled in to the nearest quarter — change them if needed.")
                     .font(.system(size: 11))
@@ -318,13 +346,16 @@ struct DoneSheet: View {
         var h = (secs / 3600 * 4).rounded() / 4
         if secs > 0 && h == 0 { h = 0.25 }
         hours = h
+        deliverables = t.deliverables ?? max(0, Pref.int(Pref.defaultDeliverables))
+        rating = t.rating ?? min(5, max(1, Pref.int(Pref.defaultRating)))
     }
 
     private func save(_ status: TaskStatus) {
         let n = name.trimmingCharacters(in: .whitespaces)
         guard !n.isEmpty else { return }
         store.complete(taskID, name: n, clientID: clientID, status: status,
-                       date: date, totalSeconds: max(0, hours) * 3600)
+                       date: date, totalSeconds: max(0, hours) * 3600,
+                       deliverables: max(0, deliverables), rating: min(5, max(1, rating)))
         dismiss()
     }
 }

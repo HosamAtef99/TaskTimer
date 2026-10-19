@@ -179,6 +179,8 @@ struct SettingsView: View {
     @AppStorage(Pref.pauseOnSleep) var pauseOnSleep = true
     @AppStorage(Pref.menuBarStyle) var menuBarStyle = "time"
     @AppStorage(Pref.renderNotify) var renderNotify = true
+    @AppStorage(Pref.defaultDeliverables) var defaultDeliverables = 1
+    @AppStorage(Pref.defaultRating) var defaultRating = 5
     @AppStorage(Pref.openFinderOnCreate) var openFinder = true
     @AppStorage(Pref.openAEOnCreate) var openAE = false
     @AppStorage(Pref.tabMode) var tabMode = "auto"
@@ -525,6 +527,11 @@ struct SettingsView: View {
                 }
             Toggle("Pause the timer when the Mac goes to sleep", isOn: $pauseOnSleep)
             Toggle("Notify me when a render finishes (watches each task's Render folder)", isOn: $renderNotify)
+            HStack(spacing: 18) {
+                Stepper("Default deliverables: \(defaultDeliverables)", value: $defaultDeliverables, in: 0...50)
+                Stepper("Default stars: \(defaultRating)", value: $defaultRating, in: 1...5)
+            }
+            .font(.system(size: 12))
             HStack(spacing: 10) {
                 Text("Menu bar").font(.system(size: 12))
                 Picker("", selection: $menuBarStyle) {

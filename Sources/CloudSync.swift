@@ -35,6 +35,8 @@ struct TeamTask: Identifiable, Hashable {
     var createdAt: Date
     var assignedBy: String?
     var ownerName: String?
+    var deliverables: Int?
+    var rating: Int?
 
     var isRunning: Bool { runningSince != nil }
 
@@ -64,6 +66,8 @@ struct TeamTask: Identifiable, Hashable {
         createdAt = Cloud.date(row["created_at"]) ?? Date()
         assignedBy = (row["assigned_by"] as? String)?.lowercased()
         ownerName = row["owner_name"] as? String
+        deliverables = row["deliverables"] as? Int
+        rating = row["rating"] as? Int
     }
 }
 
@@ -200,8 +204,14 @@ final class CloudSync: ObservableObject {
             "work_date": t.workDate.map { Fmt.isoDay.string(from: $0) as Any } ?? NSNull(),
             "created_at": Cloud.iso(t.createdAt),
             "deleted": false,
+            "deliverables": t.deliverables.map { $0 as Any } ?? NSNull(),
+            "rating": t.rating.map { $0 as Any } ?? NSNull(),
         ]
     }
+
+    /// Set when the database doesn't have the deliverables / rating columns yet
+    /// (schema.sql not re-run), so syncing keeps working without them.
+    private var skipNewColumns = false
 
     private func fingerprint(_ row: [String: Any]) -> String {
         guard let data = try? JSONSerialization.data(withJSONObject: row, options: [.sortedKeys]) else { return UUID().uuidString }
@@ -227,7 +237,18 @@ final class CloudSync: ObservableObject {
 
         do {
             if !rows.isEmpty {
-                try await CloudAPI.upsert("tasks", rows)
+                var send = rows
+                if skipNewColumns {
+                    send = rows.map { var r = $0; r.removeValue(forKey: "deliverables"); r.removeValue(forKey: "rating"); return r }
+                }
+                do {
+                    try await CloudAPI.upsert("tasks", send)
+                } catch let e as Cloud.CloudError where !skipNewColumns
+                            && (e.message.contains("deliverables") || e.message.contains("rating")) {
+                    skipNewColumns = true
+                    send = rows.map { var r = $0; r.removeValue(forKey: "deliverables"); r.removeValue(forKey: "rating"); return r }
+                    try await CloudAPI.upsert("tasks", send)
+                }
                 for r in rows {
                     if let id = r["id"] as? String { pushed[id] = prints[id] }
                 }

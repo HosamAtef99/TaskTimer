@@ -2,6 +2,10 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
+## 1.10
+- Done asks for Deliverables and stars (how happy you were with the task). Defaults: 1 deliverable, 5 stars — change them in Settings → General.
+- Both go to the team database (and the leader's CSV), ready for Modhesh's Log Time.
+
 ## 1.9
 - Render notifications: when a render lands in a task's Render folder, you get a notification with Stop timer / Stop & Done.
 - Team → Summary: hours and tasks by account and by member, for the month, this week or last week, with Copy Report.

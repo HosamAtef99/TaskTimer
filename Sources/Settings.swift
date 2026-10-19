@@ -23,7 +23,9 @@ enum Pref {
     static let hideDock = "hideDock"
     static let pauseOnSleep = "pauseOnSleep"
     static let menuBarStyle = "menuBarStyle"
-    static let renderNotify = "renderNotify"   // "time" (1:05) | "seconds" (01:05:12) | "icon"
+    static let renderNotify = "renderNotify"
+    static let defaultDeliverables = "defaultDeliverables"
+    static let defaultRating = "defaultRating"   // "time" (1:05) | "seconds" (01:05:12) | "icon"
     static let openFinderOnCreate = "openFinderOnCreate"
     static let openAEOnCreate = "openAEOnCreate"
 
@@ -86,6 +88,8 @@ enum Pref {
             pauseOnSleep: true,
             menuBarStyle: "time",
             renderNotify: true,
+            defaultDeliverables: 1,
+            defaultRating: 5,
             openFinderOnCreate: true,
             openAEOnCreate: false,
             tabMode: "auto",

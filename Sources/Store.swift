@@ -346,7 +346,7 @@ final class Store: ObservableObject {
 
     /// Done (no sheet): stops the timer and saves the final hours, day and status.
     func complete(_ id: UUID, name: String, clientID: UUID?, status: TaskStatus,
-                  date: Date, totalSeconds: TimeInterval) {
+                  date: Date, totalSeconds: TimeInterval, deliverables: Int? = nil, rating: Int? = nil) {
         pause(id)
         guard let t = task(id) else { return }
         let raw = t.rawSeconds()
@@ -356,6 +356,8 @@ final class Store: ObservableObject {
             t.status = status
             t.workDate = date
             t.manualAdjust = totalSeconds - raw
+            if let deliverables { t.deliverables = deliverables }
+            if let rating { t.rating = rating }
         }
         flash(status == .complete
               ? "“\(name)” completed · \(Fmt.hours(totalSeconds)) h"

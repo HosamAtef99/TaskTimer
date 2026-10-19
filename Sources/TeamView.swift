@@ -352,12 +352,14 @@ struct TeamView: View {
         panel.nameFieldStringValue = "\(cloud.teamName ?? "Team") - \(Fmt.monthYear.string(from: month)).csv"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         func q(_ s: String) -> String { "\"" + s.replacingOccurrences(of: "\"", with: "\"\"") + "\"" }
-        var lines = ["Date,Member,Task,Account,Status,Hours"]
+        var lines = ["Date,Member,Task,Account,Status,Hours,Deliverables,Stars"]
         for t in filtered.sorted(by: { ($0.workDate ?? $0.createdAt) < ($1.workDate ?? $1.createdAt) }) {
             lines.append([
                 Fmt.isoDay.string(from: t.workDate ?? t.createdAt),
                 q(memberName(t.userID)), q(displayName(t)), q(t.client), t.statusTitle,
                 Fmt.hours(t.liveSeconds(at: Date())),
+                t.deliverables.map { String($0) } ?? "",
+                t.rating.map { String($0) } ?? "",
             ].joined(separator: ","))
         }
         // The BOM lets Excel read Arabic names correctly.

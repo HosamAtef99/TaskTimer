@@ -43,6 +43,10 @@ create table if not exists public.tasks (
 -- Name of the owner at the time, so a leader still sees who did old tasks after someone leaves the team.
 alter table public.tasks add column if not exists owner_name text;
 
+-- Filled in at Done; used for Modhesh's Log Time.
+alter table public.tasks add column if not exists deliverables integer;
+alter table public.tasks add column if not exists rating integer check (rating between 1 and 5);
+
 create index if not exists tasks_team_created on public.tasks (team_id, created_at);
 create index if not exists tasks_user_updated on public.tasks (user_id, updated_at);
 

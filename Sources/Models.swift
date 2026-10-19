@@ -80,6 +80,9 @@ struct TaskItem: Identifiable, Codable, Hashable {
     var sheetTab: String?
     /// The day picked when the task was marked Done.
     var workDate: Date?
+    /// Filled in at Done (sent to Modhesh's Log Time).
+    var deliverables: Int?
+    var rating: Int?
     /// Incoming task whose folder is made when it is started.
     var wantsFolder: Bool?
     /// For such a task: the location picked by hand (when not using client / month folders).
@@ -117,7 +120,7 @@ struct TaskItem: Identifiable, Codable, Hashable {
     enum CodingKeys: String, CodingKey {
         case id, name, clientID, folderPath, createdAt, sessions, status
         case manualAdjust, loggedSeconds, sheetRow, lastLoggedAt, pendingLog
-        case parentID, sheetTab, workDate, wantsFolder, folderBase
+        case parentID, sheetTab, workDate, wantsFolder, folderBase, deliverables, rating
     }
 
     init(from decoder: Decoder) throws {
@@ -139,6 +142,8 @@ struct TaskItem: Identifiable, Codable, Hashable {
         workDate = try c.decodeIfPresent(Date.self, forKey: .workDate)
         wantsFolder = try c.decodeIfPresent(Bool.self, forKey: .wantsFolder)
         folderBase = try c.decodeIfPresent(String.self, forKey: .folderBase)
+        deliverables = try c.decodeIfPresent(Int.self, forKey: .deliverables)
+        rating = try c.decodeIfPresent(Int.self, forKey: .rating)
     }
 }
 
