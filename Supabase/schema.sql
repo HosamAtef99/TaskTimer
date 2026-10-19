@@ -40,6 +40,9 @@ create table if not exists public.tasks (
   updated_at    timestamptz not null default now()
 );
 
+-- Name of the owner at the time, so a leader still sees who did old tasks after someone leaves the team.
+alter table public.tasks add column if not exists owner_name text;
+
 create index if not exists tasks_team_created on public.tasks (team_id, created_at);
 create index if not exists tasks_user_updated on public.tasks (user_id, updated_at);
 
@@ -69,14 +72,25 @@ drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created after insert on auth.users
   for each row execute function public.handle_new_user();
 
--- Every task belongs to its owner's team; updated_at is kept by the database.
+-- A task belongs to the team its owner was in when it was created, and stays with that team
+-- (moving to another team doesn't take old tasks along). updated_at is kept by the database.
 create or replace function public.tasks_before_write() returns trigger
 language plpgsql security definer set search_path = public as $$
 begin
-  new.team_id := (select team_id from public.profiles where id = new.user_id);
+  if tg_op = 'INSERT' then
+    new.team_id := (select team_id from public.profiles where id = new.user_id);
+    new.owner_name := (select full_name from public.profiles where id = new.user_id);
+  else
+    new.team_id := old.team_id;
+    new.owner_name := coalesce(old.owner_name, (select full_name from public.profiles where id = new.user_id));
+  end if;
   new.updated_at := now();
   return new;
 end $$;
+
+-- Fill in names on tasks made before owner_name existed.
+update public.tasks t set owner_name = p.full_name
+  from public.profiles p where p.id = t.user_id and t.owner_name is null;
 
 drop trigger if exists tasks_before_write on public.tasks;
 create trigger tasks_before_write before insert or update on public.tasks
@@ -130,7 +144,18 @@ drop policy if exists tasks_delete on public.tasks;
 create policy tasks_delete on public.tasks for delete to authenticated
   using (user_id = auth.uid());
 
--- ───────────────────────── Setting up a team (run by hand) ─────────────────────────
+-- ───────────────────────── A new team and its leader (run by hand) ─────────────────────────
+-- 1) Authentication → Users → Add user → Create new user (tick Auto Confirm User) for the leader.
+-- 2) Then, with the team name and the leader's email:
+--
+--   insert into public.teams (name) values ('Team Name') on conflict do nothing;
+--   update public.profiles
+--      set team_id = (select id from public.teams where name = 'Team Name'), role = 'leader'
+--    where email = 'leader@company.com';
+--
+-- The leader adds their own members from TaskTimer (Team → Add Member).
+
+-- ───────────────────────── Older manual setup ─────────────────────────
 -- After everyone has created their account in TaskTimer (Settings → Team), run:
 --
 --   insert into public.teams (name) values ('Abd ElKhalik Team') on conflict do nothing;

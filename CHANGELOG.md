@@ -2,6 +2,10 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
+## 1.8
+- Removing someone from a team keeps their account and their past tasks; another team leader can then add them (Add Member with their email).
+- A leader still sees who did old tasks after that person leaves.
+
 ## 1.7
 - Incoming tasks get their folder when you press Start (in that month's folder), not when they are added. Tasks from your leader too.
 - The AE template path is no longer filled in with someone else's path; it only shows an example.

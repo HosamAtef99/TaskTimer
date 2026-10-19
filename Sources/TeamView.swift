@@ -67,7 +67,7 @@ struct TeamView: View {
                 if let m = removeTarget { remove(m) }
             }
         } message: {
-            Text("They won't be able to sign in any more. Their past tasks stay in the team's history.")
+            Text("Their account and their past tasks stay — the tasks remain in your team's history. Another team leader can add them to their team.")
         }
     }
 
@@ -285,7 +285,10 @@ struct TeamView: View {
     }
 
     private func memberName(_ id: String) -> String {
-        members.first { $0.id == id }?.name ?? "—"
+        if let m = members.first(where: { $0.id == id }) { return m.name }
+        // Someone who has left the team: the name saved on their tasks.
+        if let n = tasks.first(where: { $0.userID == id && !($0.ownerName ?? "").isEmpty })?.ownerName { return n + " (left)" }
+        return "—"
     }
 
     private func displayName(_ t: TeamTask) -> String {
@@ -534,8 +537,12 @@ struct AddMemberSheet: View {
         Task { @MainActor in
             defer { sending = false }
             do {
-                try await CloudSync.shared.teamAdmin(["action": "create", "name": n, "email": e, "password": p])
-                created = "TaskTimer account\nEmail: \(e)\nPassword: \(p)"
+                let r = try await CloudSync.shared.teamAdmin(["action": "create", "name": n, "email": e, "password": p])
+                if (r["existing"] as? Bool) == true {
+                    created = "\(e) already had a TaskTimer account and is now in your team.\nThey sign in with their current password."
+                } else {
+                    created = "TaskTimer account\nEmail: \(e)\nPassword: \(p)"
+                }
                 await onDone()
             } catch {
                 self.error = error.localizedDescription

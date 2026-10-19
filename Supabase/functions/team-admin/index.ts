@@ -55,6 +55,22 @@ Deno.serve(async (req) => {
     if (password.length < 6) return json({ error: "The password needs at least 6 characters." }, 400);
     if (!name) return json({ error: "Enter the member's name." }, 400);
 
+    // Someone who already has an account (e.g. left another team): add them, keep their password.
+    const { data: existing } = await admin
+      .from("profiles").select("id, team_id").eq("email", email).maybeSingle();
+    if (existing) {
+      if (existing.team_id === me.team_id) return json({ error: "Already in your team." }, 409);
+      if (existing.team_id) {
+        return json({ error: "This person is in another team. Their team leader needs to remove them first." }, 409);
+      }
+      const { error: e1 } = await admin.from("profiles")
+        .update({ team_id: me.team_id, role: "member" }).eq("id", existing.id);
+      if (e1) return json({ error: e1.message }, 400);
+      // Older versions locked removed members out; undo that.
+      await admin.auth.admin.updateUserById(existing.id, { ban_duration: "none" });
+      return json({ ok: true, id: existing.id, existing: true });
+    }
+
     const { data, error } = await admin.auth.admin.createUser({
       email,
       password,
@@ -88,10 +104,10 @@ Deno.serve(async (req) => {
   if (action === "remove") {
     const t = await teammate(String(body.id ?? ""));
     if (!t) return json({ error: "That person isn't in your team." }, 403);
-    // Off the team and unable to sign in. Their past tasks stay for the record.
+    // Off the team. The account stays (another leader can add them), and their past
+    // tasks stay with this team's history.
     const { error } = await admin.from("profiles").update({ team_id: null }).eq("id", t.id);
     if (error) return json({ error: error.message }, 400);
-    await admin.auth.admin.updateUserById(t.id, { ban_duration: "876000h" });
     return json({ ok: true });
   }
 

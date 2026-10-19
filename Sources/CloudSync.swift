@@ -33,6 +33,7 @@ struct TeamTask: Identifiable, Hashable {
     var workDate: Date?
     var createdAt: Date
     var assignedBy: String?
+    var ownerName: String?
 
     var isRunning: Bool { runningSince != nil }
 
@@ -61,6 +62,7 @@ struct TeamTask: Identifiable, Hashable {
         workDate = Cloud.date(row["work_date"])
         createdAt = Cloud.date(row["created_at"]) ?? Date()
         assignedBy = (row["assigned_by"] as? String)?.lowercased()
+        ownerName = row["owner_name"] as? String
     }
 }
 
