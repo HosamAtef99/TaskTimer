@@ -2,6 +2,9 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
+## 1.13.1
+- Chrome extension 1.2: Log Time opens with "No Challenges at all" ticked; tick something else if needed.
+
 ## 1.13
 - Each account keeps its own tasks: two people signing in on the same Mac no longer see (or send) each other's tasks.
 - Signing in on a new Mac brings your tasks back from your account.

@@ -211,9 +211,18 @@
 
   // Log Time
 
+  /// "No Challenges at all" is the default answer, unless something else is ticked.
+  function defaultChallenge(form) {
+    const boxes = [...form.querySelectorAll('[name="task_challenge[]"]')];
+    if (!boxes.length || boxes.some((c) => c.checked)) return;
+    const none = boxes.find((c) => c.value === '1');
+    if (none) none.click();
+  }
+
   async function decorateLogTime(form) {
     const code = (form.querySelector('[name=task_id]') || {}).value;
     if (!code) return;
+    defaultChallenge(form);
     const body = bar(form, 'log');
     if (!(await TT.session())) return signedOut(body);
     const title = (document.querySelector(`[data-post-task_id="${CSS.escape(code)}"]`) || {}).textContent?.trim() || '';
