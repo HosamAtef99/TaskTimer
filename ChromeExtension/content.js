@@ -336,6 +336,47 @@
     return e ? e.textContent.trim().slice(0, 160) : '';
   }
 
+  /// Pending to Start → In Progress, through Task Details. Sets only the status and the
+  /// Start Date (from TaskTimer); Estimate and the deliverables link are left as they are.
+  async function startInModhesh(job) {
+    const open = document.querySelector(`[data-act="drawer-modal"][data-post-task_id="${CSS.escape(job.code)}"]`);
+    if (!open) throw new Error('Task not found on the Modhesh board');
+    open.click();
+    const form = await waitFor(() => {
+      const f = document.querySelector('form#updaterequest');
+      return f && (f.querySelector('[name=task_id]') || {}).value === job.code && f.querySelector('[name=status]') ? f : null;
+    }, 20000);
+    if (!form) throw new Error('Task Details didn\'t open, or the task can\'t be edited');
+    await sleep(600);
+
+    const status = form.querySelector('[name=status]');
+    const opt = [...status.options].find((o) => /in\s*progress/i.test(o.textContent));
+    if (!opt) throw new Error('Modhesh has no "In Progress" status for this task');
+    status.value = opt.value;
+    status.dispatchEvent(new Event('change', { bubbles: true }));
+
+    const start = form.querySelector('[name=start_date]');
+    if (start) setValue(start, isoDay(job.startedAt ? new Date(job.startedAt) : new Date()));
+    await sleep(400);
+
+    const save = [...document.querySelectorAll('button, input[type=submit]')]
+      .find((b) => visible(b) && /update\s*task/i.test(b.textContent || b.value || ''));
+    if (!save) throw new Error('Update Task button not found');
+    save.click();
+
+    const result = await waitFor(() => {
+      const err = pageError();
+      if (err) return { err };
+      if (!document.contains(form) || !visible(form)) return { ok: true };
+      return null;
+    }, 20000);
+    if (!result || result.err) {
+      throw new Error((result && result.err) || 'Modhesh didn\'t confirm the status change');
+    }
+    const x = [...document.querySelectorAll('.btn-close, [data-kt-drawer-dismiss], [data-bs-dismiss]')].find(visible);
+    if (x) x.click();
+  }
+
   async function submitLogTime(job) {
     const btn = await waitFor(() =>
       document.querySelector(`[data-action-url$="/tasks/log-time"][data-post-task_id="${CSS.escape(job.code)}"]`), 25000);
@@ -389,9 +430,21 @@
     if (!jobs || !jobs.length) { chrome.runtime.sendMessage({ type: 'allDone' }).catch(() => {}); return; }
     jobsRunning = true;
     try {
+      let reload = false;
       for (const job of jobs) {
         let ok = false, note = '';
         try {
+          const logBtn = () => document.querySelector(`[data-action-url$="/tasks/log-time"][data-post-task_id="${CSS.escape(job.code)}"]`);
+          await waitFor(() => logBtn() || document.querySelector(`[data-post-task_id="${CSS.escape(job.code)}"]`), 20000);
+          if (!logBtn()) {
+            await startInModhesh(job);
+            if (!(await waitFor(logBtn, 15000))) {
+              // The board didn't refresh by itself: reload and log right after.
+              await chrome.runtime.sendMessage({ type: 'jobRetry', job }).catch(() => {});
+              reload = true;
+              continue;
+            }
+          }
           note = await submitLogTime(job);
           ok = true;
         } catch (e) {
@@ -401,10 +454,14 @@
         await chrome.runtime.sendMessage({ type: 'jobDone', job, ok, note }).catch(() => {});
         await sleep(1500);
       }
+      if (reload) {
+        setTimeout(() => location.reload(), 1500);
+        return;
+      }
     } finally {
       jobsRunning = false;
-      chrome.runtime.sendMessage({ type: 'allDone' }).catch(() => {});
     }
+    chrome.runtime.sendMessage({ type: 'allDone' }).catch(() => {});
   }
 
   chrome.runtime.onMessage.addListener((msg) => {

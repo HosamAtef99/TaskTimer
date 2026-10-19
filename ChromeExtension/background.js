@@ -154,7 +154,8 @@ function jobsFrom({ rows, byId }) {
   const jobs = [];
   for (const r of rows) {
     const t = r.task_id && byId[r.task_id];
-    if (!t || t.status !== 'complete' || r.status !== 6) continue;
+    // Pending to Start tasks are moved to In Progress first, then logged.
+    if (!t || t.status !== 'complete' || !ACTIVE.includes(r.status)) continue;
     const total = liveSeconds(t);
     const already = Math.max(Number(r.submitted_seconds) || 0, Number(r.logged_seconds) || 0);
     const toLog = total - already;
@@ -168,6 +169,7 @@ function jobsFrom({ rows, byId }) {
       deliverables: t.deliverables ?? 1,
       rating: t.rating ?? 5,
       complete: true,
+      startedAt: t.started_at || t.created_at,
     });
   }
   return jobs;
@@ -181,7 +183,8 @@ async function tick() {
   if (running) return;
   const s = await TT.session();
   if (!s) return;
-  const { autoSubmit, autoLink: auto, attempts = {} } = await chrome.storage.local.get(['autoSubmit', 'autoLink', 'attempts']);
+  const { autoSubmit, autoLink: auto, attempts = {} } =
+    await chrome.storage.local.get(['autoSubmit', 'autoLink', 'attempts']);
   running = true;
   try {
     const data = await myData();
@@ -214,6 +217,16 @@ async function tick() {
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (msg.type === 'getJobs') {
     reply({ jobs: pending });
+    return false;
+  }
+  if (msg.type === 'jobRetry') {
+    // Moved to In Progress; the page reloads and logs it straight after (at most twice).
+    const j = pending.find((p) => p.code === msg.job.code);
+    if (j) {
+      j.restarts = (j.restarts || 0) + 1;
+      if (j.restarts > 2) pending = pending.filter((p) => p !== j);
+    }
+    reply({ ok: true });
     return false;
   }
   if (msg.type === 'jobDone') {

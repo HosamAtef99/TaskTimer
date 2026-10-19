@@ -2,6 +2,9 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
+## 1.14.1
+- Chrome extension 2.1: a finished task that is still "Pending to Start" on Modhesh is moved to In Progress first (only the status and the Start Date — from when you started it in TaskTimer — are changed), then its time is logged and sent to your approver.
+
 ## 1.14
 - Modhesh, hands-off: the Chrome extension (2.0) reads your Modhesh tasks every 5 minutes without opening Modhesh, links them to TaskTimer tasks with the same (or clearly matching) name, and when a linked task is Done in TaskTimer it logs the time on Modhesh by itself and sends it to your team leader for approval. The same hours are never sent twice.
 - New Modhesh tasks: TaskTimer sends a notification and the Modhesh button lights up.
