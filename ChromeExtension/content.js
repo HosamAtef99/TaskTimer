@@ -166,8 +166,29 @@
     body.replaceChildren('Sign in to TaskTimer from the extension button in Chrome\'s toolbar to fill this from your timer.');
   }
 
+  /// Waits for a link made in the TaskTimer app while this form is open.
+  function watchForLink(form, code, onLinked) {
+    const timer = setInterval(async () => {
+      if (!document.contains(form)) return clearInterval(timer);
+      try {
+        const row = await modheshRow(code);
+        if (row && row.task_id) {
+          const t = (await myTasks(true)).find((x) => x.id === row.task_id);
+          if (t) { clearInterval(timer); onLinked(t, row); }
+        }
+      } catch (e) { /* try again */ }
+    }, 3000);
+  }
+
   async function chooser(body, code, title, onPick) {
-    const tasks = await myTasks();
+    const tasks = await myTasks(true);
+    if (!tasks.length) {
+      const s = await TT.session();
+      body.replaceChildren(
+        `No TaskTimer tasks found for ${(s && s.email) || 'this account'}. ` +
+        'Sign in to the TaskTimer app (Settings → Team) with the same account — your tasks appear here a few seconds later.');
+      return;
+    }
     const ranked = tasks
       .map((t) => ({ t, score: similarity(title, t.display) }))
       .sort((a, b) => b.score - a.score || new Date(b.t.created_at) - new Date(a.t.created_at));
@@ -201,7 +222,10 @@
       const tasks = await myTasks(true);
       const linked = row && row.task_id && tasks.find((t) => t.id === row.task_id);
       if (linked) showLogTime(form, body, linked, row);
-      else await chooser(body, code, (row && row.title) || title, async (t) => showLogTime(form, body, t, await modheshRow(code)));
+      else {
+        await chooser(body, code, (row && row.title) || title, async (t) => showLogTime(form, body, t, await modheshRow(code)));
+        watchForLink(form, code, (t, r) => showLogTime(form, body, t, r));
+      }
     } catch (e) {
       body.replaceChildren(`Couldn't reach TaskTimer: ${e.message}`);
     }
@@ -281,7 +305,10 @@
       const t = row && row.task_id && tasks.find((x) => x.id === row.task_id);
       const title = (form.querySelector('[name=title]') || {}).value || (row && row.title) || '';
       if (t) showDetails(form, body, t);
-      else await chooser(body, code, title, async (picked) => showDetails(form, body, picked));
+      else {
+        await chooser(body, code, title, async (picked) => showDetails(form, body, picked));
+        watchForLink(form, code, (picked) => showDetails(form, body, picked));
+      }
     } catch (e) {
       body.replaceChildren(`Couldn't reach TaskTimer: ${e.message}`);
     }
@@ -299,6 +326,42 @@
       body.replaceChildren(el('div', { class: 'tt-done' }, `Start Date set to ${day}. Check it, then press Update Task.`));
     } }, 'Fill Start Date');
     body.replaceChildren(el('div', {}, el('b', {}, t.display), el('br'), `Started in TaskTimer on ${day}`), el('div', { class: 'tt-row' }, btn));
+  }
+
+  // ───────────── Badges on the board ─────────────
+  // Each Modhesh card that is linked shows its TaskTimer task and hours, refreshed every few
+  // seconds — so a link made in the app shows up here right away.
+
+  let badgeBusy = false;
+  async function decorateBoard() {
+    if (badgeBusy || !document.querySelector('.kanban-card')) return;
+    if (!(await TT.session())) return;
+    badgeBusy = true;
+    try {
+      const uid = await TT.userId();
+      const rows = await TT.rest('GET', `modhesh_tasks?user_id=eq.${uid}&task_id=not.is.null&select=code,task_id`);
+      const tasks = await myTasks(true);
+      const byId = Object.fromEntries(tasks.map((t) => [t.id, t]));
+      const byCode = Object.fromEntries(rows.map((r) => [r.code, byId[r.task_id]]));
+      for (const card of document.querySelectorAll('.kanban-card')) {
+        const link = card.querySelector('[data-post-task_id]');
+        const code = link && link.getAttribute('data-post-task_id');
+        const t = code && byCode[code];
+        let badge = card.querySelector('.tt-badge');
+        if (!t) { if (badge) badge.remove(); continue; }
+        if (!badge) {
+          badge = el('div', { class: 'tt-badge' });
+          (card.querySelector('.card-body') || card).append(badge);
+        }
+        const running = t.running_since ? ' · ⏺ running' : '';
+        const text = `⏱ TaskTimer: ${t.display} · ${hours(liveSeconds(t))} h${running}`;
+        if (badge.textContent !== text) badge.textContent = text;
+      }
+    } catch (e) {
+      log('badges failed:', e.message);
+    } finally {
+      badgeBusy = false;
+    }
   }
 
   // ───────────── Watch the page ─────────────
@@ -321,6 +384,15 @@
   scan();
 
   if (location.pathname.startsWith('/tasks')) {
+    let badgeTimer = null;
+    const ours = (n) => n && n.nodeType === 1 && (n.classList.contains('tt-badge') || n.closest('.tt-badge, .tt-bar'));
+    new MutationObserver((list) => {
+      // Ignore changes we made ourselves (badges), or this would run in a loop.
+      if (list.every((m) => ours(m.target) || [...m.addedNodes, ...m.removedNodes].every(ours))) return;
+      clearTimeout(badgeTimer);
+      badgeTimer = setTimeout(decorateBoard, 600);
+    }).observe(document.documentElement, { childList: true, subtree: true });
+    setInterval(() => { if (!document.hidden) decorateBoard(); }, 5000);
     syncModhesh();
     setInterval(syncModhesh, 3 * 60 * 1000);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) syncModhesh(); });

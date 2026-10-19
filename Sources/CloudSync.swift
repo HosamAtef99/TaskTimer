@@ -373,6 +373,9 @@ final class CloudSync: ObservableObject {
         }
     }
 
+    /// Pending to Start (1) or In Progress (6).
+    static func modheshActive(_ s: Int?) -> Bool { s == 1 || s == 6 }
+
     static func modheshStatusTitle(_ s: Int?) -> String {
         switch s {
         case 1: return "Pending to Start"

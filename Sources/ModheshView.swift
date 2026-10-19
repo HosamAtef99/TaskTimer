@@ -11,7 +11,8 @@ struct ModheshView: View {
     @Local var showLinked = false
 
     var body: some View {
-        let all = cloud.modheshTasks
+        // Only what still needs work: Pending to Start and In Progress.
+        let all = cloud.modheshTasks.filter { CloudSync.modheshActive($0.status) }
         let unlinked = all.filter { $0.taskID == nil || store.task($0.taskID!) == nil }
         let linked = all.filter { $0.taskID != nil && store.task($0.taskID!) != nil }
 
@@ -23,7 +24,7 @@ struct ModheshView: View {
             }
             if all.isEmpty && cloud.modheshError == nil {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("No Modhesh tasks yet.").font(.system(size: 13, weight: .semibold))
+                    Text("No Modhesh tasks pending or in progress.").font(.system(size: 13, weight: .semibold))
                     Text("Install the TaskTimer extension in Chrome, sign in to it, then open your tasks on Modhesh once — they show up here.")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)

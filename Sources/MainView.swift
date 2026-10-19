@@ -92,7 +92,7 @@ struct MainView: View {
                 .help("These logs failed to reach the sheet. Click to try again.")
             }
             if cloud.profile != nil {
-                let open = cloud.modheshTasks.filter { $0.taskID == nil }.count
+                let open = cloud.modheshTasks.filter { $0.taskID == nil && CloudSync.modheshActive($0.status) }.count
                 Button { showModhesh = true } label: {
                     Label(open > 0 ? "Modhesh (\(open))" : "Modhesh", systemImage: "link")
                 }

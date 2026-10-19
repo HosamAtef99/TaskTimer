@@ -2,6 +2,11 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
+## 1.12
+- Modhesh window shows only tasks that are Pending to Start or In Progress.
+- Chrome extension 1.1: a link made in the app shows up on Modhesh within seconds — the Log Time bar switches to "Fill from TaskTimer" by itself, and linked cards on the board get a TaskTimer badge with the hours.
+- The extension now says so when it can't find any TaskTimer tasks for the account.
+
 ## 1.11
 - Modhesh: a new Modhesh window links each Modhesh task to the TaskTimer task you timed (best match suggested), or adds it to Incoming.
 - New Chrome extension (TaskTimer-Chrome.zip in the release) fills Modhesh's Log Time — hours not yet logged, deliverables, stars, challenges, complete + your team leader as approver — and the Start Date. You press Save.
