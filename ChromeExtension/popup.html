@@ -1,0 +1,38 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font: 13px -apple-system, BlinkMacSystemFont, sans-serif; width: 280px; margin: 0; padding: 16px; color: #1d1d1f; }
+    h1 { font-size: 15px; margin: 0 0 4px; }
+    p { margin: 0 0 12px; color: #6e6e73; font-size: 12px; line-height: 1.4; }
+    label { display: block; font-size: 11px; font-weight: 600; color: #6e6e73; margin: 10px 0 4px; text-transform: uppercase; letter-spacing: .04em; }
+    input { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid #d2d2d7; border-radius: 8px; font-size: 13px; }
+    button { margin-top: 14px; width: 100%; padding: 9px; border: 0; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer;
+             color: #fff; background: linear-gradient(135deg, #0a84ff, #bf5af2); }
+    button.plain { background: #f2f2f7; color: #1d1d1f; }
+    .err { color: #ff375f; margin-top: 10px; font-size: 12px; }
+    .ok { color: #248a3d; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <h1>TaskTimer for Modhesh</h1>
+  <div id="out">
+    <p>Sign in with your TaskTimer account (the one your team leader made for you).</p>
+    <label for="email">Email</label>
+    <input id="email" type="email" autocomplete="username">
+    <label for="password">Password</label>
+    <input id="password" type="password" autocomplete="current-password">
+    <button id="signin">Sign In</button>
+    <div id="err" class="err"></div>
+  </div>
+  <div id="in" hidden>
+    <p class="ok">Signed in ✓</p>
+    <p id="who"></p>
+    <p>Open your tasks on Modhesh: they're sent to TaskTimer, and Log Time gets a <b>Fill from TaskTimer</b> bar.</p>
+    <button id="signout" class="plain">Sign Out</button>
+  </div>
+  <script src="tasktimer.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

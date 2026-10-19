@@ -43,12 +43,30 @@ create table if not exists public.tasks (
 -- Name of the owner at the time, so a leader still sees who did old tasks after someone leaves the team.
 alter table public.tasks add column if not exists owner_name text;
 
+-- When the timer first started (Modhesh's Start Date).
+alter table public.tasks add column if not exists started_at timestamptz;
+
 -- Filled in at Done; used for Modhesh's Log Time.
 alter table public.tasks add column if not exists deliverables integer;
 alter table public.tasks add column if not exists rating integer check (rating between 1 and 5);
 
 create index if not exists tasks_team_created on public.tasks (team_id, created_at);
 create index if not exists tasks_user_updated on public.tasks (user_id, updated_at);
+
+-- Tasks read from Modhesh by the TaskTimer Chrome extension, and which TaskTimer task each is linked to.
+create table if not exists public.modhesh_tasks (
+  user_id        uuid not null default auth.uid() references public.profiles(id) on delete cascade,
+  code           text not null,                  -- TSK-SE-…
+  title          text not null default '',
+  client         text not null default '',
+  status         integer,                        -- 1 pending, 6 in progress, 4 completed, 5 pending approver
+  status_title   text,
+  logged_seconds double precision,               -- time already logged in Modhesh
+  view_url       text,
+  task_id        uuid,                           -- linked TaskTimer task
+  updated_at     timestamptz not null default now(),
+  primary key (user_id, code)
+);
 
 -- ───────────────────────── Helpers ─────────────────────────
 
@@ -122,6 +140,12 @@ create policy profiles_update on public.profiles for update to authenticated
 
 revoke update on public.profiles from authenticated;
 grant update (full_name) on public.profiles to authenticated;
+
+-- Modhesh tasks: each person sees and changes only their own.
+alter table public.modhesh_tasks enable row level security;
+drop policy if exists modhesh_own on public.modhesh_tasks;
+create policy modhesh_own on public.modhesh_tasks for all to authenticated
+  using (user_id = auth.uid()) with check (user_id = auth.uid());
 
 -- Tasks
 drop policy if exists tasks_select on public.tasks;

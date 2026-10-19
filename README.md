@@ -74,6 +74,26 @@ curl -fsSL https://raw.githubusercontent.com/mo-animation/TaskTimer/main/install
 4. **Authentication ← Users ← Add user ← Create new user**: حساب الليدر، وعلّم **Auto Confirm User**.
 5. في SQL Editor: اعمل التيم وخلّي الحساب ده ليدر (الأوامر في آخر `schema.sql`).
 
+## مدهش (إضافة Chrome)
+
+الإضافة بتبعت تاسكاتك من مدهش لـ TaskTimer، وبتملالك **Log Time** و**Start Date** في مدهش من التايمر. **الـ Save دايماً بيبقى عليك.**
+
+**التسطيب (مرة واحدة لكل واحد):**
+1. نزّل [TaskTimer-Chrome.zip](https://github.com/HosamAtef99/TaskTimer/releases/latest/download/TaskTimer-Chrome.zip) وفك الضغط في فولدر ثابت (متمسحوش بعد كده).
+2. في Chrome افتح `chrome://extensions` وشغّل **Developer mode** فوق على اليمين.
+3. اضغط **Load unpacked** واختار الفولدر.
+4. دوس على أيقونة الإضافة (🧩 ← TaskTimer for Modhesh) وسجّل دخول بحساب TaskTimer.
+
+**الاستخدام:**
+- افتح **My Tasks** في مدهش، والتاسكات هتتبعت لوحدها لـ TaskTimer.
+- في TaskTimer دوس **Modhesh**، واربط كل تاسك من مدهش بالتاسك اللي اشتغلت عليها. أو اعملها تاسك جديدة في Incoming.
+- في مدهش لما تفتح **Log Time** هتلاقي شريط **TaskTimer** فوق، دوس **Fill from TaskTimer**:
+  - الساعات بتتحسب **الفرق** بين وقت التايمر واللي اتسجل قبل كده في مدهش.
+  - الـ Deliverables والنجوم بيتاخدوا من شاشة Done.
+  - الـ Challenges بتتحط **No Challenges** لو مفيش اختيار.
+  - لو التاسك Completed، بيعلّم Complete ويختار ليدر التيم كـ Approver.
+- في **Task Details**: زرار **Fill Start Date** بيحط أول يوم شغّلت فيه التايمر.
+
 ## التحديثات
 
 البرنامج بيحدّث نفسه من GitHub:

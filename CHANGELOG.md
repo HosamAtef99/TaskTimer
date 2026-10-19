@@ -2,6 +2,11 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
+## 1.11
+- Modhesh: a new Modhesh window links each Modhesh task to the TaskTimer task you timed (best match suggested), or adds it to Incoming.
+- New Chrome extension (TaskTimer-Chrome.zip in the release) fills Modhesh's Log Time — hours not yet logged, deliverables, stars, challenges, complete + your team leader as approver — and the Start Date. You press Save.
+- Run the latest schema.sql in Supabase once (adds the Modhesh table and the start date).
+
 ## 1.10
 - Done asks for Deliverables and stars (how happy you were with the task). Defaults: 1 deliverable, 5 stars — change them in Settings → General.
 - Both go to the team database (and the leader's CSV), ready for Modhesh's Log Time.

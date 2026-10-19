@@ -114,6 +114,7 @@ final class CloudSync: ObservableObject {
                     await self?.pull()
                     await self?.pushNow()
                     await self?.checkWeeklyReport()
+                    await self?.loadModhesh()
                 }
             }
         }
@@ -206,8 +207,11 @@ final class CloudSync: ObservableObject {
             "deleted": false,
             "deliverables": t.deliverables.map { $0 as Any } ?? NSNull(),
             "rating": t.rating.map { $0 as Any } ?? NSNull(),
+            "started_at": t.sessions.first.map { Cloud.iso($0.start) as Any } ?? NSNull(),
         ]
     }
+
+    private static let newColumns = ["deliverables", "rating", "started_at"]
 
     /// Set when the database doesn't have the deliverables / rating columns yet
     /// (schema.sql not re-run), so syncing keeps working without them.
@@ -238,15 +242,16 @@ final class CloudSync: ObservableObject {
         do {
             if !rows.isEmpty {
                 var send = rows
-                if skipNewColumns {
-                    send = rows.map { var r = $0; r.removeValue(forKey: "deliverables"); r.removeValue(forKey: "rating"); return r }
+                func stripped(_ rows: [[String: Any]]) -> [[String: Any]] {
+                    rows.map { r in r.filter { !Self.newColumns.contains($0.key) } }
                 }
+                if skipNewColumns { send = stripped(rows) }
                 do {
                     try await CloudAPI.upsert("tasks", send)
                 } catch let e as Cloud.CloudError where !skipNewColumns
-                            && (e.message.contains("deliverables") || e.message.contains("rating")) {
+                            && Self.newColumns.contains(where: { e.message.contains($0) }) {
                     skipNewColumns = true
-                    send = rows.map { var r = $0; r.removeValue(forKey: "deliverables"); r.removeValue(forKey: "rating"); return r }
+                    send = stripped(rows)
                     try await CloudAPI.upsert("tasks", send)
                 }
                 for r in rows {
@@ -304,6 +309,77 @@ final class CloudSync: ObservableObject {
             error = nil
         } catch {
             self.error = error.localizedDescription
+        }
+    }
+
+    // MARK: - Modhesh
+
+    struct ModheshTask: Identifiable, Hashable {
+        var id: String { code }
+        let code: String
+        var title: String
+        var client: String
+        var status: Int?
+        var statusTitle: String
+        var loggedSeconds: Double?
+        var taskID: UUID?
+        var updatedAt: Date?
+    }
+
+    @Published private(set) var modheshTasks: [ModheshTask] = []
+    @Published private(set) var modheshError: String?
+
+    func loadModhesh() async {
+        guard let uid = CloudAuth.shared.session?.userID else { return }
+        do {
+            let rows = try await CloudAPI.select("modhesh_tasks", [
+                URLQueryItem(name: "select", value: "*"),
+                URLQueryItem(name: "user_id", value: "eq.\(uid)"),
+                URLQueryItem(name: "order", value: "updated_at.desc"),
+            ])
+            modheshTasks = rows.compactMap { r in
+                guard let code = r["code"] as? String else { return nil }
+                let status = r["status"] as? Int
+                return ModheshTask(code: code,
+                                   title: r["title"] as? String ?? "",
+                                   client: r["client"] as? String ?? "",
+                                   status: status,
+                                   statusTitle: (r["status_title"] as? String) ?? Self.modheshStatusTitle(status),
+                                   loggedSeconds: (r["logged_seconds"] as? Double) ?? (r["logged_seconds"] as? Int).map(Double.init),
+                                   taskID: (r["task_id"] as? String).flatMap { UUID(uuidString: $0) },
+                                   updatedAt: Cloud.date(r["updated_at"]))
+            }
+            modheshError = nil
+        } catch {
+            let m = error.localizedDescription
+            modheshError = m.contains("modhesh_tasks")
+                ? "Run the latest schema.sql in Supabase first (it adds the Modhesh table)."
+                : m
+        }
+    }
+
+    /// Links a Modhesh task to a TaskTimer task (nil = unlink). The Chrome extension reads this link.
+    func linkModhesh(_ code: String, to taskID: UUID?) async {
+        guard let uid = CloudAuth.shared.session?.userID else { return }
+        do {
+            await pushNow()   // make sure the TaskTimer task exists in the database
+            try await CloudAPI.update("modhesh_tasks", [
+                URLQueryItem(name: "user_id", value: "eq.\(uid)"),
+                URLQueryItem(name: "code", value: "eq.\(code)"),
+            ], ["task_id": taskID.map { $0.uuidString.lowercased() as Any } ?? NSNull()])
+            await loadModhesh()
+        } catch {
+            modheshError = error.localizedDescription
+        }
+    }
+
+    static func modheshStatusTitle(_ s: Int?) -> String {
+        switch s {
+        case 1: return "Pending to Start"
+        case 6: return "In Progress"
+        case 4: return "Completed"
+        case 5: return "Pending Approver"
+        default: return "—"
         }
     }
 

@@ -13,6 +13,7 @@ struct MainView: View {
     @Local var search = ""
     @Local var showClients = false
     @Local var showTeam = false
+    @Local var showModhesh = false
     @ObservedObject var cloud = CloudSync.shared
 
     var body: some View {
@@ -59,6 +60,9 @@ struct MainView: View {
         .sheet(isPresented: $showTeam) {
             TeamView().environmentObject(store)
         }
+        .sheet(isPresented: $showModhesh) {
+            ModheshView().environmentObject(store)
+        }
         .onChange(of: store.teamReportRequest) { want in
             if want && cloud.isLeader { showTeam = true }
         }
@@ -86,6 +90,14 @@ struct MainView: View {
                 }
                 .buttonStyle(GlassButtonStyle(compact: true))
                 .help("These logs failed to reach the sheet. Click to try again.")
+            }
+            if cloud.profile != nil {
+                let open = cloud.modheshTasks.filter { $0.taskID == nil }.count
+                Button { showModhesh = true } label: {
+                    Label(open > 0 ? "Modhesh (\(open))" : "Modhesh", systemImage: "link")
+                }
+                .buttonStyle(GlassButtonStyle(compact: true))
+                .help("Link Modhesh tasks to your TaskTimer tasks")
             }
             if cloud.isLeader {
                 Button { showTeam = true } label: { Label("Team", systemImage: "person.3.fill") }

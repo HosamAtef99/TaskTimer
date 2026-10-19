@@ -35,5 +35,6 @@ jobs:
           # Notes = the newest section of CHANGELOG.md
           awk '/^## /{n++} n==1' CHANGELOG.md > build/NOTES.txt
           [ -s build/NOTES.txt ] || echo "TaskTimer $V" > build/NOTES.txt
-          gh release create "v$V" build/TaskTimer.app.zip build/VERSION build/NOTES.txt \
+          (cd ChromeExtension && zip -qr ../build/TaskTimer-Chrome.zip .)
+          gh release create "v$V" build/TaskTimer.app.zip build/VERSION build/NOTES.txt build/TaskTimer-Chrome.zip \
             --title "TaskTimer $V" --notes-file build/NOTES.txt --latest
