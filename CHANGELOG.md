@@ -2,6 +2,13 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
+## 1.4
+- No more Google Sheet: everything stays in the app (the sheet code is kept aside, switched off).
+- Incoming: add a task now and press Start later. Incoming → In Progress → Completed.
+- Done asks for the hours (3, 3.5 …) and the day.
+- Month filter: show the tasks created in a month.
+- Task folders can go into the client's folder or one folder of months (Client / Oct 2026 / Task). A missing month folder is created, named like the others.
+
 ## 1.3.1
 - Fixed: Update could stay on "Installing…" when a window like Settings was open.
 

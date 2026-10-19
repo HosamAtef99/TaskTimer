@@ -36,8 +36,8 @@ enum Theme {
 
     static func statusColor(_ s: TaskStatus) -> Color {
         switch s {
-        case .active: return blue
-        case .inProcess: return orange
+        case .incoming: return purple
+        case .active, .inProcess: return blue
         case .complete: return green
         }
     }

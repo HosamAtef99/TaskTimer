@@ -1,6 +1,14 @@
 import Foundation
 import SwiftUI
 
+/// Switches for whole features.
+enum Features {
+    /// Logging to the team Google Sheet. Off: TaskTimer keeps everything in the app.
+    /// The sheet code (SheetService, SheetSync, TaskTimer.gs, SheetDoneSheet) stays in the
+    /// project so it can be switched back on.
+    static let sheet = false
+}
+
 /// All user settings live in UserDefaults under these keys (used with @AppStorage).
 enum Pref {
     static let memberName = "memberName"
@@ -24,6 +32,10 @@ enum Pref {
     static let statusInProcess = "statusInProcessLabel"
     static let timeFormatFromSheet = "timeFormatFromSheet"
     static let sheetConfig = "sheetConfig"
+
+    // Where new task folders go
+    static let folderMode = "folderMode"   // "location" | "client" | "months"
+    static let monthsRoot = "monthsRoot"   // folder that holds the month folders ("months" mode)
 
     static let defaultSubfolders = """
     00 - Render
@@ -66,6 +78,7 @@ enum Pref {
             openFinderOnCreate: true,
             openAEOnCreate: false,
             tabMode: "auto",
+            folderMode: "location",
             timeFormatFromSheet: true,
         ])
     }
@@ -135,6 +148,21 @@ enum Fmt {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
         f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+
+    /// Hours as a decimal, e.g. 3, 3.5, 0.75.
+    static func hours(_ s: TimeInterval) -> String {
+        let h = (max(0, s) / 3600 * 100).rounded() / 100
+        var str = String(format: "%.2f", h)
+        while str.hasSuffix("0") { str.removeLast() }
+        if str.hasSuffix(".") { str.removeLast() }
+        return str
+    }
+
+    static let monthYear: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "MMMM yyyy"
         return f
     }()
 

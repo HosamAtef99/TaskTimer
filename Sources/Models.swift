@@ -3,17 +3,23 @@ import Foundation
 // MARK: - Status
 
 enum TaskStatus: String, Codable, CaseIterable, Identifiable {
-    case active      // being worked on, never logged yet
-    case inProcess   // logged to the sheet as "In Process"
-    case complete    // logged to the sheet as "Complete"
+    case incoming    // added, not started yet
+    case active      // in progress
+    case inProcess   // sheet era: logged as "In Process" — shown as In Progress
+    case complete    // done
 
     var id: String { rawValue }
 
+    /// The statuses offered in menus (inProcess only exists in older data).
+    static var choices: [TaskStatus] { [.incoming, .active, .complete] }
+
+    var isInProgress: Bool { self == .active || self == .inProcess }
+
     var title: String {
         switch self {
-        case .active: return "Active"
-        case .inProcess: return "In Process"
-        case .complete: return "Complete"
+        case .incoming: return "Incoming"
+        case .active, .inProcess: return "In Progress"
+        case .complete: return "Completed"
         }
     }
 
@@ -38,6 +44,8 @@ struct Client: Identifiable, Codable, Hashable {
     var name: String
     /// true when the last Sync didn't find this name in the sheet's Account dropdown.
     var missingFromSheet: Bool?
+    /// This client's folder on this Mac (month folders and task folders go inside).
+    var folderPath: String?
 }
 
 // MARK: - Work session
@@ -70,6 +78,8 @@ struct TaskItem: Identifiable, Codable, Hashable {
     var parentID: UUID?
     /// Tab of the sheet that holds sheetRow.
     var sheetTab: String?
+    /// The day picked when the task was marked Done.
+    var workDate: Date?
 
     var isSubtask: Bool { parentID != nil }
 
@@ -103,7 +113,7 @@ struct TaskItem: Identifiable, Codable, Hashable {
     enum CodingKeys: String, CodingKey {
         case id, name, clientID, folderPath, createdAt, sessions, status
         case manualAdjust, loggedSeconds, sheetRow, lastLoggedAt, pendingLog
-        case parentID, sheetTab
+        case parentID, sheetTab, workDate
     }
 
     init(from decoder: Decoder) throws {
@@ -122,6 +132,7 @@ struct TaskItem: Identifiable, Codable, Hashable {
         pendingLog = try c.decodeIfPresent(PendingLog.self, forKey: .pendingLog)
         parentID = try c.decodeIfPresent(UUID.self, forKey: .parentID)
         sheetTab = try c.decodeIfPresent(String.self, forKey: .sheetTab)
+        workDate = try c.decodeIfPresent(Date.self, forKey: .workDate)
     }
 }
 

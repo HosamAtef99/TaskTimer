@@ -202,6 +202,11 @@ final class Store: ObservableObject {
         clients[i].name = n
     }
 
+    func setClientFolder(_ id: UUID, _ path: String?) {
+        guard let i = clients.firstIndex(where: { $0.id == id }) else { return }
+        clients[i].folderPath = path
+    }
+
     func deleteClient(_ id: UUID) {
         clients.removeAll { $0.id == id }
     }
@@ -213,10 +218,11 @@ final class Store: ObservableObject {
     // MARK: - Tasks
 
     @discardableResult
-    func addTask(name: String, clientID: UUID?, folder: URL?, start: Bool) -> UUID {
+    func addTask(name: String, clientID: UUID?, folder: URL?, start: Bool, incoming: Bool = false) -> UUID {
         var t = TaskItem(name: name, clientID: clientID, folderPath: folder?.path)
+        if incoming { t.status = .incoming }
         if let folder { writeMarker(t, in: folder) }
-        if start {
+        if start && !incoming {
             stopAll()
             t.sessions.append(WorkSession(start: Date()))
         }
@@ -269,7 +275,8 @@ final class Store: ObservableObject {
         stopAll()
         update(id) { t in
             t.sessions.append(WorkSession(start: Date()))
-            if t.status == .complete { t.status = .inProcess } // feedback round on a finished task
+            // Starting an Incoming task, or a feedback round on a finished one, puts it In Progress.
+            if t.status == .incoming || t.status == .complete { t.status = .active }
         }
     }
 
@@ -296,6 +303,33 @@ final class Store: ObservableObject {
 
     func requestDone(_ id: UUID) {
         doneTarget = DoneTarget(id: id)
+    }
+
+    /// Done (no sheet): stops the timer and saves the final hours, day and status.
+    func complete(_ id: UUID, name: String, clientID: UUID?, status: TaskStatus,
+                  date: Date, totalSeconds: TimeInterval) {
+        pause(id)
+        guard let t = task(id) else { return }
+        let raw = t.rawSeconds()
+        update(id) { t in
+            t.name = name
+            t.clientID = clientID
+            t.status = status
+            t.workDate = date
+            t.manualAdjust = totalSeconds - raw
+        }
+        flash(status == .complete
+              ? "“\(name)” completed · \(Fmt.hours(totalSeconds)) h"
+              : "Saved “\(name)” · \(Fmt.hours(totalSeconds)) h")
+    }
+
+    // MARK: - Months
+
+    /// First day of the month each task was created in, newest first.
+    var taskMonths: [Date] {
+        let cal = Calendar.current
+        let starts = Set(tasks.compactMap { cal.dateInterval(of: .month, for: $0.createdAt)?.start })
+        return starts.sorted(by: >)
     }
 
     // MARK: - Logging to the sheet

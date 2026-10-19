@@ -17,7 +17,10 @@ struct ClientsView: View {
     @ObservedObject var sync = SheetSync.shared
 
     var body: some View {
-        SheetFrame(title: "Clients", subtitle: "Read from the sheet's Account column — or add them by hand", icon: "person.2.fill") {
+        SheetFrame(title: "Clients",
+                   subtitle: Features.sheet ? "Read from the sheet's Account column — or add them by hand" : "Add them once, then pick from the list. Give each one a folder if you like.",
+                   icon: "person.2.fill") {
+            if Features.sheet {
             HStack(spacing: 8) {
                 Button {
                     Task { await sync.sync(silent: false) }
@@ -32,6 +35,7 @@ struct ClientsView: View {
                 Text(sync.config?.syncedAt.map { "Last sync \(Fmt.relative($0))" } ?? "Not synced yet")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
                 Spacer()
+            }
             }
             HStack(spacing: 8) {
                 TextField("Add a client or account", text: $newName)
@@ -93,6 +97,37 @@ struct ClientsView: View {
                                 }
                             }
                             Spacer()
+                            if let p = c.folderPath, !p.isEmpty {
+                                Text((p as NSString).abbreviatingWithTildeInPath)
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(FileManager.default.fileExists(atPath: p) ? AnyShapeStyle(HierarchicalShapeStyle.tertiary) : AnyShapeStyle(Theme.pink))
+                                    .lineLimit(1)
+                                    .truncationMode(.head)
+                                    .frame(maxWidth: 140, alignment: .trailing)
+                                    .help(FileManager.default.fileExists(atPath: p) ? p : "Folder not found: \(p)")
+                            }
+                            Menu {
+                                Button("Choose Folder…") {
+                                    let panel = NSOpenPanel()
+                                    panel.canChooseDirectories = true
+                                    panel.canChooseFiles = false
+                                    panel.canCreateDirectories = true
+                                    panel.prompt = "Choose"
+                                    panel.message = "Choose \(c.name)'s folder. Month folders and task folders go inside it."
+                                    if let p = c.folderPath { panel.directoryURL = URL(fileURLWithPath: p) }
+                                    if panel.runModal() == .OK, let u = panel.url { store.setClientFolder(c.id, u.path) }
+                                }
+                                if let p = c.folderPath, !p.isEmpty {
+                                    Button("Show in Finder") { NSWorkspace.shared.open(URL(fileURLWithPath: p)) }
+                                    Button("Remove Folder") { store.setClientFolder(c.id, nil) }
+                                }
+                            } label: {
+                                Image(systemName: c.folderPath == nil ? "folder.badge.plus" : "folder")
+                            }
+                            .menuStyle(.borderlessButton)
+                            .menuIndicator(.hidden)
+                            .fixedSize()
+                            .help("This client's folder")
                             Button { editing = c.id; editText = c.name } label: { Image(systemName: "pencil") }
                                 .buttonStyle(.borderless)
                             Button { store.deleteClient(c.id) } label: { Image(systemName: "trash") }
@@ -116,7 +151,7 @@ struct ClientsView: View {
                 }
             }
         }
-        .frame(width: 440, height: inSheet ? 520 : 480)
+        .frame(width: 520, height: inSheet ? 560 : 520)
     }
 
     private func add() {
@@ -149,18 +184,20 @@ struct SettingsView: View {
     @AppStorage(Pref.statusComplete) var statusComplete = ""
     @AppStorage(Pref.statusInProcess) var statusInProcess = ""
     @AppStorage(Pref.timeFormatFromSheet) var timeFormatFromSheet = true
+    @AppStorage(Pref.folderMode) var folderMode = "location"
+    @AppStorage(Pref.monthsRoot) var monthsRoot = ""
     @ObservedObject var sync = SheetSync.shared
 
-    @Local var tab = 0
+    @Local var tab = Features.sheet ? 0 : 1
     @Local var testing = false
     @Local var testResult: String? = nil
     @Local var testOK = false
     @Local var launchAtLogin = SMAppService.mainApp.status == .enabled
 
     var body: some View {
-        SheetFrame(title: "Settings", subtitle: "Your name, the team sheet, and folders", icon: "gearshape.fill") {
+        SheetFrame(title: "Settings", subtitle: Features.sheet ? "Your name, the team sheet, and folders" : "Folders and general options", icon: "gearshape.fill") {
             Picker("", selection: $tab) {
-                Text("Sheet").tag(0)
+                if Features.sheet { Text("Sheet").tag(0) }
                 Text("Folders").tag(1)
                 Text("General").tag(2)
             }
@@ -378,7 +415,46 @@ struct SettingsView: View {
     }
 
     private var foldersTab: some View {
+        ScrollView {
         VStack(alignment: .leading, spacing: 14) {
+            FieldRow(label: "Where new task folders go") {
+                Picker("", selection: $folderMode) {
+                    Text("Pick each time").tag("location")
+                    Text("Client's folder").tag("client")
+                    Text("Month folders").tag("months")
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                Text(folderModeHelp)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if folderMode == "months" {
+                    HStack {
+                        TextField("Folder that holds the month folders", text: $monthsRoot)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(size: 11, design: .monospaced))
+                        Button("Choose…") {
+                            let p = NSOpenPanel()
+                            p.canChooseFiles = false
+                            p.canChooseDirectories = true
+                            p.canCreateDirectories = true
+                            if p.runModal() == .OK, let u = p.url { monthsRoot = u.path }
+                        }
+                        .buttonStyle(GlassButtonStyle(compact: true))
+                    }
+                    if !monthsRoot.isEmpty {
+                        if FileManager.default.fileExists(atPath: monthsRoot) {
+                            let m = MonthFolder.preview(in: URL(fileURLWithPath: monthsRoot))
+                            Text(m.exists ? "This month: “\(m.name)” ✓" : "This month's folder will be created as “\(m.name)”.")
+                                .font(.system(size: 11)).foregroundStyle(Theme.green)
+                        } else {
+                            Text("Folder not found at this path.").font(.system(size: 11)).foregroundStyle(Theme.pink)
+                        }
+                    }
+                }
+            }
+            Divider()
             FieldRow(label: "After Effects template (.aep)") {
                 HStack {
                     TextField("Path", text: $templatePath)
@@ -410,6 +486,19 @@ struct SettingsView: View {
                 .fixedSize(horizontal: false, vertical: true)
             Toggle("Open the folder in Finder after creating", isOn: $openFinder)
             Toggle("Open the AE project after creating", isOn: $openAE)
+        }
+        .padding(.trailing, 6)
+        }
+    }
+
+    private var folderModeHelp: String {
+        switch folderMode {
+        case "client":
+            return "Each client gets its own folder (set it in Clients). New tasks go into that month's folder inside it: Client folder / Oct 2026 / Task. The month folder is created if it's missing, named like the other month folders there."
+        case "months":
+            return "All tasks go into one folder of months: Folder / Oct 2026 / Task. The month folder is created if it's missing, named like the other month folders there."
+        default:
+            return "You pick where each task folder goes when you create it."
         }
     }
 

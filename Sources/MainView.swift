@@ -2,13 +2,14 @@ import SwiftUI
 import AppKit
 
 enum TaskFilter: String, CaseIterable, Identifiable {
-    case open = "Open", inProcess = "In Process", complete = "Complete", all = "All"
+    case incoming = "Incoming", inProgress = "In Progress", complete = "Completed", all = "All"
     var id: String { rawValue }
 }
 
 struct MainView: View {
     @EnvironmentObject var store: Store
-    @Local var filter: TaskFilter = .open
+    @Local var filter: TaskFilter = .inProgress
+    @Local var month: Date? = nil      // nil = all months
     @Local var search = ""
     @Local var showClients = false
 
@@ -38,7 +39,11 @@ struct MainView: View {
         }
         .frame(minWidth: 560, minHeight: 620)
         .sheet(item: $store.doneTarget) { target in
-            DoneSheet(taskID: target.id).environmentObject(store)
+            if Features.sheet {
+                SheetDoneSheet(taskID: target.id).environmentObject(store)
+            } else {
+                DoneSheet(taskID: target.id).environmentObject(store)
+            }
         }
         .sheet(isPresented: $store.showNewTask) {
             NewTaskSheet().environmentObject(store)
@@ -64,7 +69,7 @@ struct MainView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            if store.pendingCount > 0 {
+            if Features.sheet && store.pendingCount > 0 {
                 Button {
                     Task { await store.retryPending(silent: false) }
                 } label: {
@@ -83,7 +88,7 @@ struct MainView: View {
             Button {
                 if let url = FolderService.chooseExistingFolder() {
                     _ = store.importFolder(url)
-                    filter = .open
+                    filter = .inProgress
                 }
             } label: { Image(systemName: "folder.badge.plus") }
                 .buttonStyle(CircleIconButtonStyle())
@@ -100,11 +105,22 @@ struct MainView: View {
     private var listControls: some View {
         HStack(spacing: 10) {
             Picker("", selection: $filter) {
-                ForEach(TaskFilter.allCases) { Text($0.rawValue).tag($0) }
+                ForEach(TaskFilter.allCases) { f in
+                    Text(f == .incoming && incomingCount > 0 ? "Incoming (\(incomingCount))" : f.rawValue).tag(f)
+                }
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            .frame(maxWidth: 340)
+            .frame(maxWidth: 380)
+            Picker("", selection: $month) {
+                Text("All months").tag(Date?.none)
+                ForEach(monthChoices, id: \.self) { m in
+                    Text(Fmt.monthYear.string(from: m)).tag(Date?.some(m))
+                }
+            }
+            .labelsHidden()
+            .frame(width: 150)
+            .help("Show tasks created in this month")
             Spacer()
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
@@ -117,15 +133,30 @@ struct MainView: View {
         }
     }
 
+    private var incomingCount: Int { store.tasks.filter { $0.status == .incoming }.count }
+
+    /// Months that have tasks, plus this month, newest first.
+    private var monthChoices: [Date] {
+        var list = store.taskMonths
+        if let now = Calendar.current.dateInterval(of: .month, for: Date())?.start, !list.contains(now) {
+            list.insert(now, at: 0)
+        }
+        return list
+    }
+
     /// Top-level tasks; a task shows when it or any of its amends matches.
     private var filtered: [TaskItem] {
         let q = search.trimmingCharacters(in: .whitespaces)
+        let cal = Calendar.current
         return store.tasks.filter { $0.parentID == nil }.filter { t in
             let group = [t] + store.subtasks(of: t.id)
+            if let m = month {
+                guard group.contains(where: { cal.isDate($0.createdAt, equalTo: m, toGranularity: .month) }) else { return false }
+            }
             let passFilter = group.contains { s in
                 switch filter {
-                case .open: return s.status != .complete
-                case .inProcess: return s.status == .inProcess
+                case .incoming: return s.status == .incoming
+                case .inProgress: return s.status.isInProgress
                 case .complete: return s.status == .complete
                 case .all: return true
                 }
@@ -306,11 +337,11 @@ struct TaskRow: View {
             Spacer(minLength: 8)
 
             VStack(alignment: .trailing, spacing: 2) {
-                Text(Fmt.clock(task.totalSeconds(at: store.now)))
+                Text(task.status == .complete ? "\(Fmt.hours(task.totalSeconds(at: store.now))) h" : Fmt.clock(task.totalSeconds(at: store.now)))
                     .font(.system(size: 15, weight: .medium, design: .rounded).monospacedDigit())
                     .foregroundStyle(task.isRunning ? AnyShapeStyle(Theme.linear) : AnyShapeStyle(HierarchicalShapeStyle.secondary))
                 if hasSubs {
-                    Text("Total \(Fmt.short(store.groupSeconds(task.id)))")
+                    Text("Total \(Fmt.hours(store.groupSeconds(task.id))) h")
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(.tertiary)
                         .help("This task plus all its amends")
@@ -339,7 +370,7 @@ struct TaskRow: View {
                     .buttonStyle(CircleIconButtonStyle(size: 28))
                     .help("Add an amend (subtask). It gets its own timer and its own row in the sheet.")
                 Button { store.requestDone(task.id) } label: {
-                    Text(task.status == .complete ? "Log again" : "Done")
+                    Text(doneLabel(task))
                 }
                 .buttonStyle(GradientButtonStyle(compact: true))
             }
@@ -347,7 +378,7 @@ struct TaskRow: View {
         .contentShape(Rectangle())
         .contextMenu {
             Button(task.isRunning ? "Pause" : "Start") { store.toggle(task.id) }
-            Button("Done / Log to Sheet…") { store.requestDone(task.id) }
+            Button(Features.sheet ? "Done / Log to Sheet…" : "Done…") { store.requestDone(task.id) }
             Button("Add Amend") { addAmend() }
             Divider()
             Button("Copy Task Name") {
@@ -358,7 +389,7 @@ struct TaskRow: View {
                 Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([f]) }
             }
             Menu("Mark as") {
-                ForEach(TaskStatus.allCases) { s in
+                ForEach(TaskStatus.choices) { s in
                     Button(s.title) { store.update(task.id) { $0.status = s } }
                 }
             }
@@ -425,11 +456,11 @@ struct SubtaskRow: View {
 
             Spacer(minLength: 8)
 
-            Text(Fmt.clock(task.totalSeconds(at: store.now)))
+            Text(task.status == .complete ? "\(Fmt.hours(task.totalSeconds(at: store.now))) h" : Fmt.clock(task.totalSeconds(at: store.now)))
                 .font(.system(size: 13, weight: .medium, design: .rounded).monospacedDigit())
                 .foregroundStyle(task.isRunning ? AnyShapeStyle(Theme.linear) : AnyShapeStyle(HierarchicalShapeStyle.secondary))
             Button { store.requestDone(task.id) } label: {
-                Text(task.status == .complete ? "Log again" : "Done")
+                Text(doneLabel(task))
             }
             .buttonStyle(GradientButtonStyle(compact: true))
         }
@@ -438,14 +469,14 @@ struct SubtaskRow: View {
         .contentShape(Rectangle())
         .contextMenu {
             Button(task.isRunning ? "Pause" : "Start") { store.toggle(task.id) }
-            Button("Done / Log to Sheet…") { store.requestDone(task.id) }
+            Button(Features.sheet ? "Done / Log to Sheet…" : "Done…") { store.requestDone(task.id) }
             Divider()
             Button("Copy Name") {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(store.displayName(task), forType: .string)
             }
             Menu("Mark as") {
-                ForEach(TaskStatus.allCases) { s in
+                ForEach(TaskStatus.choices) { s in
                     Button(s.title) { store.update(task.id) { $0.status = s } }
                 }
             }
@@ -458,4 +489,10 @@ struct SubtaskRow: View {
             Text("This only removes it from TaskTimer. Its sheet row stays.")
         }
     }
+}
+
+/// "Done" while working, "Edit" once completed (to fix the hours or the day).
+func doneLabel(_ t: TaskItem) -> String {
+    if t.status == .complete { return Features.sheet ? "Log again" : "Edit" }
+    return "Done"
 }

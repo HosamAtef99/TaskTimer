@@ -8,7 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         MainActor.assumeIsolated {
             UpdateManager.shared.start()
-            SheetSync.shared.start()
+            if Features.sheet { SheetSync.shared.start() }
         }
     }
     // Keep running in the menu bar when the window is closed.

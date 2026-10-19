@@ -110,27 +110,39 @@ struct NewTaskSheet: View {
             }
 
             VStack(alignment: .leading, spacing: 10) {
+                Picker("", selection: $startNow) {
+                    Text("Start now").tag(true)
+                    Text("Add to Incoming").tag(false)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
                 Toggle("Create task folder", isOn: $makeFolder)
                 if makeFolder {
                     HStack(spacing: 8) {
                         Image(systemName: "folder").foregroundStyle(Theme.cool)
-                        Text(location.isEmpty ? "Choose a location…" : (location as NSString).abbreviatingWithTildeInPath)
+                        Text(destinationText)
                             .font(.system(size: 12))
                             .lineLimit(1)
                             .truncationMode(.head)
                             .foregroundStyle(.secondary)
                         Spacer()
-                        Button("Change…") {
-                            if let u = FolderService.chooseLocation() { location = u.path }
+                        if autoRoot == nil {
+                            Button("Change…") {
+                                if let u = FolderService.chooseLocation() { location = u.path }
+                            }
+                            .buttonStyle(GlassButtonStyle(compact: true))
                         }
-                        .buttonStyle(GlassButtonStyle(compact: true))
+                    }
+                    if let hint = folderHint {
+                        Text(hint)
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.orange)
                     }
                     Text(Pref.subfolderList.joined(separator: "  ·  "))
                         .font(.system(size: 10))
                         .foregroundStyle(.tertiary)
                         .lineLimit(2)
                 }
-                Toggle("Start the timer now", isOn: $startNow)
             }
             .padding(14)
             .glassCard(radius: 14)
@@ -146,13 +158,52 @@ struct NewTaskSheet: View {
                 Button("Cancel") { dismiss() }
                     .buttonStyle(GlassButtonStyle())
                     .keyboardShortcut(.cancelAction)
-                Button { create() } label: { Label("Create", systemImage: "sparkles") }
+                Button { create() } label: { Label(startNow ? "Create & Start" : "Add to Incoming", systemImage: "sparkles") }
                     .buttonStyle(GradientButtonStyle())
                     .keyboardShortcut(.defaultAction)
                     .disabled(FolderService.cleanName(name).isEmpty)
             }
         }
         .frame(width: 480)
+    }
+
+    /// Folder that holds the month folders for this task (client's folder, or the months folder),
+    /// or nil when the task folder goes to a location picked by hand.
+    private var autoRoot: URL? {
+        let fm = FileManager.default
+        switch Pref.string(Pref.folderMode) {
+        case "client":
+            guard let p = store.client(clientID)?.folderPath, !p.isEmpty, fm.fileExists(atPath: p) else { return nil }
+            return URL(fileURLWithPath: p)
+        case "months":
+            let p = Pref.string(Pref.monthsRoot)
+            guard !p.isEmpty, fm.fileExists(atPath: p) else { return nil }
+            return URL(fileURLWithPath: p)
+        default:
+            return nil
+        }
+    }
+
+    private var destinationText: String {
+        if let root = autoRoot {
+            let m = MonthFolder.preview(in: root)
+            let path = (root.path as NSString).abbreviatingWithTildeInPath
+            return "\(path)/\(m.name)/" + (m.exists ? "" : "  (new month folder)")
+        }
+        return location.isEmpty ? "Choose a location…" : (location as NSString).abbreviatingWithTildeInPath
+    }
+
+    private var folderHint: String? {
+        guard autoRoot == nil else { return nil }
+        switch Pref.string(Pref.folderMode) {
+        case "client":
+            if clientID == nil { return "Pick a client to use its folder." }
+            return "This client has no folder yet — set it in Clients (the people icon)."
+        case "months":
+            return "Set the folder that holds the month folders in Settings → Folders."
+        default:
+            return nil
+        }
     }
 
     private func create() {
@@ -162,7 +213,14 @@ struct NewTaskSheet: View {
         var folder: URL?
         if makeFolder {
             var base: URL?
-            if !location.isEmpty, FileManager.default.fileExists(atPath: location) {
+            if let root = autoRoot {
+                do {
+                    base = try MonthFolder.folder(in: root)
+                } catch {
+                    self.error = error.localizedDescription
+                    return
+                }
+            } else if !location.isEmpty, FileManager.default.fileExists(atPath: location) {
                 base = URL(fileURLWithPath: location)
                 UserDefaults.standard.set(location, forKey: Pref.lastLocation)
             } else {
@@ -176,7 +234,7 @@ struct NewTaskSheet: View {
                 return
             }
         }
-        store.addTask(name: clean, clientID: clientID, folder: folder, start: startNow)
+        store.addTask(name: clean, clientID: clientID, folder: folder, start: startNow, incoming: !startNow)
         if let folder {
             if Pref.bool(Pref.openFinderOnCreate) { NSWorkspace.shared.open(folder) }
             if Pref.bool(Pref.openAEOnCreate), let ae = FolderService.aeFile(in: folder) {
@@ -186,15 +244,113 @@ struct NewTaskSheet: View {
         if folder != nil && FolderService.templateIsMissing {
             store.flash("Created “\(clean)” — no AE template set (Settings → Folders)")
         } else {
-            store.flash(startNow ? "Created “\(clean)” — timer running" : "Created “\(clean)”")
+            store.flash(startNow ? "Created “\(clean)” — timer running" : "Added “\(clean)” to Incoming")
         }
         dismiss()
     }
 }
 
-// MARK: - Done → log to sheet
+// MARK: - Done (in the app)
 
 struct DoneSheet: View {
+    @EnvironmentObject var store: Store
+    @Environment(\.dismiss) var dismiss
+    let taskID: UUID
+
+    @Local var name = ""
+    @Local var clientID: UUID? = nil
+    @Local var date = Date()
+    @Local var hours: Double = 0
+    @Local var loaded = false
+
+    private var task: TaskItem? { store.task(taskID) }
+    private var parent: TaskItem? { task.flatMap { store.parent(of: $0) } }
+
+    var body: some View {
+        SheetFrame(title: parent == nil ? "Finish Task" : "Finish Amend",
+                   subtitle: "Write the hours and the day", icon: "checkmark") {
+            FieldRow(label: parent == nil ? "Task name" : "Amend name") {
+                TextField(parent == nil ? "Task" : "Amend 1", text: $name).textFieldStyle(.roundedBorder)
+                if let p = parent {
+                    Text("Under “\(p.name)” · shown as “\(p.name) - \(name)”")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            FieldRow(label: "Client / Account") {
+                ClientPicker(selection: $clientID)
+            }
+
+            HStack(alignment: .top, spacing: 18) {
+                FieldRow(label: "Day") {
+                    DatePicker("", selection: $date, displayedComponents: .date)
+                        .labelsHidden()
+                        .datePickerStyle(.field)
+                }
+                FieldRow(label: "Hours") {
+                    HStack(spacing: 6) {
+                        TextField("", value: $hours, format: .number.precision(.fractionLength(0...2)))
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 70)
+                            .multilineTextAlignment(.trailing)
+                        Stepper("", onIncrement: { hours += 0.25 },
+                                onDecrement: { hours = max(0, hours - 0.25) })
+                            .labelsHidden()
+                        Text("h").foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
+            }
+
+            if let t = task {
+                Text("Timer: \(Fmt.clock(t.totalSeconds(at: store.now))) (≈ \(Fmt.hours(t.totalSeconds(at: store.now))) h). Hours are filled in to the nearest quarter — change them if needed.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            HStack {
+                Button("Save, keep In Progress") { save(.active) }
+                    .buttonStyle(GlassButtonStyle())
+                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                Spacer()
+                Button("Cancel") { dismiss() }
+                    .buttonStyle(GlassButtonStyle())
+                    .keyboardShortcut(.cancelAction)
+                Button { save(.complete) } label: { Label("Complete", systemImage: "checkmark") }
+                    .buttonStyle(GradientButtonStyle())
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .frame(width: 500)
+        .onAppear(perform: load)
+    }
+
+    private func load() {
+        guard !loaded, let t = task else { return }
+        loaded = true
+        name = t.name
+        clientID = t.clientID
+        date = t.workDate ?? Date()
+        let secs = t.totalSeconds(at: Date())
+        var h = (secs / 3600 * 4).rounded() / 4
+        if secs > 0 && h == 0 { h = 0.25 }
+        hours = h
+    }
+
+    private func save(_ status: TaskStatus) {
+        let n = name.trimmingCharacters(in: .whitespaces)
+        guard !n.isEmpty else { return }
+        store.complete(taskID, name: n, clientID: clientID, status: status,
+                       date: date, totalSeconds: max(0, hours) * 3600)
+        dismiss()
+    }
+}
+
+// MARK: - Done → log to sheet (used when Features.sheet is on)
+
+struct SheetDoneSheet: View {
     @EnvironmentObject var store: Store
     @Environment(\.dismiss) var dismiss
     let taskID: UUID
