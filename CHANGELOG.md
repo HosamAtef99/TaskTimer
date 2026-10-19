@@ -2,6 +2,9 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
+## 1.3.1
+- Fixed: Update could stay on "Installing…" when a window like Settings was open.
+
 ## 1.3
 - Reads the team sheet: accounts, status words and team members come from the sheet's dropdowns. Press Sync from Sheet after anything changes there.
 - Picks this month's tab by itself (or a tab you choose in Settings → Sheet).

@@ -253,6 +253,13 @@ final class UpdateManager: ObservableObject {
         try p.run()
         p.waitUntilExit()
         try? await Task.sleep(nanoseconds: 300_000_000)
+        // An open sheet (e.g. Settings) can stop the app from quitting, which leaves
+        // "Installing…" on screen forever. Close sheets first, and if the app still
+        // hasn't quit a few seconds later, exit — everything is already saved.
+        for w in NSApp.windows {
+            if let sheet = w.attachedSheet { w.endSheet(sheet) }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4) { exit(0) }
         NSApp.terminate(nil)
     }
 
