@@ -60,17 +60,19 @@ curl -fsSL https://raw.githubusercontent.com/mo-animation/TaskTimer/main/install
 - كل Amend ليه تايمر لوحده، ولما تعمل Done بيتسجل في **صف جديد في آخر الشيت** باسم `اسم التاسك - Amend 1` وبالوقت بتاعه بس.
 - تقدر تضيف أكتر من Amend تحت نفس التاسك. الكارت بيعرض وقت التاسك، وتحته **Total** للتاسك ومعاه كل الـ Amends.
 
-## التيم (من نسخة 1.5)
+## التيم
 
-- كل واحد يعمل حساب من **Settings ← Team ← Create Account**.
-- تاسكاته بتتنسخ لداتابيز التيم على Supabase، وهو بس اللي يقدر يعدّلها.
-- الليدر بيظهرله زرار **Team**: مين شغال على إيه دلوقتي والتايمر شغال، وكل تاسكات التيم بالشهر والعضو والحالة، وتصدير CSV، و**Assign Task** يبعت تاسك لـ Incoming عند أي حد.
-- الصلاحيات متحددة في الداتابيز نفسها (`Supabase/schema.sql`)، مش في البرنامج.
+- **الليدر هو اللي بيعمل حسابات التيم** من شاشة **Team ← Add Member** (الاسم، والإيميل، وباسورد البداية). الأعضاء بيعملوا Sign In بس من **Settings ← Team**، ويقدروا يغيّروا الباسورد من هناك.
+- تاسكات كل واحد بتتنسخ لداتابيز التيم، وهو بس اللي يقدر يعدّلها.
+- الليدر بيشوف مين شغال على إيه دلوقتي، وكل تاسكات التيم بالشهر والعضو والحالة، وتصدير CSV، و**Assign Task** يبعت تاسك لـ Incoming عند أي حد. كليك يمين على كارت أي حد: Reset Password أو Remove from Team.
+- الصلاحيات متحددة في الداتابيز نفسها (`Supabase/schema.sql`) وفي الـ Edge Function (`Supabase/functions/team-admin`)، مش في البرنامج.
 
-**إعداد مرة واحدة:**
-1. في Supabase: **SQL Editor ← New query**، الصق `Supabase/schema.sql` كله و Run.
-2. **Authentication ← Sign In / Providers ← Email**: اقفل **Confirm email** (عشان الحساب يشتغل على طول).
-3. بعد ما التيم يعملوا حساباتهم، شغّل أوامر "Setting up a team" اللي في آخر الملف (اسم التيم، الإيميلات، والليدر).
+**إعداد Supabase (مرة واحدة):**
+1. **SQL Editor ← New query**: الصق `Supabase/schema.sql` و Run.
+2. **Edge Functions ← Deploy a new function ← Via Editor**: الاسم `team-admin`، الصق `Supabase/functions/team-admin/index.ts`، و Deploy.
+3. **Authentication ← Sign In / Providers**: اقفل **Allow new users to sign up** (محدش يعمل حساب لنفسه).
+4. **Authentication ← Users ← Add user ← Create new user**: حساب الليدر، وعلّم **Auto Confirm User**.
+5. في SQL Editor: اعمل التيم وخلّي الحساب ده ليدر (الأوامر في آخر `schema.sql`).
 
 ## التحديثات
 

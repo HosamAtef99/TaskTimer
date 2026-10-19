@@ -559,11 +559,12 @@ struct SettingsView: View {
 struct AccountSection: View {
     @ObservedObject var auth = CloudAuth.shared
     @ObservedObject var cloud = CloudSync.shared
-    @Local var creating = false
     @Local var email = ""
     @Local var password = ""
-    @Local var name = ""
     @Local var editName = ""
+    @Local var newPassword = ""
+    @Local var newPassword2 = ""
+    @Local var passwordMessage: String? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -628,6 +629,8 @@ struct AccountSection: View {
                     Text("Synced \(Fmt.relative(d))").font(.system(size: 11)).foregroundStyle(.secondary)
                 }
             }
+            Divider()
+            passwordSection
             Text("Your tasks are copied to the team database so your leader can see them. Only you can change them.")
                 .font(.system(size: 11)).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -636,22 +639,11 @@ struct AccountSection: View {
 
     private var signInForm: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Picker("", selection: $creating) {
-                Text("Sign In").tag(false)
-                Text("Create Account").tag(true)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            if creating {
-                FieldRow(label: "Your name") {
-                    TextField("Hossam Atef", text: $name).textFieldStyle(.roundedBorder)
-                }
-            }
             FieldRow(label: "Email") {
-                TextField("you@socialeyes.com", text: $email).textFieldStyle(.roundedBorder)
+                TextField("you@company.com", text: $email).textFieldStyle(.roundedBorder)
             }
             FieldRow(label: "Password") {
-                SecureField(creating ? "At least 6 characters" : "Password", text: $password)
+                SecureField("Password", text: $password)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit(go)
             }
@@ -659,19 +651,46 @@ struct AccountSection: View {
                 Button(action: go) {
                     HStack(spacing: 6) {
                         if auth.busy { ProgressView().controlSize(.small).tint(.white) }
-                        Text(creating ? "Create Account" : "Sign In")
+                        Text("Sign In")
                     }
                 }
                 .buttonStyle(GradientButtonStyle(compact: true))
-                .disabled(auth.busy || email.isEmpty || password.isEmpty || (creating && name.trimmingCharacters(in: .whitespaces).isEmpty))
+                .disabled(auth.busy || email.isEmpty || password.isEmpty)
                 if let m = auth.message {
                     Text(m).font(.system(size: 11)).foregroundStyle(Theme.pink)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            Text("Signing in shares your tasks with your team leader. Without an account TaskTimer works on this Mac only.")
+            Text("Your team leader creates your account and gives you the email and password. After signing in you can change the password here.")
                 .font(.system(size: 11)).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var passwordSection: some View {
+        FieldRow(label: "Change password") {
+            HStack(spacing: 8) {
+                SecureField("New password (6+ characters)", text: $newPassword).textFieldStyle(.roundedBorder)
+                SecureField("Repeat it", text: $newPassword2).textFieldStyle(.roundedBorder)
+                Button("Change") {
+                    Task { @MainActor in
+                        if await auth.changePassword(newPassword) {
+                            newPassword = ""
+                            newPassword2 = ""
+                            passwordMessage = "Password changed ✓"
+                        } else {
+                            passwordMessage = nil
+                        }
+                    }
+                }
+                .buttonStyle(GlassButtonStyle(compact: true))
+                .disabled(auth.busy || newPassword.count < 6 || newPassword != newPassword2)
+            }
+            if let m = passwordMessage {
+                Text(m).font(.system(size: 11)).foregroundStyle(Theme.green)
+            } else if let m = auth.message {
+                Text(m).font(.system(size: 11)).foregroundStyle(Theme.pink)
+            }
         }
     }
 
@@ -679,11 +698,7 @@ struct AccountSection: View {
         let e = email.trimmingCharacters(in: .whitespaces).lowercased()
         guard !e.isEmpty, !password.isEmpty else { return }
         Task { @MainActor in
-            if creating {
-                await auth.signUp(email: e, password: password, name: name.trimmingCharacters(in: .whitespaces))
-            } else {
-                await auth.signIn(email: e, password: password)
-            }
+            await auth.signIn(email: e, password: password)
             if auth.signedIn { password = "" }
         }
     }

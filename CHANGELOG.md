@@ -2,6 +2,11 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
+## 1.6
+- Accounts are created by the team leader (Team → Add Member); members only sign in.
+- Members can change their password in Settings → Team.
+- Leaders can reset a member's password or remove them from the team (right-click their card).
+
 ## 1.5
 - Team accounts: sign in from Settings → Team. Your tasks are copied to the team database.
 - Team leaders get a Team window: who is working on what right now (live timers), every task by month, member and status, and export to CSV.

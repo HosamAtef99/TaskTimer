@@ -115,6 +115,21 @@ final class CloudAuth: ObservableObject {
         }
     }
 
+    /// Changes the signed-in person's own password.
+    func changePassword(_ newPassword: String) async -> Bool {
+        busy = true
+        defer { busy = false }
+        do {
+            let t = try await token()
+            _ = try await Self.authCall("user", ["password": newPassword], method: "PUT", bearer: t)
+            message = nil
+            return true
+        } catch {
+            message = error.localizedDescription
+            return false
+        }
+    }
+
     func signOut() {
         session = nil
         save()
@@ -167,11 +182,13 @@ final class CloudAuth: ObservableObject {
         save()
     }
 
-    nonisolated private static func authCall(_ path: String, _ body: [String: Any]) async throws -> [String: Any] {
+    nonisolated private static func authCall(_ path: String, _ body: [String: Any],
+                                             method: String = "POST", bearer: String? = nil) async throws -> [String: Any] {
         guard let url = URL(string: "\(Cloud.url)/auth/v1/\(path)") else { throw Cloud.CloudError("Bad URL") }
         var req = URLRequest(url: url, timeoutInterval: 30)
-        req.httpMethod = "POST"
+        req.httpMethod = method
         req.setValue(Cloud.anonKey, forHTTPHeaderField: "apikey")
+        if let bearer { req.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization") }
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
         let (data, resp) = try await URLSession.shared.data(for: req)

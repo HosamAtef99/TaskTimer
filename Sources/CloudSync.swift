@@ -316,6 +316,26 @@ final class CloudSync: ObservableObject {
         return (members, tasks)
     }
 
+    /// Leader only: create / reset / remove team accounts through the team-admin Edge Function.
+    @discardableResult
+    func teamAdmin(_ body: [String: Any]) async throws -> [String: Any] {
+        let token = try await CloudAuth.shared.token()
+        guard let url = URL(string: "\(Cloud.url)/functions/v1/team-admin") else { throw Cloud.CloudError("Bad URL") }
+        var req = URLRequest(url: url, timeoutInterval: 30)
+        req.httpMethod = "POST"
+        req.setValue(Cloud.anonKey, forHTTPHeaderField: "apikey")
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (data, resp) = try await URLSession.shared.data(for: req)
+        let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        if status == 404 {
+            throw Cloud.CloudError("The team-admin function isn't set up in Supabase yet.")
+        }
+        guard (200..<300).contains(status) else { throw Cloud.CloudError(Cloud.message(from: data, status: status)) }
+        return (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+    }
+
     /// Adds an Incoming task for a team member. It shows up in their app within a minute.
     func assign(to memberID: String, name: String, client: String) async throws {
         guard let me = CloudAuth.shared.session?.userID else { throw Cloud.CloudError("Not signed in.") }

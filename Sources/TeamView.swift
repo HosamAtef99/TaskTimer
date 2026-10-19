@@ -17,6 +17,9 @@ struct TeamView: View {
     @Local var statusFilter: String = ""      // "" = all
     @Local var search = ""
     @Local var showAssign = false
+    @Local var showAddMember = false
+    @Local var resetFor: TeamProfile? = nil
+    @Local var removeTarget: TeamProfile? = nil
     @Local var loadedAt: Date? = nil
 
     var body: some View {
@@ -48,6 +51,23 @@ struct TeamView: View {
         .sheet(isPresented: $showAssign) {
             AssignTaskSheet(members: members) { await load() }
                 .environmentObject(store)
+        }
+        .sheet(isPresented: $showAddMember) {
+            AddMemberSheet { await load() }
+                .environmentObject(store)
+        }
+        .sheet(item: $resetFor) { m in
+            ResetPasswordSheet(member: m)
+                .environmentObject(store)
+        }
+        .confirmationDialog("Remove \(removeTarget?.name ?? "") from the team?",
+                            isPresented: Binding(get: { removeTarget != nil },
+                                                 set: { if !$0 { removeTarget = nil } })) {
+            Button("Remove", role: .destructive) {
+                if let m = removeTarget { remove(m) }
+            }
+        } message: {
+            Text("They won't be able to sign in any more. Their past tasks stay in the team's history.")
         }
     }
 
@@ -99,6 +119,9 @@ struct TeamView: View {
             Button { exportCSV() } label: { Image(systemName: "square.and.arrow.up") }
                 .buttonStyle(CircleIconButtonStyle(size: 30))
                 .help("Export these tasks as a CSV file (opens in Excel / Google Sheets)")
+            Button { showAddMember = true } label: { Label("Add Member", systemImage: "person.badge.plus") }
+                .buttonStyle(GlassButtonStyle(compact: true))
+                .help("Create an account for someone in your team")
             Button { showAssign = true } label: { Label("Assign Task", systemImage: "plus") }
                 .buttonStyle(GradientButtonStyle(compact: true))
                 .disabled(members.isEmpty)
@@ -148,7 +171,17 @@ struct TeamView: View {
         .frame(width: 190, height: 88, alignment: .topLeading)
         .glassCard(radius: 12, highlight: running != nil)
         .onTapGesture { memberFilter = memberFilter == m.id ? "" : m.id }
-        .help("Click to show only \(m.name)'s tasks")
+        .help("Click to show only \(m.name)'s tasks · right-click for account options")
+        .contextMenu {
+            if m.id != CloudAuth.shared.session?.userID {
+                Button("Reset Password…") { resetFor = m }
+                Button("Remove from Team…", role: .destructive) { removeTarget = m }
+            }
+            Button("Copy Email") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(m.email, forType: .string)
+            }
+        }
     }
 
     // MARK: Table
@@ -276,6 +309,19 @@ struct TeamView: View {
         }
     }
 
+    private func remove(_ m: TeamProfile) {
+        removeTarget = nil
+        Task { @MainActor in
+            do {
+                try await cloud.teamAdmin(["action": "remove", "id": m.id])
+                store.flash("Removed \(m.name) from the team")
+                await load()
+            } catch {
+                self.error = error.localizedDescription
+            }
+        }
+    }
+
     private func exportCSV() {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.commaSeparatedText]
@@ -373,6 +419,185 @@ struct AssignTaskSheet: View {
                 try await CloudSync.shared.assign(to: memberID, name: n, client: c)
                 await onDone()
                 store.flash("Assigned “\(n)”")
+                dismiss()
+            } catch {
+                self.error = error.localizedDescription
+            }
+        }
+    }
+}
+
+// MARK: - Team accounts (leader)
+
+/// A readable starting password the leader can pass on; the member changes it after signing in.
+func suggestedPassword() -> String {
+    let words = ["tiger", "river", "pixel", "cloud", "frame", "orbit", "lemon", "comet", "maple", "storm"]
+    let w = words.randomElement() ?? "frame"
+    return "\(w.prefix(1).uppercased())\(w.dropFirst())-\(Int.random(in: 1000...9999))"
+}
+
+struct AddMemberSheet: View {
+    @EnvironmentObject var store: Store
+    @Environment(\.dismiss) var dismiss
+    let onDone: () async -> Void
+
+    @Local var name = ""
+    @Local var email = ""
+    @Local var password = suggestedPassword()
+    @Local var sending = false
+    @Local var error: String? = nil
+    @Local var created: String? = nil
+
+    var body: some View {
+        SheetFrame(title: "Add Member", subtitle: "Creates their TaskTimer account in your team", icon: "person.badge.plus") {
+            if let created {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("Account created ✓", systemImage: "checkmark.circle.fill")
+                        .font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.green)
+                    Text("Send them this, they sign in from Settings → Team:")
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                    Text(created)
+                        .font(.system(size: 12, design: .monospaced))
+                        .textSelection(.enabled)
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
+                    HStack {
+                        Button("Copy") {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(created, forType: .string)
+                            store.flash("Copied")
+                        }
+                        .buttonStyle(GlassButtonStyle(compact: true))
+                        Spacer()
+                        Button("Add Another") {
+                            self.created = nil
+                            name = ""; email = ""; password = suggestedPassword()
+                        }
+                        .buttonStyle(GlassButtonStyle())
+                        Button("Done") { dismiss() }
+                            .buttonStyle(GradientButtonStyle())
+                            .keyboardShortcut(.defaultAction)
+                    }
+                }
+            } else {
+                FieldRow(label: "Name") {
+                    TextField("e.g. Shereen", text: $name).textFieldStyle(.roundedBorder)
+                }
+                FieldRow(label: "Email") {
+                    TextField("name@company.com", text: $email).textFieldStyle(.roundedBorder)
+                }
+                FieldRow(label: "Starting password") {
+                    HStack {
+                        TextField("", text: $password)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(size: 12, design: .monospaced))
+                        Button { password = suggestedPassword() } label: { Image(systemName: "arrow.triangle.2.circlepath") }
+                            .buttonStyle(CircleIconButtonStyle(size: 26))
+                            .help("Another password")
+                    }
+                    Text("They can change it after signing in.")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+                if let error {
+                    Label(error, systemImage: "exclamationmark.triangle.fill")
+                        .font(.system(size: 12)).foregroundStyle(Theme.pink)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                HStack {
+                    Spacer()
+                    Button("Cancel") { dismiss() }
+                        .buttonStyle(GlassButtonStyle())
+                        .keyboardShortcut(.cancelAction)
+                    Button { send() } label: {
+                        HStack(spacing: 6) {
+                            if sending { ProgressView().controlSize(.small).tint(.white) }
+                            Text("Create Account")
+                        }
+                    }
+                    .buttonStyle(GradientButtonStyle())
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(sending || name.trimmingCharacters(in: .whitespaces).isEmpty
+                              || !email.contains("@") || password.count < 6)
+                }
+            }
+        }
+        .frame(width: 460)
+    }
+
+    private func send() {
+        sending = true
+        error = nil
+        let n = name.trimmingCharacters(in: .whitespaces)
+        let e = email.trimmingCharacters(in: .whitespaces).lowercased()
+        let p = password
+        Task { @MainActor in
+            defer { sending = false }
+            do {
+                try await CloudSync.shared.teamAdmin(["action": "create", "name": n, "email": e, "password": p])
+                created = "TaskTimer account\nEmail: \(e)\nPassword: \(p)"
+                await onDone()
+            } catch {
+                self.error = error.localizedDescription
+            }
+        }
+    }
+}
+
+struct ResetPasswordSheet: View {
+    @EnvironmentObject var store: Store
+    @Environment(\.dismiss) var dismiss
+    let member: TeamProfile
+
+    @Local var password = suggestedPassword()
+    @Local var sending = false
+    @Local var error: String? = nil
+
+    var body: some View {
+        SheetFrame(title: "Reset Password", subtitle: "\(member.name) · \(member.email)", icon: "key.fill") {
+            FieldRow(label: "New password") {
+                HStack {
+                    TextField("", text: $password)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 12, design: .monospaced))
+                    Button { password = suggestedPassword() } label: { Image(systemName: "arrow.triangle.2.circlepath") }
+                        .buttonStyle(CircleIconButtonStyle(size: 26))
+                }
+            }
+            if let error {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .font(.system(size: 12)).foregroundStyle(Theme.pink)
+            }
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                    .buttonStyle(GlassButtonStyle())
+                    .keyboardShortcut(.cancelAction)
+                Button { send() } label: {
+                    HStack(spacing: 6) {
+                        if sending { ProgressView().controlSize(.small).tint(.white) }
+                        Text("Reset & Copy")
+                    }
+                }
+                .buttonStyle(GradientButtonStyle())
+                .keyboardShortcut(.defaultAction)
+                .disabled(sending || password.count < 6)
+            }
+        }
+        .frame(width: 440)
+    }
+
+    private func send() {
+        sending = true
+        error = nil
+        let p = password
+        Task { @MainActor in
+            defer { sending = false }
+            do {
+                try await CloudSync.shared.teamAdmin(["action": "reset", "id": member.id, "password": p])
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString("TaskTimer\nEmail: \(member.email)\nNew password: \(p)", forType: .string)
+                store.flash("Password reset — copied to send to \(member.name)")
                 dismiss()
             } catch {
                 self.error = error.localizedDescription
