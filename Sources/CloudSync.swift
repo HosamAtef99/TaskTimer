@@ -359,6 +359,10 @@ final class CloudSync: ObservableObject {
         var loggedSeconds: Double?
         var taskID: UUID?
         var updatedAt: Date?
+        var submittedSeconds: Double?
+        var submittedAt: Date?
+        var submitNote: String?
+        var autoLinked: Bool
     }
 
     @Published private(set) var modheshTasks: [ModheshTask] = []
@@ -382,9 +386,14 @@ final class CloudSync: ObservableObject {
                                    statusTitle: (r["status_title"] as? String) ?? Self.modheshStatusTitle(status),
                                    loggedSeconds: (r["logged_seconds"] as? Double) ?? (r["logged_seconds"] as? Int).map(Double.init),
                                    taskID: (r["task_id"] as? String).flatMap { UUID(uuidString: $0) },
-                                   updatedAt: Cloud.date(r["updated_at"]))
+                                   updatedAt: Cloud.date(r["updated_at"]),
+                                   submittedSeconds: (r["submitted_seconds"] as? Double) ?? (r["submitted_seconds"] as? Int).map(Double.init),
+                                   submittedAt: Cloud.date(r["submitted_at"]),
+                                   submitNote: r["submit_note"] as? String,
+                                   autoLinked: (r["auto_linked"] as? Bool) ?? false)
             }
             modheshError = nil
+            announceNewModhesh(uid)
         } catch {
             let m = error.localizedDescription
             modheshError = m.contains("modhesh_tasks")
@@ -392,6 +401,26 @@ final class CloudSync: ObservableObject {
                 : m
         }
     }
+
+    /// New tasks on Modhesh (pending / in progress, not linked) since the last look.
+    @Published private(set) var newModheshCount = 0
+
+    private func announceNewModhesh(_ uid: String) {
+        let key = "modheshSeen-\(uid)"
+        let open = modheshTasks.filter { $0.taskID == nil && Self.modheshActive($0.status) }
+        let known = UserDefaults.standard.stringArray(forKey: key)
+        let fresh = open.filter { !(known ?? []).contains($0.code) }
+        UserDefaults.standard.set(Array(Set((known ?? []) + open.map(\.code))), forKey: key)
+        guard known != nil else { return }   // first look: don't announce everything
+        newModheshCount += fresh.count
+        guard !fresh.isEmpty else { return }
+        let names = fresh.prefix(3).map(\.title).joined(separator: ", ")
+        Store.shared.notify(title: fresh.count == 1 ? "New task on Modhesh" : "\(fresh.count) new tasks on Modhesh",
+                            body: names + " — open Modhesh in TaskTimer to link it.")
+        Store.shared.flash("New on Modhesh: \(names)")
+    }
+
+    func clearNewModhesh() { newModheshCount = 0 }
 
     /// Links a Modhesh task to a TaskTimer task (nil = unlink). The Chrome extension reads this link.
     func linkModhesh(_ code: String, to taskID: UUID?) async {

@@ -109,9 +109,22 @@ struct ModheshView: View {
                 .help("Best match by name and account")
             }
             Menu {
-                ForEach(suggestions.prefix(25), id: \.task.id) { c in
+                ForEach(suggestions.prefix(10), id: \.task.id) { c in
                     Button(store.displayName(c.task) + (store.clientName(c.task.clientID).isEmpty ? "" : "  — \(store.clientName(c.task.clientID))")) {
                         Task { @MainActor in await cloud.linkModhesh(m.code, to: c.task.id) }
+                    }
+                }
+                Divider()
+                Menu("All tasks and amends") {
+                    ForEach(store.tasks.filter { $0.parentID == nil }) { t in
+                        Button(t.name) {
+                            Task { @MainActor in await cloud.linkModhesh(m.code, to: t.id) }
+                        }
+                        ForEach(store.subtasks(of: t.id)) { a in
+                            Button("      ↳ \(a.name)") {
+                                Task { @MainActor in await cloud.linkModhesh(m.code, to: a.id) }
+                            }
+                        }
                     }
                 }
                 Divider()
@@ -133,8 +146,17 @@ struct ModheshView: View {
             if let id = m.taskID, let t = store.task(id) {
                 VStack(alignment: .trailing, spacing: 2) {
                     Text(store.displayName(t)).font(.system(size: 12, weight: .medium)).lineLimit(1)
-                    Text("\(Fmt.hours(t.totalSeconds(at: store.now))) h in TaskTimer")
+                    Text("\(Fmt.hours(t.totalSeconds(at: store.now))) h in TaskTimer" + (m.autoLinked ? " · linked by name" : ""))
                         .font(.system(size: 10)).foregroundStyle(.secondary)
+                    if let at = m.submittedAt {
+                        Text("Sent to approver \(Fmt.relative(at)) · \(Fmt.hours(m.submittedSeconds ?? 0)) h")
+                            .font(.system(size: 10, weight: .semibold)).foregroundStyle(Theme.green)
+                    } else if let note = m.submitNote, !note.isEmpty {
+                        Text(note).font(.system(size: 10)).foregroundStyle(Theme.orange).lineLimit(2)
+                    } else if t.status != .complete {
+                        Text("Sent to approver when you press Done")
+                            .font(.system(size: 10)).foregroundStyle(.tertiary)
+                    }
                 }
             }
             Button("Unlink") {

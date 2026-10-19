@@ -2,6 +2,13 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
+## 1.14
+- Modhesh, hands-off: the Chrome extension (2.0) reads your Modhesh tasks every 5 minutes without opening Modhesh, links them to TaskTimer tasks with the same (or clearly matching) name, and when a linked task is Done in TaskTimer it logs the time on Modhesh by itself and sends it to your team leader for approval. The same hours are never sent twice.
+- New Modhesh tasks: TaskTimer sends a notification and the Modhesh button lights up.
+- Link a Modhesh task to an amend: "All tasks and amends" in the link menu.
+- The Modhesh window shows what was sent to the approver and when.
+- Run the latest schema.sql once (adds the sent-to-approver columns).
+
 ## 1.13.1
 - Chrome extension 1.2: Log Time opens with "No Challenges at all" ticked; tick something else if needed.
 

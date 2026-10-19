@@ -93,11 +93,19 @@ struct MainView: View {
             }
             if cloud.profile != nil {
                 let open = cloud.modheshTasks.filter { $0.taskID == nil && CloudSync.modheshActive($0.status) }.count
-                Button { showModhesh = true } label: {
-                    Label(open > 0 ? "Modhesh (\(open))" : "Modhesh", systemImage: "link")
+                if cloud.newModheshCount > 0 {
+                    Button { showModhesh = true; cloud.clearNewModhesh() } label: {
+                        Label("Modhesh · \(cloud.newModheshCount) new", systemImage: "bell.badge.fill")
+                    }
+                    .buttonStyle(GradientButtonStyle(compact: true))
+                    .help("New tasks arrived on Modhesh")
+                } else {
+                    Button { showModhesh = true } label: {
+                        Label(open > 0 ? "Modhesh (\(open))" : "Modhesh", systemImage: "link")
+                    }
+                    .buttonStyle(GlassButtonStyle(compact: true))
+                    .help("Link Modhesh tasks to your TaskTimer tasks")
                 }
-                .buttonStyle(GlassButtonStyle(compact: true))
-                .help("Link Modhesh tasks to your TaskTimer tasks")
             }
             if cloud.isLeader {
                 Button { showTeam = true } label: { Label("Team", systemImage: "person.3.fill") }

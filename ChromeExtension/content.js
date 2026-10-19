@@ -192,6 +192,7 @@
     const ranked = tasks
       .map((t) => ({ t, score: similarity(title, t.display) }))
       .sort((a, b) => b.score - a.score || new Date(b.t.created_at) - new Date(a.t.created_at));
+    // Amends (subtasks) show as "Task - Amend 1"; they can be linked like any task.
     const select = el('select', { class: 'tt-select' },
       el('option', { value: '' }, 'Choose the TaskTimer task…'),
       ...ranked.slice(0, 60).map(({ t }) => el('option', { value: t.id }, `${t.display}  ·  ${hours(liveSeconds(t))} h`)));
@@ -275,6 +276,7 @@
     }
 
     let approverNote = '';
+    let approver = '';
     const done = form.querySelector('[name=status]');
     if (v.complete && done && !done.checked) done.click();
     if (v.complete) {
@@ -292,14 +294,122 @@
           select.value = opt.value;
           select.dispatchEvent(new Event('change', { bubbles: true }));
           approverNote = ` · Approver: ${opt.textContent.trim()}`;
+          approver = opt.textContent.trim();
         } else {
           approverNote = ` · Couldn't find ${leader.full_name || 'your leader'} in the Approver list — pick them`;
         }
+      } else if (select) {
+        approverNote = ' · No team leader found in TaskTimer — pick the approver';
       }
     }
-    body.replaceChildren(el('div', { class: 'tt-done' },
-      `Filled ✓ ${Math.floor(mins / 60)}h ${mins % 60}m${approverNote}. Check it, then press Save.`));
+    if (body) {
+      body.replaceChildren(el('div', { class: 'tt-done' },
+        `Filled ✓ ${Math.floor(mins / 60)}h ${mins % 60}m${approverNote}. Check it, then press Save.`));
+    }
+    return { mins, approver, approverNote };
   }
+
+  // ───────────── Logging by itself (jobs from the background worker) ─────────────
+
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const visible = (e) => !!(e && (e.offsetWidth || e.offsetHeight || e.getClientRects().length));
+
+  async function waitFor(fn, ms = 15000) {
+    const end = Date.now() + ms;
+    while (Date.now() < end) {
+      const v = fn();
+      if (v) return v;
+      await sleep(300);
+    }
+    return null;
+  }
+
+  function closeModal() {
+    const m = document.getElementById('ajaxmodel');
+    const x = m && m.querySelector('[data-bs-dismiss=modal], .btn-close, .close');
+    if (x) x.click();
+  }
+
+  function pageError() {
+    const sel = '.swal2-html-container, .swal2-title, .toast-error .toast-message, .invalid-feedback, #ajaxmodel .text-danger, #ajaxmodel .alert-danger';
+    const e = [...document.querySelectorAll(sel)].find((x) => visible(x) && x.textContent.trim());
+    return e ? e.textContent.trim().slice(0, 160) : '';
+  }
+
+  async function submitLogTime(job) {
+    const btn = await waitFor(() =>
+      document.querySelector(`[data-action-url$="/tasks/log-time"][data-post-task_id="${CSS.escape(job.code)}"]`), 25000);
+    if (!btn) throw new Error('It isn\'t In Progress on Modhesh (no Log Time button)');
+    btn.click();
+    const form = await waitFor(() => {
+      const f = document.querySelector('form#add_members');
+      return f && (f.querySelector('[name=task_id]') || {}).value === job.code ? f : null;
+    });
+    if (!form) throw new Error('Log Time didn\'t open');
+    await sleep(500);
+
+    const r = await fillLogTime(form, null, job);
+    if (!r.approver) {
+      closeModal();
+      throw new Error(r.approverNote.replace(/^ · /, '') || 'No approver');
+    }
+    if (r.mins < 1) {
+      closeModal();
+      throw new Error('Nothing to log');
+    }
+    await sleep(400);
+
+    const modal = document.getElementById('ajaxmodel');
+    const save = [...modal.querySelectorAll('button, input[type=submit]')]
+      .find((b) => /^\s*save\s*$/i.test(b.textContent || b.value || '')) || form.querySelector('[type=submit]');
+    if (!save) {
+      closeModal();
+      throw new Error('Save button not found');
+    }
+    save.click();
+
+    // Success: the window closes (or the form is replaced). Failure: an error message shows.
+    const result = await waitFor(() => {
+      const err = pageError();
+      if (err) return { err };
+      if (!document.contains(form) || !modal.classList.contains('show')) return { ok: true };
+      return null;
+    }, 20000);
+    if (!result || result.err) {
+      const why = (result && result.err) || 'Modhesh didn\'t confirm';
+      closeModal();
+      throw new Error(why);
+    }
+    return `Logged ${Math.floor(r.mins / 60)}h ${r.mins % 60}m · approver ${r.approver}`;
+  }
+
+  let jobsRunning = false;
+  async function runJobs(jobs) {
+    if (jobsRunning) return;
+    if (!jobs || !jobs.length) { chrome.runtime.sendMessage({ type: 'allDone' }).catch(() => {}); return; }
+    jobsRunning = true;
+    try {
+      for (const job of jobs) {
+        let ok = false, note = '';
+        try {
+          note = await submitLogTime(job);
+          ok = true;
+        } catch (e) {
+          note = e.message;
+        }
+        log(ok ? 'logged' : 'failed', job.code, note);
+        await chrome.runtime.sendMessage({ type: 'jobDone', job, ok, note }).catch(() => {});
+        await sleep(1500);
+      }
+    } finally {
+      jobsRunning = false;
+      chrome.runtime.sendMessage({ type: 'allDone' }).catch(() => {});
+    }
+  }
+
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (msg.type === 'jobs') runJobs(msg.jobs);
+  });
 
   // Task Details (Start Date)
 
@@ -391,6 +501,13 @@
 
   new MutationObserver(() => scan()).observe(document.documentElement, { childList: true, subtree: true });
   scan();
+
+  if (location.pathname.startsWith('/tasks/my')) {
+    // Anything to log by itself? (the background worker may have opened this tab for it)
+    setTimeout(() => {
+      chrome.runtime.sendMessage({ type: 'getJobs' }).then((r) => runJobs(r && r.jobs)).catch(() => {});
+    }, 2500);
+  }
 
   if (location.pathname.startsWith('/tasks')) {
     let badgeTimer = null;

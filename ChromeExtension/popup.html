@@ -13,6 +13,9 @@
     button.plain { background: #f2f2f7; color: #1d1d1f; }
     .err { color: #ff375f; margin-top: 10px; font-size: 12px; }
     .ok { color: #248a3d; font-weight: 600; }
+    label.row { display: flex; gap: 8px; align-items: flex-start; text-transform: none; letter-spacing: 0; font-weight: 500;
+                font-size: 12px; color: #1d1d1f; margin: 10px 0 0; }
+    label.row input { width: auto; margin-top: 2px; }
   </style>
 </head>
 <body>
@@ -29,7 +32,11 @@
   <div id="in" hidden>
     <p class="ok">Signed in ✓</p>
     <p id="who"></p>
-    <p>Open your tasks on Modhesh: they're sent to TaskTimer, and Log Time gets a <b>Fill from TaskTimer</b> bar.</p>
+    <p>Open your tasks on Modhesh now and then so TaskTimer sees new ones. When a linked task is Done in TaskTimer, its time is logged on Modhesh for you.</p>
+    <label class="row"><input type="checkbox" id="autoLink"> Link Modhesh tasks to TaskTimer tasks with the same name</label>
+    <label class="row"><input type="checkbox" id="autoSubmit"> Log finished tasks on Modhesh by themselves (sent to your team leader)</label>
+    <button id="runNow">Check now</button>
+    <div id="runMsg" class="ok" style="margin-top:8px"></div>
     <button id="signout" class="plain">Sign Out</button>
   </div>
   <script src="tasktimer.js"></script>

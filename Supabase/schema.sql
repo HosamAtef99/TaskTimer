@@ -68,6 +68,12 @@ create table if not exists public.modhesh_tasks (
   primary key (user_id, code)
 );
 
+-- What the extension sent to Modhesh's Log Time by itself.
+alter table public.modhesh_tasks add column if not exists submitted_seconds double precision;
+alter table public.modhesh_tasks add column if not exists submitted_at timestamptz;
+alter table public.modhesh_tasks add column if not exists submit_note text;
+alter table public.modhesh_tasks add column if not exists auto_linked boolean not null default false;
+
 -- ───────────────────────── Helpers ─────────────────────────
 
 create or replace function public.my_team() returns uuid
