@@ -77,6 +77,7 @@ final class Store: ObservableObject {
         enc.outputFormatting = [.prettyPrinted, .sortedKeys]
         guard let data = try? enc.encode(AppData(tasks: tasks, clients: clients)) else { return }
         try? data.write(to: fileURL, options: .atomic)
+        CloudSync.shared.scheduleSync()
     }
 
     var dataFolder: URL { fileURL.deletingLastPathComponent() }
@@ -228,6 +229,17 @@ final class Store: ObservableObject {
         }
         tasks.insert(t, at: 0)
         return t.id
+    }
+
+    /// A task the team leader added for you (arrives from the team database).
+    func adoptAssigned(id: UUID, name: String, client: String, createdAt: Date) {
+        guard task(id) == nil else { return }
+        let clientID = client.isEmpty ? nil : addClient(client)?.id
+        var t = TaskItem(name: name, clientID: clientID, folderPath: nil)
+        t.id = id
+        t.createdAt = createdAt
+        t.status = .incoming
+        tasks.insert(t, at: 0)
     }
 
     /// Imports an existing folder as a task (re-uses its saved info if present).

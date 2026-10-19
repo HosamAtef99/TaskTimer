@@ -1,0 +1,382 @@
+import SwiftUI
+import AppKit
+import UniformTypeIdentifiers
+
+/// Team leader's view: who is working on what right now, and every task of the team by month.
+struct TeamView: View {
+    @EnvironmentObject var store: Store
+    @Environment(\.dismiss) var dismiss
+    @ObservedObject var cloud = CloudSync.shared
+
+    @Local var month: Date = Calendar.current.dateInterval(of: .month, for: Date())?.start ?? Date()
+    @Local var members: [TeamProfile] = []
+    @Local var tasks: [TeamTask] = []
+    @Local var loading = false
+    @Local var error: String? = nil
+    @Local var memberFilter: String = ""      // "" = everyone
+    @Local var statusFilter: String = ""      // "" = all
+    @Local var search = ""
+    @Local var showAssign = false
+    @Local var loadedAt: Date? = nil
+
+    var body: some View {
+        SheetFrame(title: cloud.teamName ?? "Team",
+                   subtitle: "Everyone's tasks and live timers", icon: "person.3.fill") {
+            controls
+            if let error {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .font(.system(size: 12)).foregroundStyle(Theme.pink)
+            }
+            nowStrip
+            taskTable
+            HStack {
+                Text(loadedAt.map { "Updated \(Fmt.relative($0)) · refreshes every 30 seconds" } ?? "")
+                    .font(.system(size: 10)).foregroundStyle(.tertiary)
+                Spacer()
+                Button("Done") { dismiss() }
+                    .buttonStyle(GradientButtonStyle())
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .frame(width: 900, height: 700)
+        .task(id: month) {
+            while !Task.isCancelled {
+                await load()
+                try? await Task.sleep(nanoseconds: 30_000_000_000)
+            }
+        }
+        .sheet(isPresented: $showAssign) {
+            AssignTaskSheet(members: members) { await load() }
+                .environmentObject(store)
+        }
+    }
+
+    // MARK: Controls
+
+    private var monthChoices: [Date] {
+        let cal = Calendar.current
+        let now = cal.dateInterval(of: .month, for: Date())?.start ?? Date()
+        return (0..<12).compactMap { cal.date(byAdding: .month, value: -$0, to: now) }
+    }
+
+    private var controls: some View {
+        HStack(spacing: 10) {
+            Picker("", selection: $month) {
+                ForEach(monthChoices, id: \.self) { m in
+                    Text(Fmt.monthYear.string(from: m)).tag(m)
+                }
+            }
+            .labelsHidden().frame(width: 160)
+
+            Picker("", selection: $memberFilter) {
+                Text("Everyone").tag("")
+                ForEach(members) { m in Text(m.name).tag(m.id) }
+            }
+            .labelsHidden().frame(width: 170)
+
+            Picker("", selection: $statusFilter) {
+                Text("All statuses").tag("")
+                Text("Incoming").tag("incoming")
+                Text("In Progress").tag("active")
+                Text("Completed").tag("complete")
+            }
+            .labelsHidden().frame(width: 130)
+
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                TextField("Task or account", text: $search).textFieldStyle(.plain)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .background(.thinMaterial, in: Capsule())
+
+            Spacer()
+
+            Button { Task { @MainActor in await load() } } label: {
+                if loading { ProgressView().controlSize(.small) } else { Image(systemName: "arrow.clockwise") }
+            }
+            .buttonStyle(CircleIconButtonStyle(size: 30))
+            .help("Refresh")
+            Button { exportCSV() } label: { Image(systemName: "square.and.arrow.up") }
+                .buttonStyle(CircleIconButtonStyle(size: 30))
+                .help("Export these tasks as a CSV file (opens in Excel / Google Sheets)")
+            Button { showAssign = true } label: { Label("Assign Task", systemImage: "plus") }
+                .buttonStyle(GradientButtonStyle(compact: true))
+                .disabled(members.isEmpty)
+        }
+    }
+
+    // MARK: Now
+
+    private var nowStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(members) { m in
+                    memberCard(m)
+                }
+            }
+            .padding(2)
+        }
+        .frame(height: 96)
+    }
+
+    private func memberCard(_ m: TeamProfile) -> some View {
+        let mine = tasks.filter { $0.userID == m.id }
+        let running = mine.first { $0.isRunning }
+        let monthSecs = mine.filter { Calendar.current.isDate($0.createdAt, equalTo: month, toGranularity: .month) }
+            .reduce(0) { $0 + $1.liveSeconds(at: store.now) }
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Circle().fill(running != nil ? Theme.green : Color.secondary.opacity(0.4)).frame(width: 8, height: 8)
+                Text(m.name).font(.system(size: 12, weight: .semibold)).lineLimit(1)
+                if m.isLeader {
+                    Text("Leader").font(.system(size: 9, weight: .semibold)).foregroundStyle(Theme.purple)
+                }
+            }
+            if let r = running {
+                Text(displayName(r)).font(.system(size: 11)).lineLimit(1)
+                Text(Fmt.clock(r.liveSeconds(at: store.now)))
+                    .font(.system(size: 15, weight: .semibold, design: .rounded).monospacedDigit())
+                    .gradientText()
+            } else {
+                Text("Idle").font(.system(size: 11)).foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+            }
+            Text("\(Fmt.hours(monthSecs)) h this month · \(mine.filter { $0.status == "incoming" }.count) incoming")
+                .font(.system(size: 10)).foregroundStyle(.tertiary)
+        }
+        .padding(10)
+        .frame(width: 190, height: 88, alignment: .topLeading)
+        .glassCard(radius: 12, highlight: running != nil)
+        .onTapGesture { memberFilter = memberFilter == m.id ? "" : m.id }
+        .help("Click to show only \(m.name)'s tasks")
+    }
+
+    // MARK: Table
+
+    private var filtered: [TeamTask] {
+        let q = search.trimmingCharacters(in: .whitespaces)
+        let cal = Calendar.current
+        return tasks.filter { t in
+            guard cal.isDate(t.createdAt, equalTo: month, toGranularity: .month) || t.isRunning else { return false }
+            if !memberFilter.isEmpty && t.userID != memberFilter { return false }
+            if !statusFilter.isEmpty && t.status != statusFilter { return false }
+            if !q.isEmpty && !displayName(t).localizedCaseInsensitiveContains(q)
+                && !t.client.localizedCaseInsensitiveContains(q) { return false }
+            return true
+        }
+    }
+
+    private var taskTable: some View {
+        let rows = filtered
+        let total = rows.reduce(0) { $0 + $1.liveSeconds(at: store.now) }
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                SectionLabel(text: "\(rows.count) tasks · \(Fmt.hours(total)) h")
+                Spacer()
+            }
+            HStack(spacing: 0) {
+                header("Date", 70)
+                header("Member", 130)
+                header("Task", nil)
+                header("Account", 150)
+                header("Status", 90)
+                header("Hours", 60)
+            }
+            ScrollView {
+                LazyVStack(spacing: 4) {
+                    ForEach(rows) { t in
+                        HStack(spacing: 0) {
+                            cell(Fmt.nice.string(from: t.workDate ?? t.createdAt), 70, secondary: true)
+                            cell(memberName(t.userID), 130)
+                            HStack(spacing: 6) {
+                                if t.isRunning {
+                                    Image(systemName: "record.circle").foregroundStyle(Theme.green).font(.system(size: 10))
+                                }
+                                Text(displayName(t)).lineLimit(1)
+                                if t.assignedBy != nil {
+                                    Image(systemName: "arrow.down.circle").font(.system(size: 10)).foregroundStyle(.tertiary)
+                                        .help("Assigned by the leader")
+                                }
+                            }
+                            .font(.system(size: 12))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            cell(t.client.isEmpty ? "—" : t.client, 150, secondary: true)
+                            Text(t.statusTitle)
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(statusColor(t.status))
+                                .frame(width: 90, alignment: .leading)
+                            Text(Fmt.hours(t.liveSeconds(at: store.now)))
+                                .font(.system(size: 12, weight: .medium).monospacedDigit())
+                                .frame(width: 60, alignment: .trailing)
+                        }
+                        .padding(.horizontal, 10).padding(.vertical, 6)
+                        .background(Color.primary.opacity(t.isRunning ? 0.08 : 0.035), in: RoundedRectangle(cornerRadius: 8))
+                    }
+                }
+            }
+            .overlay {
+                if rows.isEmpty && !loading {
+                    Text(members.isEmpty ? "No team members yet." : "No tasks for this filter.")
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private func header(_ s: String, _ width: CGFloat?) -> some View {
+        Text(s.uppercased())
+            .font(.system(size: 9, weight: .semibold))
+            .tracking(0.6)
+            .foregroundStyle(.secondary)
+            .frame(width: width, alignment: s == "Hours" ? .trailing : .leading)
+            .frame(maxWidth: width == nil ? .infinity : nil, alignment: .leading)
+            .padding(.horizontal, width == nil ? 0 : 0)
+            .padding(.leading, s == "Date" ? 10 : 0)
+            .padding(.trailing, s == "Hours" ? 10 : 0)
+    }
+
+    private func cell(_ s: String, _ width: CGFloat, secondary: Bool = false) -> some View {
+        Text(s)
+            .font(.system(size: 12))
+            .foregroundStyle(secondary ? AnyShapeStyle(HierarchicalShapeStyle.secondary) : AnyShapeStyle(HierarchicalShapeStyle.primary))
+            .lineLimit(1)
+            .frame(width: width, alignment: .leading)
+    }
+
+    private func statusColor(_ s: String) -> Color {
+        switch s {
+        case "incoming": return Theme.purple
+        case "complete": return Theme.green
+        default: return Theme.blue
+        }
+    }
+
+    private func memberName(_ id: String) -> String {
+        members.first { $0.id == id }?.name ?? "—"
+    }
+
+    private func displayName(_ t: TeamTask) -> String {
+        if let p = t.parentID, let parent = tasks.first(where: { $0.id == p }) { return "\(parent.name) - \(t.name)" }
+        return t.name
+    }
+
+    // MARK: Actions
+
+    private func load() async {
+        loading = true
+        defer { loading = false }
+        do {
+            let r = try await cloud.loadTeam(month: month)
+            members = r.members
+            tasks = r.tasks
+            error = nil
+            loadedAt = Date()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func exportCSV() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.commaSeparatedText]
+        panel.nameFieldStringValue = "\(cloud.teamName ?? "Team") - \(Fmt.monthYear.string(from: month)).csv"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        func q(_ s: String) -> String { "\"" + s.replacingOccurrences(of: "\"", with: "\"\"") + "\"" }
+        var lines = ["Date,Member,Task,Account,Status,Hours"]
+        for t in filtered.sorted(by: { ($0.workDate ?? $0.createdAt) < ($1.workDate ?? $1.createdAt) }) {
+            lines.append([
+                Fmt.isoDay.string(from: t.workDate ?? t.createdAt),
+                q(memberName(t.userID)), q(displayName(t)), q(t.client), t.statusTitle,
+                Fmt.hours(t.liveSeconds(at: Date())),
+            ].joined(separator: ","))
+        }
+        // The BOM lets Excel read Arabic names correctly.
+        let text = "\u{FEFF}" + lines.joined(separator: "\n")
+        do {
+            try text.write(to: url, atomically: true, encoding: .utf8)
+            store.flash("Exported \(filtered.count) tasks")
+        } catch {
+            store.flash("Export failed: \(error.localizedDescription)")
+        }
+    }
+}
+
+// MARK: - Assign a task
+
+struct AssignTaskSheet: View {
+    @EnvironmentObject var store: Store
+    @Environment(\.dismiss) var dismiss
+    let members: [TeamProfile]
+    let onDone: () async -> Void
+
+    @Local var memberID: String = ""
+    @Local var name = ""
+    @Local var client = ""
+    @Local var sending = false
+    @Local var error: String? = nil
+
+    var body: some View {
+        SheetFrame(title: "Assign Task", subtitle: "It goes to their Incoming within a minute", icon: "tray.and.arrow.down.fill") {
+            FieldRow(label: "To") {
+                Picker("", selection: $memberID) {
+                    Text("— Choose —").tag("")
+                    ForEach(members) { m in Text(m.name).tag(m.id) }
+                }
+                .labelsHidden()
+            }
+            FieldRow(label: "Task name") {
+                TextField("e.g. Ramadan Promo 15s", text: $name).textFieldStyle(.roundedBorder)
+            }
+            FieldRow(label: "Client / Account") {
+                HStack(spacing: 8) {
+                    TextField("Account", text: $client).textFieldStyle(.roundedBorder)
+                    if !store.clients.isEmpty {
+                        Menu {
+                            ForEach(store.clients) { c in Button(c.name) { client = c.name } }
+                        } label: { Text("Pick") }
+                            .menuStyle(.borderlessButton)
+                            .fixedSize()
+                    }
+                }
+            }
+            if let error {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .font(.system(size: 12)).foregroundStyle(Theme.pink)
+            }
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                    .buttonStyle(GlassButtonStyle())
+                    .keyboardShortcut(.cancelAction)
+                Button { send() } label: {
+                    HStack(spacing: 6) {
+                        if sending { ProgressView().controlSize(.small).tint(.white) }
+                        Text("Assign")
+                    }
+                }
+                .buttonStyle(GradientButtonStyle())
+                .keyboardShortcut(.defaultAction)
+                .disabled(sending || memberID.isEmpty || name.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .frame(width: 460)
+    }
+
+    private func send() {
+        sending = true
+        error = nil
+        let n = name.trimmingCharacters(in: .whitespaces)
+        let c = client.trimmingCharacters(in: .whitespaces)
+        Task { @MainActor in
+            defer { sending = false }
+            do {
+                try await CloudSync.shared.assign(to: memberID, name: n, client: c)
+                await onDone()
+                store.flash("Assigned “\(n)”")
+                dismiss()
+            } catch {
+                self.error = error.localizedDescription
+            }
+        }
+    }
+}

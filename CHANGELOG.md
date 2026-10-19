@@ -2,6 +2,11 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
+## 1.5
+- Team accounts: sign in from Settings → Team. Your tasks are copied to the team database.
+- Team leaders get a Team window: who is working on what right now (live timers), every task by month, member and status, and export to CSV.
+- Leaders can assign a task; it lands in the member's Incoming.
+
 ## 1.4
 - No more Google Sheet: everything stays in the app (the sheet code is kept aside, switched off).
 - Incoming: add a task now and press Start later. Incoming → In Progress → Completed.

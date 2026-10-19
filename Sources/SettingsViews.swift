@@ -198,6 +198,7 @@ struct SettingsView: View {
         SheetFrame(title: "Settings", subtitle: Features.sheet ? "Your name, the team sheet, and folders" : "Folders and general options", icon: "gearshape.fill") {
             Picker("", selection: $tab) {
                 if Features.sheet { Text("Sheet").tag(0) }
+                Text("Team").tag(3)
                 Text("Folders").tag(1)
                 Text("General").tag(2)
             }
@@ -207,6 +208,7 @@ struct SettingsView: View {
             Group {
                 switch tab {
                 case 0: sheetTab
+                case 3: AccountSection()
                 case 1: foldersTab
                 default: generalTab
                 }
@@ -551,6 +553,141 @@ struct SettingsView: View {
     }
 }
 
+
+// MARK: - Team account
+
+struct AccountSection: View {
+    @ObservedObject var auth = CloudAuth.shared
+    @ObservedObject var cloud = CloudSync.shared
+    @Local var creating = false
+    @Local var email = ""
+    @Local var password = ""
+    @Local var name = ""
+    @Local var editName = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if let s = auth.session {
+                signedIn(s)
+            } else {
+                signInForm
+            }
+        }
+    }
+
+    private func signedIn(_ s: CloudSession) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 12) {
+                Image(systemName: "person.crop.circle.fill")
+                    .font(.system(size: 34))
+                    .foregroundStyle(Theme.cool)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(cloud.profile?.name ?? s.email).font(.system(size: 15, weight: .semibold))
+                    Text(s.email).font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Sign Out") { auth.signOut() }
+                    .buttonStyle(GlassButtonStyle(compact: true))
+            }
+            Divider()
+            if let p = cloud.profile {
+                if let team = cloud.teamName {
+                    Label("Team: \(team)" + (p.isLeader ? " · Leader" : ""), systemImage: "person.3.fill")
+                        .font(.system(size: 12))
+                } else {
+                    Label("Not in a team yet — ask your team leader to add \(s.email).", systemImage: "person.3")
+                        .font(.system(size: 12)).foregroundStyle(Theme.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                FieldRow(label: "Your name (what your leader sees)") {
+                    HStack {
+                        TextField(p.name, text: $editName).textFieldStyle(.roundedBorder)
+                        Button("Save") {
+                            let n = editName.trimmingCharacters(in: .whitespaces)
+                            guard !n.isEmpty else { return }
+                            Task { @MainActor in await cloud.rename(n); editName = "" }
+                        }
+                        .buttonStyle(GlassButtonStyle(compact: true))
+                        .disabled(editName.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
+                }
+            }
+            HStack(spacing: 10) {
+                Button {
+                    Task { @MainActor in
+                        await cloud.loadProfile()
+                        await cloud.pushNow()
+                        await cloud.pull()
+                    }
+                } label: { Label("Sync Now", systemImage: "arrow.triangle.2.circlepath") }
+                    .buttonStyle(GradientButtonStyle(compact: true))
+                if let e = cloud.error {
+                    Text(e).font(.system(size: 11)).foregroundStyle(Theme.pink)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else if let d = cloud.lastSync {
+                    Text("Synced \(Fmt.relative(d))").font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+            }
+            Text("Your tasks are copied to the team database so your leader can see them. Only you can change them.")
+                .font(.system(size: 11)).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var signInForm: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Picker("", selection: $creating) {
+                Text("Sign In").tag(false)
+                Text("Create Account").tag(true)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            if creating {
+                FieldRow(label: "Your name") {
+                    TextField("Hossam Atef", text: $name).textFieldStyle(.roundedBorder)
+                }
+            }
+            FieldRow(label: "Email") {
+                TextField("you@socialeyes.com", text: $email).textFieldStyle(.roundedBorder)
+            }
+            FieldRow(label: "Password") {
+                SecureField(creating ? "At least 6 characters" : "Password", text: $password)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit(go)
+            }
+            HStack(spacing: 10) {
+                Button(action: go) {
+                    HStack(spacing: 6) {
+                        if auth.busy { ProgressView().controlSize(.small).tint(.white) }
+                        Text(creating ? "Create Account" : "Sign In")
+                    }
+                }
+                .buttonStyle(GradientButtonStyle(compact: true))
+                .disabled(auth.busy || email.isEmpty || password.isEmpty || (creating && name.trimmingCharacters(in: .whitespaces).isEmpty))
+                if let m = auth.message {
+                    Text(m).font(.system(size: 11)).foregroundStyle(Theme.pink)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Text("Signing in shares your tasks with your team leader. Without an account TaskTimer works on this Mac only.")
+                .font(.system(size: 11)).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func go() {
+        let e = email.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !e.isEmpty, !password.isEmpty else { return }
+        Task { @MainActor in
+            if creating {
+                await auth.signUp(email: e, password: password, name: name.trimmingCharacters(in: .whitespaces))
+            } else {
+                await auth.signIn(email: e, password: password)
+            }
+            if auth.signedIn { password = "" }
+        }
+    }
+}
 
 // MARK: - Updates
 

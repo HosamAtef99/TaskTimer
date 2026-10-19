@@ -12,6 +12,8 @@ struct MainView: View {
     @Local var month: Date? = nil      // nil = all months
     @Local var search = ""
     @Local var showClients = false
+    @Local var showTeam = false
+    @ObservedObject var cloud = CloudSync.shared
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -54,6 +56,9 @@ struct MainView: View {
         .sheet(isPresented: $showClients) {
             ClientsView(inSheet: true).environmentObject(store)
         }
+        .sheet(isPresented: $showTeam) {
+            TeamView().environmentObject(store)
+        }
     }
 
     // MARK: Header
@@ -78,6 +83,11 @@ struct MainView: View {
                 }
                 .buttonStyle(GlassButtonStyle(compact: true))
                 .help("These logs failed to reach the sheet. Click to try again.")
+            }
+            if cloud.isLeader {
+                Button { showTeam = true } label: { Label("Team", systemImage: "person.3.fill") }
+                    .buttonStyle(GlassButtonStyle(compact: true))
+                    .help("Your team's tasks and live timers")
             }
             Button { showClients = true } label: { Image(systemName: "person.2") }
                 .buttonStyle(CircleIconButtonStyle())

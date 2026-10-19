@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         MainActor.assumeIsolated {
             UpdateManager.shared.start()
             if Features.sheet { SheetSync.shared.start() }
+            Task { @MainActor in await CloudSync.shared.start() }
         }
     }
     // Keep running in the menu bar when the window is closed.

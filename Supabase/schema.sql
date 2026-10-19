@@ -1,0 +1,146 @@
+-- TaskTimer team database
+-- Paste this whole file into Supabase → SQL Editor → New query → Run. Safe to run again.
+--
+-- Who can do what (enforced by the database, not by the app):
+--   member : sees and edits only their own tasks
+--   leader : also sees every task of their team (live timers included) and can add
+--            Incoming tasks for team members; cannot edit anyone's hours or tasks
+
+-- ───────────────────────── Tables ─────────────────────────
+
+create table if not exists public.teams (
+  id         uuid primary key default gen_random_uuid(),
+  name       text not null unique,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.profiles (
+  id         uuid primary key references auth.users(id) on delete cascade,
+  email      text,
+  full_name  text,
+  team_id    uuid references public.teams(id) on delete set null,
+  role       text not null default 'member' check (role in ('member', 'leader')),
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.tasks (
+  id            uuid primary key,                 -- same id as in the app
+  user_id       uuid not null references public.profiles(id) on delete cascade,
+  team_id       uuid references public.teams(id) on delete set null,
+  parent_id     uuid,                             -- set on amends
+  name          text not null default '',
+  client        text not null default '',
+  status        text not null default 'active' check (status in ('incoming', 'active', 'complete')),
+  seconds       double precision not null default 0, -- time counted, not counting a running session
+  running_since timestamptz,                      -- set while the timer is running
+  work_date     date,
+  assigned_by   uuid references public.profiles(id) on delete set null,
+  deleted       boolean not null default false,
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now()
+);
+
+create index if not exists tasks_team_created on public.tasks (team_id, created_at);
+create index if not exists tasks_user_updated on public.tasks (user_id, updated_at);
+
+-- ───────────────────────── Helpers ─────────────────────────
+
+create or replace function public.my_team() returns uuid
+language sql stable security definer set search_path = public as $$
+  select team_id from public.profiles where id = auth.uid()
+$$;
+
+create or replace function public.is_leader() returns boolean
+language sql stable security definer set search_path = public as $$
+  select coalesce((select role = 'leader' from public.profiles where id = auth.uid()), false)
+$$;
+
+-- A profile is created for every new account.
+create or replace function public.handle_new_user() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  insert into public.profiles (id, email, full_name)
+  values (new.id, new.email, coalesce(nullif(new.raw_user_meta_data->>'full_name', ''), split_part(new.email, '@', 1)))
+  on conflict (id) do nothing;
+  return new;
+end $$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created after insert on auth.users
+  for each row execute function public.handle_new_user();
+
+-- Every task belongs to its owner's team; updated_at is kept by the database.
+create or replace function public.tasks_before_write() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  new.team_id := (select team_id from public.profiles where id = new.user_id);
+  new.updated_at := now();
+  return new;
+end $$;
+
+drop trigger if exists tasks_before_write on public.tasks;
+create trigger tasks_before_write before insert or update on public.tasks
+  for each row execute function public.tasks_before_write();
+
+-- ───────────────────────── Permissions ─────────────────────────
+
+alter table public.teams    enable row level security;
+alter table public.profiles enable row level security;
+alter table public.tasks    enable row level security;
+
+-- Teams: see your own team.
+drop policy if exists teams_select on public.teams;
+create policy teams_select on public.teams for select to authenticated
+  using (id = public.my_team());
+
+-- Profiles: see yourself and your teammates; change only your own name.
+drop policy if exists profiles_select on public.profiles;
+create policy profiles_select on public.profiles for select to authenticated
+  using (id = auth.uid() or (team_id is not null and team_id = public.my_team()));
+
+drop policy if exists profiles_update on public.profiles;
+create policy profiles_update on public.profiles for update to authenticated
+  using (id = auth.uid()) with check (id = auth.uid());
+
+revoke update on public.profiles from authenticated;
+grant update (full_name) on public.profiles to authenticated;
+
+-- Tasks
+drop policy if exists tasks_select on public.tasks;
+create policy tasks_select on public.tasks for select to authenticated
+  using (user_id = auth.uid() or (public.is_leader() and team_id = public.my_team()));
+
+drop policy if exists tasks_insert on public.tasks;
+create policy tasks_insert on public.tasks for insert to authenticated
+  with check (
+    user_id = auth.uid()
+    or (
+      public.is_leader()
+      and status = 'incoming'
+      and assigned_by = auth.uid()
+      and exists (select 1 from public.profiles p where p.id = user_id and p.team_id = public.my_team())
+    )
+  );
+
+drop policy if exists tasks_update on public.tasks;
+create policy tasks_update on public.tasks for update to authenticated
+  using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+drop policy if exists tasks_delete on public.tasks;
+create policy tasks_delete on public.tasks for delete to authenticated
+  using (user_id = auth.uid());
+
+-- ───────────────────────── Setting up a team (run by hand) ─────────────────────────
+-- After everyone has created their account in TaskTimer (Settings → Team), run:
+--
+--   insert into public.teams (name) values ('Abd ElKhalik Team') on conflict do nothing;
+--
+--   update public.profiles
+--      set team_id = (select id from public.teams where name = 'Abd ElKhalik Team')
+--    where email in ('member1@socialeyes.com', 'member2@socialeyes.com', 'leader@socialeyes.com');
+--
+--   update public.profiles set role = 'leader' where email = 'leader@socialeyes.com';
+--
+-- See who has signed up:
+--   select email, full_name, role, (select name from public.teams t where t.id = team_id) as team
+--     from public.profiles order by created_at;
