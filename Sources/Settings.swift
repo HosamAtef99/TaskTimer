@@ -17,6 +17,14 @@ enum Pref {
     static let openFinderOnCreate = "openFinderOnCreate"
     static let openAEOnCreate = "openAEOnCreate"
 
+    // Read from the sheet (Settings → Sheet → Sync from Sheet)
+    static let tabMode = "tabMode"                     // "auto" | "manual"
+    static let tabName = "tabName"                     // used when tabMode == "manual"
+    static let statusComplete = "statusCompleteLabel"  // what "Complete" is written as in the sheet
+    static let statusInProcess = "statusInProcessLabel"
+    static let timeFormatFromSheet = "timeFormatFromSheet"
+    static let sheetConfig = "sheetConfig"
+
     static let defaultSubfolders = """
     00 - Render
     01 - AE
@@ -57,6 +65,8 @@ enum Pref {
             pauseOnSleep: true,
             openFinderOnCreate: true,
             openAEOnCreate: false,
+            tabMode: "auto",
+            timeFormatFromSheet: true,
         ])
     }
 
@@ -64,6 +74,13 @@ enum Pref {
     static func string(_ k: String) -> String { d.string(forKey: k) ?? "" }
     static func bool(_ k: String) -> Bool { d.bool(forKey: k) }
     static func int(_ k: String) -> Int { d.integer(forKey: k) }
+
+    /// Which tab new rows go to: the current month's tab, or the one picked in Settings.
+    static func tabTarget() -> (mode: String, tab: String) {
+        let t = string(tabName).trimmingCharacters(in: .whitespaces)
+        if string(tabMode) == "manual", !t.isEmpty { return ("manual", t) }
+        return ("auto", "")
+    }
 
     static var subfolderList: [String] {
         string(subfolders)
@@ -120,6 +137,12 @@ enum Fmt {
         f.dateFormat = "yyyy-MM-dd"
         return f
     }()
+
+    static func relative(_ d: Date) -> String {
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .full
+        return f.localizedString(for: d, relativeTo: Date())
+    }
 
     static let nice: DateFormatter = {
         let f = DateFormatter()

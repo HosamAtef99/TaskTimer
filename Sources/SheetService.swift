@@ -10,6 +10,16 @@ enum SheetService {
         let sheet: String?
         let columns: [String: String]?
         let updated: Bool?
+        // Script version 2+
+        let version: Int?
+        let tab: String?
+        let spreadsheet: String?
+        let tabs: [SheetTab]?
+        let autoTab: String?
+        let headers: [String: String]?
+        let lists: [String: [String]]?
+        let timeFormat: String?
+        let warning: String?
     }
 
     enum SheetError: LocalizedError {
@@ -58,7 +68,16 @@ enum SheetService {
 
     /// Checks the connection and returns which columns the script detected.
     static func ping() async throws -> Response {
-        try await post(["action": "ping"])
+        let t = Pref.tabTarget()
+        return try await post(["action": "ping", "tabMode": t.mode, "tab": t.tab,
+                               "date": Fmt.isoDay.string(from: Date())])
+    }
+
+    /// Reads tabs, column titles and the Account / Status / Team Member dropdowns.
+    static func config() async throws -> Response {
+        let t = Pref.tabTarget()
+        return try await post(["action": "config", "tabMode": t.mode, "tab": t.tab,
+                               "date": Fmt.isoDay.string(from: Date())])
     }
 
     /// Writes one row. Returns the row number it landed on.
@@ -75,6 +94,8 @@ enum SheetService {
             "folder": p.folder,
         ]
         if let r = p.updateRow { body["updateRow"] = r }
+        if let m = p.tabMode { body["tabMode"] = m }
+        if let t = p.tab { body["tab"] = t }
         return try await post(body)
     }
 }

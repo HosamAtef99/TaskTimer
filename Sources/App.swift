@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         MainActor.assumeIsolated {
             UpdateManager.shared.start()
+            SheetSync.shared.start()
         }
     }
     // Keep running in the menu bar when the window is closed.
@@ -125,7 +126,7 @@ struct MenuBarPanel: View {
 
                 if let r = store.running {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(r.name).font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                        Text(store.displayName(r)).font(.system(size: 13, weight: .semibold)).lineLimit(1)
                         if !store.clientName(r.clientID).isEmpty {
                             Text(store.clientName(r.clientID)).font(.system(size: 11)).foregroundStyle(.secondary)
                         }
@@ -158,7 +159,7 @@ struct MenuBarPanel: View {
                             Button { store.start(t.id) } label: {
                                 HStack {
                                     Image(systemName: "play.fill").font(.system(size: 9)).foregroundStyle(Theme.cool)
-                                    Text(t.name).lineLimit(1)
+                                    Text(store.displayName(t)).lineLimit(1)
                                     Spacer()
                                     Text(Fmt.short(t.totalSeconds(at: store.now)))
                                         .foregroundStyle(.secondary)

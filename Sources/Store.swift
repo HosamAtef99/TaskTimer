@@ -20,6 +20,8 @@ final class Store: ObservableObject {
     @Published var toast: String?
 
     private var ticker: Timer?
+    /// Tasks whose row is being sent right now (stops a retry from sending the same row twice).
+    private var inFlight: Set<UUID> = []
     private var saveWork: DispatchWorkItem?
     private var retryTimer: Timer?
 
@@ -91,6 +93,77 @@ final class Store: ObservableObject {
     }
     func clientName(_ id: UUID?) -> String { client(id)?.name ?? "" }
 
+    // MARK: - Amends (subtasks)
+
+    func parent(of t: TaskItem) -> TaskItem? { t.parentID.flatMap { task($0) } }
+
+    func subtasks(of id: UUID) -> [TaskItem] {
+        tasks.filter { $0.parentID == id }.sorted { $0.createdAt < $1.createdAt }
+    }
+
+    /// The name written in the sheet: "Task" or "Task - Amend 1".
+    func displayName(_ t: TaskItem) -> String {
+        if let p = parent(of: t) { return "\(p.name) - \(t.name)" }
+        return t.name
+    }
+
+    /// Time of a task plus all of its amends.
+    func groupSeconds(_ id: UUID) -> TimeInterval {
+        let own = task(id)?.totalSeconds(at: now) ?? 0
+        return subtasks(of: id).reduce(own) { $0 + $1.totalSeconds(at: now) }
+    }
+
+    /// Adds "Amend N" under a task (same client and folder) and starts its timer.
+    @discardableResult
+    func addAmend(to parentID: UUID, start: Bool = true) -> UUID? {
+        guard let p = task(parentID), p.parentID == nil else { return nil }
+        let used = subtasks(of: parentID).compactMap { s -> Int? in
+            let parts = s.name.split(separator: " ")
+            guard parts.count == 2, parts[0].lowercased() == "amend" else { return nil }
+            return Int(parts[1])
+        }
+        let n = max(used.max() ?? 0, subtasks(of: parentID).count) + 1
+        var s = TaskItem(name: "Amend \(n)", clientID: p.clientID, folderPath: p.folderPath)
+        s.parentID = parentID
+        if start {
+            stopAll()
+            s.sessions.append(WorkSession(start: Date()))
+        }
+        tasks.insert(s, at: 0)
+        return s.id
+    }
+
+    // MARK: - Clients from the sheet
+
+    /// Adopts the sheet's Account list: adds new accounts, fixes spelling, flags ones no longer in the sheet.
+    /// Nothing is deleted, so older tasks keep their client.
+    func syncClients(_ names: [String]) {
+        let sheet = names.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        guard !sheet.isEmpty else { return }
+        func same(_ a: String, _ b: String) -> Bool { a.caseInsensitiveCompare(b) == .orderedSame }
+
+        var list = clients
+        for n in sheet where !list.contains(where: { same($0.name, n) }) {
+            list.append(Client(name: n))
+        }
+        for i in list.indices {
+            if let exact = sheet.first(where: { same($0, list[i].name) }) {
+                list[i].name = exact
+                list[i].missingFromSheet = nil
+            } else {
+                list[i].missingFromSheet = true
+            }
+        }
+        // Sheet order first (as in the dropdown), then anything the sheet no longer has.
+        func rank(_ c: Client) -> Int { sheet.firstIndex(where: { same($0, c.name) }) ?? Int.max }
+        list.sort {
+            let a = rank($0), b = rank($1)
+            if a != b { return a < b }
+            return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+        }
+        if list != clients { clients = list }
+    }
+
     var pendingCount: Int { tasks.filter { $0.pendingLog != nil }.count }
 
     func todaySeconds() -> TimeInterval {
@@ -153,7 +226,7 @@ final class Store: ObservableObject {
 
     /// Imports an existing folder as a task (re-uses its saved info if present).
     func importFolder(_ url: URL) -> UUID {
-        if let existing = tasks.first(where: { $0.folderPath == url.path }) { return existing.id }
+        if let existing = tasks.first(where: { $0.folderPath == url.path && $0.parentID == nil }) { return existing.id }
         var clientID: UUID?
         let marker = url.appendingPathComponent(".tasktimer.json")
         if let data = try? Data(contentsOf: marker),
@@ -182,7 +255,7 @@ final class Store: ObservableObject {
 
     func setClient(_ id: UUID, _ clientID: UUID?) {
         update(id) { $0.clientID = clientID }
-        if let t = task(id), let f = t.folderURL { writeMarker(t, in: f) }
+        if let t = task(id), t.parentID == nil, let f = t.folderURL { writeMarker(t, in: f) }
     }
 
     func stopAll() {
@@ -216,8 +289,9 @@ final class Store: ObservableObject {
         t.isRunning ? pause(id) : start(id)
     }
 
+    /// Deleting a task also deletes its amends.
     func delete(_ id: UUID) {
-        tasks.removeAll { $0.id == id }
+        tasks.removeAll { $0.id == id || $0.parentID == id }
     }
 
     func requestDone(_ id: UUID) {
@@ -244,8 +318,16 @@ final class Store: ObservableObject {
         let useRow = updateExisting ? t.sheetRow : nil
         let secondsForEntry = useRow != nil ? totalSeconds : max(0, totalSeconds - t.loggedSeconds)
 
+        // Updating a row: write to the tab that holds it. New row: the tab from Settings.
+        let target: (mode: String, tab: String)
+        if useRow != nil, let tab = t.sheetTab, !tab.isEmpty {
+            target = ("manual", tab)
+        } else {
+            target = Pref.tabTarget()
+        }
+
         let entry = PendingLog(
-            task: name,
+            task: displayName(t),
             client: clientName(clientID),
             member: Pref.string(Pref.memberName),
             status: status.sheetLabel,
@@ -254,7 +336,9 @@ final class Store: ObservableObject {
             totalAfter: totalSeconds,
             updateRow: useRow,
             folder: t.folderPath ?? "",
-            error: nil)
+            error: nil,
+            tabMode: target.mode,
+            tab: target.tab)
 
         update(id) { $0.status = status }
         return await send(entry, for: id, silent: false)
@@ -262,16 +346,20 @@ final class Store: ObservableObject {
 
     @discardableResult
     private func send(_ entry: PendingLog, for id: UUID, silent: Bool) async -> Bool {
+        guard !inFlight.contains(id) else { return false }
+        inFlight.insert(id)
+        defer { inFlight.remove(id) }
         do {
             let r = try await SheetService.log(entry)
             update(id) { t in
                 t.sheetRow = r.row ?? t.sheetRow
+                if let tab = r.tab { t.sheetTab = tab }
                 t.loggedSeconds = entry.totalAfter
                 t.lastLoggedAt = Date()
                 t.pendingLog = nil
             }
             let verb = (r.updated ?? false) ? "Updated row" : "Added row"
-            let rowText = r.row.map { " \($0)" } ?? ""
+            let rowText = (r.row.map { " \($0)" } ?? "") + (r.tab.map { " (\($0))" } ?? "")
             notify(title: "Logged to sheet ✓", body: "\(entry.task) — \(entry.status) — \(Fmt.sheetTime(entry.seconds)) (\(verb)\(rowText))")
             flash("\(verb)\(rowText) in the sheet ✓")
             return true

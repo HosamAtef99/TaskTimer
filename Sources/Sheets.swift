@@ -24,7 +24,7 @@ struct ClientPicker: View {
                 Picker("", selection: $selection) {
                     Text("— Choose client —").tag(UUID?.none)
                     ForEach(store.clients) { c in
-                        Text(c.name).tag(UUID?.some(c.id))
+                        Text(c.missingFromSheet == true ? "\(c.name)  (not in sheet)" : c.name).tag(UUID?.some(c.id))
                     }
                 }
                 .labelsHidden()
@@ -210,20 +210,34 @@ struct DoneSheet: View {
     @Local var loaded = false
 
     private var task: TaskItem? { store.task(taskID) }
+    private var parent: TaskItem? { task.flatMap { store.parent(of: $0) } }
     private var totalSeconds: TimeInterval { TimeInterval(hours * 3600 + minutes * 60) }
 
+    /// What goes in the sheet's Task column ("Task - Amend 1" for an amend).
+    private var sheetName: String {
+        let n = name.trimmingCharacters(in: .whitespaces)
+        if let p = parent { return "\(p.name) - \(n)" }
+        return n
+    }
+
     var body: some View {
-        SheetFrame(title: "Finish Task", subtitle: "Logs a row in the team sheet", icon: "checkmark") {
-            FieldRow(label: "Task name") {
-                TextField("Task", text: $name).textFieldStyle(.roundedBorder)
+        SheetFrame(title: parent == nil ? "Finish Task" : "Finish Amend",
+                   subtitle: "Logs a row in the team sheet", icon: "checkmark") {
+            FieldRow(label: parent == nil ? "Task name" : "Amend name") {
+                TextField(parent == nil ? "Task" : "Amend 1", text: $name).textFieldStyle(.roundedBorder)
+                if let p = parent {
+                    Text("Under “\(p.name)” · logged as “\(sheetName)”")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
             }
             FieldRow(label: "Client / Account") {
                 ClientPicker(selection: $clientID)
             }
             FieldRow(label: "Status") {
                 Picker("", selection: $status) {
-                    Text("Complete").tag(TaskStatus.complete)
-                    Text("In Process").tag(TaskStatus.inProcess)
+                    Text(TaskStatus.complete.sheetLabel).tag(TaskStatus.complete)
+                    Text(TaskStatus.inProcess.sheetLabel).tag(TaskStatus.inProcess)
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
@@ -311,13 +325,16 @@ struct DoneSheet: View {
         return VStack(alignment: .leading, spacing: 6) {
             SectionLabel(text: willUpdate ? "Will update row \(t?.sheetRow ?? 0)" : "Will add this row")
             HStack(spacing: 8) {
-                cell(name.isEmpty ? "—" : name)
+                cell(sheetName.isEmpty ? "—" : sheetName)
                 cell(Fmt.isoDay.string(from: date))
                 cell(store.clientName(clientID).isEmpty ? "No client" : store.clientName(clientID))
                 cell(member.isEmpty ? "Your name?" : member)
                 cell(status.sheetLabel)
                 cell(Fmt.sheetTime(entrySecs))
             }
+            Text(tabLine(willUpdate: willUpdate))
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
             if !willUpdate, let t, t.loggedSeconds > 0 {
                 Text("\(Fmt.short(t.loggedSeconds)) of this task was already logged, so this row only counts the new time.")
                     .font(.system(size: 10))
@@ -327,6 +344,15 @@ struct DoneSheet: View {
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .glassCard(radius: 12, highlight: true)
+    }
+
+    private func tabLine(willUpdate: Bool) -> String {
+        if willUpdate, let tab = task?.sheetTab, !tab.isEmpty { return "Tab: \(tab)" }
+        let target = Pref.tabTarget()
+        if target.mode == "manual" { return "Tab: \(target.tab)" }
+        let month = DateFormatter()
+        month.dateFormat = "MMMM yyyy"
+        return "Tab: the \(month.string(from: date)) tab (picked automatically)"
     }
 
     private func cell(_ s: String) -> some View {

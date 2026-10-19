@@ -117,20 +117,25 @@ struct MainView: View {
         }
     }
 
+    /// Top-level tasks; a task shows when it or any of its amends matches.
     private var filtered: [TaskItem] {
-        store.tasks.filter { t in
-            let passFilter: Bool
-            switch filter {
-            case .open: passFilter = t.status != .complete
-            case .inProcess: passFilter = t.status == .inProcess
-            case .complete: passFilter = t.status == .complete
-            case .all: passFilter = true
+        let q = search.trimmingCharacters(in: .whitespaces)
+        return store.tasks.filter { $0.parentID == nil }.filter { t in
+            let group = [t] + store.subtasks(of: t.id)
+            let passFilter = group.contains { s in
+                switch filter {
+                case .open: return s.status != .complete
+                case .inProcess: return s.status == .inProcess
+                case .complete: return s.status == .complete
+                case .all: return true
+                }
             }
             guard passFilter else { return false }
-            let q = search.trimmingCharacters(in: .whitespaces)
             if q.isEmpty { return true }
-            return t.name.localizedCaseInsensitiveContains(q)
-                || store.clientName(t.clientID).localizedCaseInsensitiveContains(q)
+            return group.contains { s in
+                s.name.localizedCaseInsensitiveContains(q)
+                    || store.clientName(s.clientID).localizedCaseInsensitiveContains(q)
+            }
         }
     }
 
@@ -180,7 +185,7 @@ struct HeroCard: View {
             VStack(alignment: .leading, spacing: 6) {
                 if let t = running {
                     SectionLabel(text: "Now working on")
-                    Text(t.name)
+                    Text(store.displayName(t))
                         .font(.system(size: 20, weight: .semibold))
                         .lineLimit(2)
                     if !store.clientName(t.clientID).isEmpty {
@@ -225,6 +230,47 @@ struct TaskRow: View {
     @Local var confirmDelete = false
 
     var body: some View {
+        let subs = store.subtasks(of: task.id)
+        VStack(alignment: .leading, spacing: 8) {
+            mainRow(hasSubs: !subs.isEmpty)
+            if !subs.isEmpty {
+                VStack(spacing: 6) {
+                    ForEach(subs) { s in SubtaskRow(task: s) }
+                }
+            }
+        }
+        .padding(.horizontal, 14).padding(.vertical, 12)
+        .glassCard(radius: 16, highlight: task.isRunning || subs.contains(where: { $0.isRunning }) || dropping)
+        .scaleEffect(hovering ? 1.005 : 1)
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.15), value: hovering)
+        .confirmationDialog("Delete “\(task.name)”?", isPresented: $confirmDelete) {
+            Button("Delete", role: .destructive) { store.delete(task.id) }
+        } message: {
+            Text(subs.isEmpty
+                 ? "This only removes it from TaskTimer. The folder and the sheet row stay."
+                 : "This also removes its \(subs.count) amend\(subs.count == 1 ? "" : "s") from TaskTimer. The folder and the sheet rows stay.")
+        }
+        .dropDestination(for: URL.self) { urls, _ in
+            guard let f = task.folderURL else {
+                store.flash("This task has no folder to sort files into.")
+                return false
+            }
+            let moved = FolderService.sort(urls, into: f)
+            if moved.isEmpty {
+                store.flash("Nothing moved.")
+            } else {
+                let summary = Dictionary(grouping: moved, by: { $0.1 })
+                    .map { "\($0.value.count) → \($0.key)" }
+                    .sorted()
+                    .joined(separator: ",  ")
+                store.flash("Sorted \(moved.count) file\(moved.count == 1 ? "" : "s"): \(summary)")
+            }
+            return true
+        } isTargeted: { dropping = $0 }
+    }
+
+    private func mainRow(hasSubs: Bool) -> some View {
         HStack(spacing: 14) {
             Button { store.toggle(task.id) } label: {
                 Image(systemName: task.isRunning ? "pause.fill" : "play.fill")
@@ -259,9 +305,17 @@ struct TaskRow: View {
 
             Spacer(minLength: 8)
 
-            Text(Fmt.clock(task.totalSeconds(at: store.now)))
-                .font(.system(size: 15, weight: .medium, design: .rounded).monospacedDigit())
-                .foregroundStyle(task.isRunning ? AnyShapeStyle(Theme.linear) : AnyShapeStyle(HierarchicalShapeStyle.secondary))
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(Fmt.clock(task.totalSeconds(at: store.now)))
+                    .font(.system(size: 15, weight: .medium, design: .rounded).monospacedDigit())
+                    .foregroundStyle(task.isRunning ? AnyShapeStyle(Theme.linear) : AnyShapeStyle(HierarchicalShapeStyle.secondary))
+                if hasSubs {
+                    Text("Total \(Fmt.short(store.groupSeconds(task.id)))")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.tertiary)
+                        .help("This task plus all its amends")
+                }
+            }
 
             HStack(spacing: 6) {
                 if let f = task.folderURL {
@@ -281,20 +335,20 @@ struct TaskRow: View {
                     .fixedSize()
                     .help("Task folder")
                 }
+                Button { addAmend() } label: { Image(systemName: "plus.square.on.square") }
+                    .buttonStyle(CircleIconButtonStyle(size: 28))
+                    .help("Add an amend (subtask). It gets its own timer and its own row in the sheet.")
                 Button { store.requestDone(task.id) } label: {
                     Text(task.status == .complete ? "Log again" : "Done")
                 }
                 .buttonStyle(GradientButtonStyle(compact: true))
             }
         }
-        .padding(.horizontal, 14).padding(.vertical, 12)
-        .glassCard(radius: 16, highlight: task.isRunning || dropping)
-        .scaleEffect(hovering ? 1.005 : 1)
-        .onHover { hovering = $0 }
-        .animation(.easeOut(duration: 0.15), value: hovering)
+        .contentShape(Rectangle())
         .contextMenu {
             Button(task.isRunning ? "Pause" : "Start") { store.toggle(task.id) }
             Button("Done / Log to Sheet…") { store.requestDone(task.id) }
+            Button("Add Amend") { addAmend() }
             Divider()
             Button("Copy Task Name") {
                 NSPasteboard.general.clearContents()
@@ -311,34 +365,18 @@ struct TaskRow: View {
             Divider()
             Button("Delete Task", role: .destructive) { confirmDelete = true }
         }
-        .confirmationDialog("Delete “\(task.name)”?", isPresented: $confirmDelete) {
-            Button("Delete", role: .destructive) { store.delete(task.id) }
-        } message: {
-            Text("This only removes it from TaskTimer. The folder and the sheet row stay.")
+    }
+
+    private func addAmend() {
+        if let id = store.addAmend(to: task.id), let s = store.task(id) {
+            store.flash("“\(store.displayName(s))” — timer running")
         }
-        .dropDestination(for: URL.self) { urls, _ in
-            guard let f = task.folderURL else {
-                store.flash("This task has no folder to sort files into.")
-                return false
-            }
-            let moved = FolderService.sort(urls, into: f)
-            if moved.isEmpty {
-                store.flash("Nothing moved.")
-            } else {
-                let summary = Dictionary(grouping: moved, by: { $0.1 })
-                    .map { "\($0.value.count) → \($0.key)" }
-                    .sorted()
-                    .joined(separator: ",  ")
-                store.flash("Sorted \(moved.count) file\(moved.count == 1 ? "" : "s"): \(summary)")
-            }
-            return true
-        } isTargeted: { dropping = $0 }
     }
 
     private var clientMenu: some View {
         Menu {
             ForEach(store.clients) { c in
-                Button(c.name) { store.setClient(task.id, c.id) }
+                Button(c.missingFromSheet == true ? "\(c.name)  (not in sheet)" : c.name) { store.setClient(task.id, c.id) }
             }
             if !store.clients.isEmpty { Divider() }
             Button("No client") { store.setClient(task.id, nil) }
@@ -348,5 +386,76 @@ struct TaskRow: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
+    }
+}
+
+// MARK: - Amend row (inside its task's card)
+
+struct SubtaskRow: View {
+    @EnvironmentObject var store: Store
+    var task: TaskItem
+    @Local var confirmDelete = false
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "arrow.turn.down.right")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.tertiary)
+                .padding(.leading, 12)
+            Button { store.toggle(task.id) } label: {
+                Image(systemName: task.isRunning ? "pause.fill" : "play.fill")
+            }
+            .buttonStyle(CircleIconButtonStyle(filled: task.isRunning, size: 26))
+            .help(task.isRunning ? "Pause" : "Start")
+
+            Text(task.name)
+                .font(.system(size: 12, weight: .semibold))
+                .lineLimit(1)
+            StatusPill(status: task.status)
+            if task.pendingLog != nil {
+                Image(systemName: "exclamationmark.icloud")
+                    .foregroundStyle(Theme.pink)
+                    .help(task.pendingLog?.error ?? "Waiting to be sent")
+            }
+            if let r = task.sheetRow {
+                Text("Row \(r)")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 8)
+
+            Text(Fmt.clock(task.totalSeconds(at: store.now)))
+                .font(.system(size: 13, weight: .medium, design: .rounded).monospacedDigit())
+                .foregroundStyle(task.isRunning ? AnyShapeStyle(Theme.linear) : AnyShapeStyle(HierarchicalShapeStyle.secondary))
+            Button { store.requestDone(task.id) } label: {
+                Text(task.status == .complete ? "Log again" : "Done")
+            }
+            .buttonStyle(GradientButtonStyle(compact: true))
+        }
+        .padding(.vertical, 6).padding(.trailing, 6)
+        .background(Color.primary.opacity(task.isRunning ? 0.08 : 0.04), in: RoundedRectangle(cornerRadius: 10))
+        .contentShape(Rectangle())
+        .contextMenu {
+            Button(task.isRunning ? "Pause" : "Start") { store.toggle(task.id) }
+            Button("Done / Log to Sheet…") { store.requestDone(task.id) }
+            Divider()
+            Button("Copy Name") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(store.displayName(task), forType: .string)
+            }
+            Menu("Mark as") {
+                ForEach(TaskStatus.allCases) { s in
+                    Button(s.title) { store.update(task.id) { $0.status = s } }
+                }
+            }
+            Divider()
+            Button("Delete Amend", role: .destructive) { confirmDelete = true }
+        }
+        .confirmationDialog("Delete “\(store.displayName(task))”?", isPresented: $confirmDelete) {
+            Button("Delete", role: .destructive) { store.delete(task.id) }
+        } message: {
+            Text("This only removes it from TaskTimer. Its sheet row stays.")
+        }
     }
 }

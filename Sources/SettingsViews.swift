@@ -14,9 +14,25 @@ struct ClientsView: View {
     @Local var editText = ""
     @Local var bulk = ""
     @Local var showBulk = false
+    @ObservedObject var sync = SheetSync.shared
 
     var body: some View {
-        SheetFrame(title: "Clients", subtitle: "Add them once, then pick from the list", icon: "person.2.fill") {
+        SheetFrame(title: "Clients", subtitle: "Read from the sheet's Account column — or add them by hand", icon: "person.2.fill") {
+            HStack(spacing: 8) {
+                Button {
+                    Task { await sync.sync(silent: false) }
+                } label: {
+                    HStack(spacing: 6) {
+                        if sync.syncing { ProgressView().controlSize(.small).tint(.white) }
+                        Label("Sync from Sheet", systemImage: "arrow.triangle.2.circlepath")
+                    }
+                }
+                .buttonStyle(GradientButtonStyle(compact: true))
+                .disabled(sync.syncing)
+                Text(sync.config?.syncedAt.map { "Last sync \(Fmt.relative($0))" } ?? "Not synced yet")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                Spacer()
+            }
             HStack(spacing: 8) {
                 TextField("Add a client or account", text: $newName)
                     .textFieldStyle(.roundedBorder)
@@ -69,6 +85,12 @@ struct ClientsView: View {
                                 Text(c.name).font(.system(size: 13, weight: .medium))
                                 Text("\(store.taskCount(for: c.id)) tasks")
                                     .font(.system(size: 11)).foregroundStyle(.tertiary)
+                                if c.missingFromSheet == true {
+                                    Text("Not in sheet")
+                                        .font(.system(size: 10, weight: .semibold))
+                                        .foregroundStyle(Theme.orange)
+                                        .help("The last Sync didn't find this account in the sheet. Old tasks keep it; delete it if it's gone for good.")
+                                }
                             }
                             Spacer()
                             Button { editing = c.id; editText = c.name } label: { Image(systemName: "pencil") }
@@ -122,6 +144,12 @@ struct SettingsView: View {
     @AppStorage(Pref.pauseOnSleep) var pauseOnSleep = true
     @AppStorage(Pref.openFinderOnCreate) var openFinder = true
     @AppStorage(Pref.openAEOnCreate) var openAE = false
+    @AppStorage(Pref.tabMode) var tabMode = "auto"
+    @AppStorage(Pref.tabName) var tabName = ""
+    @AppStorage(Pref.statusComplete) var statusComplete = ""
+    @AppStorage(Pref.statusInProcess) var statusInProcess = ""
+    @AppStorage(Pref.timeFormatFromSheet) var timeFormatFromSheet = true
+    @ObservedObject var sync = SheetSync.shared
 
     @Local var tab = 0
     @Local var testing = false
@@ -165,10 +193,44 @@ struct SettingsView: View {
     }
 
     private var sheetTab: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            FieldRow(label: "Your name (as written in the sheet)") {
-                TextField("Mosap Hassan", text: $memberName).textFieldStyle(.roundedBorder)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                connectionSection
+                Divider()
+                fromSheetSection
+                Divider()
+                HStack(spacing: 20) {
+                    FieldRow(label: "Time format") {
+                        Picker("", selection: $timeFormat) {
+                            Text("2:30").tag("hm")
+                            Text("2.5").tag("decimal")
+                            Text("150 (min)").tag("minutes")
+                        }
+                        .labelsHidden().frame(width: 130)
+                        .disabled(timeFormatFromSheet)
+                    }
+                    FieldRow(label: "Round to") {
+                        Picker("", selection: $rounding) {
+                            Text("Exact").tag(0)
+                            Text("5 min").tag(5)
+                            Text("10 min").tag(10)
+                            Text("15 min").tag(15)
+                            Text("30 min").tag(30)
+                        }
+                        .labelsHidden().frame(width: 110)
+                    }
+                }
+                Toggle("Match the time format already used in the sheet", isOn: $timeFormatFromSheet)
+                    .font(.system(size: 12))
+                Toggle("When an In Process task is logged again, update its row by default", isOn: $updateSameRow)
+                    .font(.system(size: 12))
             }
+            .padding(.trailing, 6)
+        }
+    }
+
+    private var connectionSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
             FieldRow(label: "Web App URL (from Apps Script → Deploy)") {
                 TextField("https://script.google.com/macros/s/…/exec", text: $webAppURL)
                     .textFieldStyle(.roundedBorder)
@@ -178,46 +240,141 @@ struct SettingsView: View {
                 SecureField("token", text: $token).textFieldStyle(.roundedBorder)
             }
             HStack(spacing: 10) {
-                Button { test() } label: {
+                Button { Task { await sync.sync(silent: false) } } label: {
                     HStack(spacing: 6) {
-                        if testing { ProgressView().controlSize(.small).tint(.white) }
-                        Text("Test Connection")
+                        if sync.syncing { ProgressView().controlSize(.small).tint(.white) }
+                        Label("Sync from Sheet", systemImage: "arrow.triangle.2.circlepath")
                     }
                 }
                 .buttonStyle(GradientButtonStyle(compact: true))
+                .disabled(sync.syncing || webAppURL.isEmpty)
+                .help("Reads the tabs, column titles and the Account / Status / Team Member dropdowns again")
+                Button { test() } label: {
+                    HStack(spacing: 6) {
+                        if testing { ProgressView().controlSize(.small) }
+                        Text("Test Connection")
+                    }
+                }
+                .buttonStyle(GlassButtonStyle(compact: true))
                 .disabled(testing || webAppURL.isEmpty)
-                if let testResult {
-                    Text(testResult)
+            }
+            if let e = sync.lastError {
+                Text(e)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.pink)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if let c = sync.config {
+                Text(syncSummary(c))
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.green)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let testResult {
+                Text(testResult)
+                    .font(.system(size: 11))
+                    .foregroundStyle(testOK ? Theme.green : Theme.pink)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var fromSheetSection: some View {
+        let c = sync.config
+        let members = c?.members ?? []
+        let statuses = c?.statuses ?? []
+        let tabs = c?.visibleTabs ?? []
+        return VStack(alignment: .leading, spacing: 14) {
+            FieldRow(label: "Your name (as written in the sheet)") {
+                HStack(spacing: 8) {
+                    TextField("Hossam atef", text: $memberName).textFieldStyle(.roundedBorder)
+                    if !members.isEmpty {
+                        Menu {
+                            ForEach(members, id: \.self) { m in
+                                Button(m) { memberName = m }
+                            }
+                        } label: { Text("Pick") }
+                            .menuStyle(.borderlessButton)
+                            .fixedSize()
+                            .help("Names from the sheet's Team Member dropdown")
+                    }
+                }
+                if !members.isEmpty, !memberName.isEmpty,
+                   !members.contains(where: { $0.caseInsensitiveCompare(memberName) == .orderedSame }) {
+                    Text("This name isn't in the sheet's Team Member list.")
+                        .font(.system(size: 11)).foregroundStyle(Theme.orange)
+                }
+            }
+
+            FieldRow(label: "Tab") {
+                Picker("", selection: $tabMode) {
+                    Text("This month's tab, automatically").tag("auto")
+                    Text("A tab I pick").tag("manual")
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                if tabMode == "manual" {
+                    if tabs.isEmpty {
+                        TextField("Tab name", text: $tabName).textFieldStyle(.roundedBorder)
+                    } else {
+                        Picker("", selection: $tabName) {
+                            if !tabs.contains(tabName) {
+                                Text(tabName.isEmpty ? "— Choose a tab —" : tabName).tag(tabName)
+                            }
+                            ForEach(tabs, id: \.self) { Text($0).tag($0) }
+                        }
+                        .labelsHidden()
+                    }
+                } else {
+                    Text(c?.autoTab.map { "Now: “\($0)”. Rows go to the tab named after the month of the task's date (e.g. “Oct 2026”, “October”, “10-2026”); if none matches, the last tab." }
+                         ?? "Rows go to the tab named after the month of the task's date. Press Sync to see which one.")
                         .font(.system(size: 11))
-                        .foregroundStyle(testOK ? Theme.green : Theme.pink)
-                        .textSelection(.enabled)
+                        .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            Divider()
-            HStack(spacing: 20) {
-                FieldRow(label: "Time format") {
-                    Picker("", selection: $timeFormat) {
-                        Text("2:30").tag("hm")
-                        Text("2.5").tag("decimal")
-                        Text("150 (min)").tag("minutes")
-                    }
-                    .labelsHidden().frame(width: 130)
-                }
-                FieldRow(label: "Round to") {
-                    Picker("", selection: $rounding) {
-                        Text("Exact").tag(0)
-                        Text("5 min").tag(5)
-                        Text("10 min").tag(10)
-                        Text("15 min").tag(15)
-                        Text("30 min").tag(30)
-                    }
-                    .labelsHidden().frame(width: 110)
+            .onChange(of: tabMode) { _ in Task { await sync.sync(silent: true) } }
+            .onChange(of: tabName) { _ in Task { await sync.sync(silent: true) } }
+
+            FieldRow(label: "Status words in the sheet") {
+                HStack(spacing: 12) {
+                    statusPicker("Complete →", selection: $statusComplete, options: statuses)
+                    statusPicker("In Process →", selection: $statusInProcess, options: statuses)
                 }
             }
-            Toggle("When an In Process task is logged again, update its row by default", isOn: $updateSameRow)
-                .font(.system(size: 12))
         }
+    }
+
+    @ViewBuilder
+    private func statusPicker(_ title: String, selection: Binding<String>, options: [String]) -> some View {
+        HStack(spacing: 6) {
+            Text(title).font(.system(size: 12)).foregroundStyle(.secondary)
+            if options.isEmpty {
+                TextField("", text: selection).textFieldStyle(.roundedBorder).frame(width: 120)
+            } else {
+                Picker("", selection: selection) {
+                    if !options.contains(selection.wrappedValue) {
+                        Text(selection.wrappedValue.isEmpty ? "—" : selection.wrappedValue).tag(selection.wrappedValue)
+                    }
+                    ForEach(options, id: \.self) { Text($0).tag($0) }
+                }
+                .labelsHidden()
+                .frame(width: 140)
+            }
+        }
+    }
+
+    private func syncSummary(_ c: SheetConfig) -> String {
+        var parts: [String] = []
+        parts.append("“\(c.spreadsheet ?? "Sheet")” → tab “\(c.sheet ?? "?")” ✓")
+        parts.append("\(c.clients.count) accounts · \(c.statuses.count) statuses · \(c.members.count) members")
+        let order = ["task", "date", "client", "member", "status", "time"]
+        parts.append(order.map { k in "\(k): \(c.headers[k].flatMap { $0.isEmpty ? nil : $0 } ?? "—") (\(c.columns[k] ?? "—"))" }
+            .joined(separator: "  "))
+        if let d = c.syncedAt { parts.append("Synced \(Fmt.relative(d))") }
+        return parts.joined(separator: "\n")
     }
 
     private var foldersTab: some View {
@@ -296,6 +453,7 @@ struct SettingsView: View {
                 let order = ["task", "date", "client", "member", "status", "time"]
                 let found = order.map { k in "\(k): \(cols[k] ?? "—")" }.joined(separator: "  ")
                 testResult = "Connected to “\(r.sheet ?? "sheet")” ✓\n\(found)"
+                    + ((r.version ?? 1) < 2 ? "\nThe script on the sheet is the old version — paste the new TaskTimer.gs to read accounts and tabs from the sheet." : "")
             } catch {
                 testOK = false
                 testResult = error.localizedDescription
