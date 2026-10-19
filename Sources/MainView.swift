@@ -59,6 +59,9 @@ struct MainView: View {
         .sheet(isPresented: $showTeam) {
             TeamView().environmentObject(store)
         }
+        .onChange(of: store.teamReportRequest) { want in
+            if want && cloud.isLeader { showTeam = true }
+        }
     }
 
     // MARK: Header

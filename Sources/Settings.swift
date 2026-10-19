@@ -22,7 +22,8 @@ enum Pref {
     static let updateSameRow = "updateSameRow"
     static let hideDock = "hideDock"
     static let pauseOnSleep = "pauseOnSleep"
-    static let menuBarStyle = "menuBarStyle"   // "time" (1:05) | "seconds" (01:05:12) | "icon"
+    static let menuBarStyle = "menuBarStyle"
+    static let renderNotify = "renderNotify"   // "time" (1:05) | "seconds" (01:05:12) | "icon"
     static let openFinderOnCreate = "openFinderOnCreate"
     static let openAEOnCreate = "openAEOnCreate"
 
@@ -84,6 +85,7 @@ enum Pref {
             hideDock: false,
             pauseOnSleep: true,
             menuBarStyle: "time",
+            renderNotify: true,
             openFinderOnCreate: true,
             openAEOnCreate: false,
             tabMode: "auto",

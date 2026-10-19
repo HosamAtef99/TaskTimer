@@ -178,6 +178,7 @@ struct SettingsView: View {
     @AppStorage(Pref.hideDock) var hideDock = false
     @AppStorage(Pref.pauseOnSleep) var pauseOnSleep = true
     @AppStorage(Pref.menuBarStyle) var menuBarStyle = "time"
+    @AppStorage(Pref.renderNotify) var renderNotify = true
     @AppStorage(Pref.openFinderOnCreate) var openFinder = true
     @AppStorage(Pref.openAEOnCreate) var openAE = false
     @AppStorage(Pref.tabMode) var tabMode = "auto"
@@ -523,6 +524,7 @@ struct SettingsView: View {
                     NSApp.activate(ignoringOtherApps: true)
                 }
             Toggle("Pause the timer when the Mac goes to sleep", isOn: $pauseOnSleep)
+            Toggle("Notify me when a render finishes (watches each task's Render folder)", isOn: $renderNotify)
             HStack(spacing: 10) {
                 Text("Menu bar").font(.system(size: 12))
                 Picker("", selection: $menuBarStyle) {

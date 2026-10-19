@@ -20,6 +20,8 @@ struct TeamView: View {
     @Local var showAddMember = false
     @Local var resetFor: TeamProfile? = nil
     @Local var removeTarget: TeamProfile? = nil
+    @Local var section = "tasks"           // "tasks" | "summary"
+    @Local var period = "month"
     @Local var loadedAt: Date? = nil
 
     var body: some View {
@@ -30,8 +32,13 @@ struct TeamView: View {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
                     .font(.system(size: 12)).foregroundStyle(Theme.pink)
             }
-            nowStrip
-            taskTable
+            if section == "summary" {
+                TeamSummaryView(month: month, monthTasks: tasks, members: members, period: $period)
+                    .environmentObject(store)
+            } else {
+                nowStrip
+                taskTable
+            }
             HStack {
                 Text(loadedAt.map { "Updated \(Fmt.relative($0)) · refreshes every 30 seconds" } ?? "")
                     .font(.system(size: 10)).foregroundStyle(.tertiary)
@@ -42,6 +49,13 @@ struct TeamView: View {
             }
         }
         .frame(width: 900, height: 700)
+        .onAppear {
+            if store.teamReportRequest {
+                store.teamReportRequest = false
+                section = "summary"
+                period = "lastWeek"
+            }
+        }
         .task(id: month) {
             while !Task.isCancelled {
                 await load()
@@ -81,6 +95,13 @@ struct TeamView: View {
 
     private var controls: some View {
         HStack(spacing: 10) {
+            Picker("", selection: $section) {
+                Text("Tasks").tag("tasks")
+                Text("Summary").tag("summary")
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(width: 150)
             Picker("", selection: $month) {
                 ForEach(monthChoices, id: \.self) { m in
                     Text(Fmt.monthYear.string(from: m)).tag(m)
@@ -610,5 +631,196 @@ struct ResetPasswordSheet: View {
                 self.error = error.localizedDescription
             }
         }
+    }
+}
+
+// MARK: - Summary (month / week)
+
+struct TeamSummaryView: View {
+    @EnvironmentObject var store: Store
+    @ObservedObject var cloud = CloudSync.shared
+    let month: Date
+    let monthTasks: [TeamTask]
+    let members: [TeamProfile]
+    @Binding var period: String          // "month" | "thisWeek" | "lastWeek"
+
+    @Local var weekTasks: [TeamTask] = []
+    @Local var weekMembers: [TeamProfile] = []
+    @Local var loading = false
+    @Local var error: String? = nil
+
+    struct Row: Identifiable {
+        let id: String
+        let name: String
+        let count: Int
+        let completed: Int
+        let seconds: Double
+    }
+
+    private var range: (from: Date, to: Date)? {
+        guard let thisWeek = CloudSync.weekStart(of: Date()) else { return nil }
+        let cal = Calendar.current
+        switch period {
+        case "thisWeek":
+            return (thisWeek, cal.date(byAdding: .day, value: 7, to: thisWeek) ?? Date())
+        case "lastWeek":
+            return (cal.date(byAdding: .day, value: -7, to: thisWeek) ?? thisWeek, thisWeek)
+        default:
+            return nil
+        }
+    }
+
+    private var tasks: [TeamTask] {
+        if period == "month" {
+            return monthTasks.filter { Calendar.current.isDate($0.createdAt, equalTo: month, toGranularity: .month) }
+        }
+        return weekTasks
+    }
+
+    private var allMembers: [TeamProfile] { period == "month" || weekMembers.isEmpty ? members : weekMembers }
+
+    private var title: String {
+        if period == "month" { return Fmt.monthYear.string(from: month) }
+        guard let r = range else { return "" }
+        let end = Calendar.current.date(byAdding: .day, value: -1, to: r.to) ?? r.to
+        return "Week of \(Fmt.nice.string(from: r.from)) – \(Fmt.nice.string(from: end))"
+    }
+
+    var body: some View {
+        let rows = tasks
+        let now = store.now
+        let total = rows.reduce(0) { $0 + $1.liveSeconds(at: now) }
+        let byAccount = Self.group(rows, now: now, key: { $0.client.isEmpty ? "No account" : $0.client }, name: { $0 })
+        let byMember = Self.group(rows, now: now, key: { $0.userID }, name: { memberName($0) })
+
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Picker("", selection: $period) {
+                    Text(Fmt.monthYear.string(from: month)).tag("month")
+                    Text("This week").tag("thisWeek")
+                    Text("Last week").tag("lastWeek")
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 360)
+                if loading { ProgressView().controlSize(.small) }
+                Spacer()
+                Button {
+                    let text = Self.reportText(title: "\(cloud.teamName ?? "Team") — \(title)", tasks: rows, now: now,
+                                               byMember: byMember, byAccount: byAccount)
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(text, forType: .string)
+                    store.flash("Report copied — paste it in WhatsApp or email")
+                } label: { Label("Copy Report", systemImage: "doc.on.doc") }
+                    .buttonStyle(GradientButtonStyle(compact: true))
+            }
+            if let error {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .font(.system(size: 12)).foregroundStyle(Theme.pink)
+            }
+
+            HStack(spacing: 10) {
+                stat("Hours", Fmt.hours(total))
+                stat("Tasks", "\(rows.count)")
+                stat("Completed", "\(rows.filter { $0.status == "complete" }.count)")
+                stat("In Progress", "\(rows.filter { $0.status == "active" }.count)")
+                stat("Incoming", "\(rows.filter { $0.status == "incoming" }.count)")
+            }
+
+            HStack(alignment: .top, spacing: 14) {
+                table("By account", byAccount, total: total)
+                table("By member", byMember, total: total)
+            }
+        }
+        .task(id: period) { await loadWeek() }
+    }
+
+    private func stat(_ label: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            SectionLabel(text: label)
+            Text(value).font(.system(size: 22, weight: .semibold, design: .rounded).monospacedDigit())
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassCard(radius: 12)
+    }
+
+    private func table(_ title: String, _ rows: [Row], total: Double) -> some View {
+        let maxSecs = rows.map(\.seconds).max() ?? 1
+        return VStack(alignment: .leading, spacing: 6) {
+            SectionLabel(text: title)
+            ScrollView {
+                VStack(spacing: 4) {
+                    ForEach(rows) { r in
+                        HStack(spacing: 8) {
+                            Text(r.name).font(.system(size: 12, weight: .medium)).lineLimit(1)
+                                .frame(width: 150, alignment: .leading)
+                            GeometryReader { g in
+                                Capsule().fill(Theme.linear)
+                                    .frame(width: max(3, g.size.width * CGFloat(r.seconds / max(maxSecs, 1))))
+                            }
+                            .frame(height: 6)
+                            Text("\(r.count)").font(.system(size: 11)).foregroundStyle(.secondary)
+                                .frame(width: 28, alignment: .trailing)
+                            Text(Fmt.hours(r.seconds)).font(.system(size: 12, weight: .semibold).monospacedDigit())
+                                .frame(width: 44, alignment: .trailing)
+                        }
+                        .padding(.horizontal, 10).padding(.vertical, 6)
+                        .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 8))
+                    }
+                    if rows.isEmpty {
+                        Text("Nothing yet.").font(.system(size: 12)).foregroundStyle(.secondary).padding(.vertical, 20)
+                    }
+                }
+            }
+            HStack {
+                Text("tasks · hours").font(.system(size: 9)).foregroundStyle(.tertiary)
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func memberName(_ id: String) -> String {
+        if let m = allMembers.first(where: { $0.id == id }) { return m.name }
+        if let n = tasks.first(where: { $0.userID == id })?.ownerName, !n.isEmpty { return n + " (left)" }
+        return "—"
+    }
+
+    private func loadWeek() async {
+        guard let r = range else { return }
+        loading = true
+        defer { loading = false }
+        do {
+            let res = try await cloud.loadTasks(from: r.from, to: r.to)
+            weekTasks = res.tasks
+            weekMembers = res.members
+            error = nil
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    static func group(_ tasks: [TeamTask], now: Date, key: (TeamTask) -> String, name: (String) -> String) -> [Row] {
+        var buckets: [String: [TeamTask]] = [:]
+        for t in tasks { buckets[key(t), default: []].append(t) }
+        return buckets.map { k, list in
+            Row(id: k, name: name(k), count: list.count,
+                completed: list.filter { $0.status == "complete" }.count,
+                seconds: list.reduce(0) { $0 + $1.liveSeconds(at: now) })
+        }
+        .sorted { $0.seconds > $1.seconds }
+    }
+
+    /// Plain text to paste in WhatsApp or an email.
+    static func reportText(title: String, tasks: [TeamTask], now: Date, byMember: [Row], byAccount: [Row]) -> String {
+        let total = tasks.reduce(0) { $0 + $1.liveSeconds(at: now) }
+        var lines = [title,
+                     "\(tasks.count) tasks · \(Fmt.hours(total)) h · \(tasks.filter { $0.status == "complete" }.count) completed",
+                     "",
+                     "By member:"]
+        lines += byMember.map { "• \($0.name): \(Fmt.hours($0.seconds)) h (\($0.count) tasks, \($0.completed) completed)" }
+        lines += ["", "By account:"]
+        lines += byAccount.map { "• \($0.name): \(Fmt.hours($0.seconds)) h (\($0.count) tasks)" }
+        return lines.joined(separator: "\n")
     }
 }

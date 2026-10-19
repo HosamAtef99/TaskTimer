@@ -8,6 +8,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         MainActor.assumeIsolated {
             UpdateManager.shared.start()
+            NotificationHandler.shared.install()
+            RenderWatcher.shared.start()
             if Features.sheet { SheetSync.shared.start() }
             Task { @MainActor in await CloudSync.shared.start() }
         }
@@ -91,9 +93,19 @@ struct TaskTimerApp: App {
 /// is the first to disappear.
 struct MenuBarLabel: View {
     @EnvironmentObject var store: Store
+    @Environment(\.openWindow) var openWindow
     @AppStorage(Pref.menuBarStyle) var style = "time"
 
     var body: some View {
+        label
+            .onChange(of: store.windowRequest) { _ in
+                openWindow(id: "main")
+                NSApp.activate(ignoringOtherApps: true)
+            }
+    }
+
+    @ViewBuilder
+    private var label: some View {
         if let r = store.running, style != "icon" {
             let secs = r.totalSeconds(at: store.now)
             HStack(spacing: 3) {

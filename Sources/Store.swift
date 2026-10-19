@@ -18,6 +18,10 @@ final class Store: ObservableObject {
     @Published var showNewTask = false
     @Published var showSettings = false
     @Published var toast: String?
+    /// Bumped to ask the menu bar item to open the main window (it holds openWindow).
+    @Published var windowRequest = 0
+    /// Set when the leader opens the weekly report notification.
+    @Published var teamReportRequest = false
 
     private var ticker: Timer?
     /// Tasks whose row is being sent right now (stops a retry from sending the same row twice).
@@ -308,6 +312,22 @@ final class Store: ObservableObject {
                 t.sessions.removeLast()
             }
         }
+    }
+
+    /// Stops a task's timer and any of its amends' timers.
+    func stopTaskAndAmends(_ id: UUID) {
+        pause(id)
+        for s in subtasks(of: id) where s.isRunning { pause(s.id) }
+        flash("Timer stopped")
+    }
+
+    func runningAmend(of id: UUID) -> UUID? {
+        subtasks(of: id).first(where: { $0.isRunning })?.id
+    }
+
+    func showMainWindow() {
+        windowRequest += 1
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     func toggle(_ id: UUID) {

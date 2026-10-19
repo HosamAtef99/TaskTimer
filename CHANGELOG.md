@@ -2,6 +2,11 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
+## 1.9
+- Render notifications: when a render lands in a task's Render folder, you get a notification with Stop timer / Stop & Done.
+- Team → Summary: hours and tasks by account and by member, for the month, this week or last week, with Copy Report.
+- Weekly report: every Monday from 9:00 the team leader gets last week's numbers as a notification; clicking it opens the summary.
+
 ## 1.8.1
 - Menu bar timer is shorter (1:05) so macOS doesn't hide it when the bar is full. Settings → General lets you pick 1:05, 01:05:12 or icon only.
 

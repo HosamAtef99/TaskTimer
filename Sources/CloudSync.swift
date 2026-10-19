@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import UserNotifications
 
 struct TeamProfile: Identifiable, Hashable {
     let id: String
@@ -102,11 +103,13 @@ final class CloudSync: ObservableObject {
         await loadProfile()
         await pushNow()
         await pull()
+        await checkWeeklyReport()
         if timer == nil {
             timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
                 Task { @MainActor in
                     await self?.pull()
                     await self?.pushNow()
+                    await self?.checkWeeklyReport()
                 }
             }
         }
@@ -316,6 +319,72 @@ final class CloudSync: ObservableObject {
         }
         let tasks = byID.values.sorted { $0.createdAt > $1.createdAt }
         return (members, tasks)
+    }
+
+    /// Team tasks done (by day) or created in [from, to).
+    func loadTasks(from: Date, to: Date) async throws -> (members: [TeamProfile], tasks: [TeamTask]) {
+        guard let team = profile?.teamID else { throw Cloud.CloudError("You're not in a team yet.") }
+        let members = try await CloudAPI.select("profiles", [
+            URLQueryItem(name: "select", value: "id,email,full_name,role,team_id"),
+            URLQueryItem(name: "team_id", value: "eq.\(team)"),
+            URLQueryItem(name: "order", value: "full_name.asc"),
+        ]).compactMap { TeamProfile($0) }
+        let d1 = Fmt.isoDay.string(from: from), d2 = Fmt.isoDay.string(from: to)
+        let t1 = Cloud.iso(from), t2 = Cloud.iso(to)
+        let rows = try await CloudAPI.select("tasks", [
+            URLQueryItem(name: "select", value: "*"),
+            URLQueryItem(name: "team_id", value: "eq.\(team)"),
+            URLQueryItem(name: "deleted", value: "eq.false"),
+            URLQueryItem(name: "or", value: "(and(work_date.gte.\(d1),work_date.lt.\(d2)),and(work_date.is.null,created_at.gte.\(t1),created_at.lt.\(t2)))"),
+        ])
+        return (members, rows.compactMap { TeamTask($0) })
+    }
+
+    // MARK: - Weekly report (leaders)
+
+    private var weeklyChecking = false
+    private let weeklyKey = "weeklyReportWeek"
+
+    /// Once a week (from Monday 9:00), sends the leader a notification with last week's numbers.
+    func checkWeeklyReport() async {
+        guard isLeader, !weeklyChecking else { return }
+        let cal = Calendar.current
+        let now = Date()
+        guard let thisWeek = Self.weekStart(of: now),
+              let lastWeek = cal.date(byAdding: .day, value: -7, to: thisWeek),
+              now >= thisWeek.addingTimeInterval(9 * 3600) else { return }
+        let mark = Fmt.isoDay.string(from: thisWeek)
+        if UserDefaults.standard.string(forKey: weeklyKey) == mark { return }
+        weeklyChecking = true
+        defer { weeklyChecking = false }
+        do {
+            let r = try await loadTasks(from: lastWeek, to: thisWeek)
+            let total = r.tasks.reduce(0) { $0 + $1.liveSeconds(at: now) }
+            var lines: [String] = []
+            for m in r.members {
+                let mine = r.tasks.filter { $0.userID == m.id }
+                guard !mine.isEmpty else { continue }
+                let h = mine.reduce(0) { $0 + $1.liveSeconds(at: now) }
+                lines.append("\(m.name): \(Fmt.hours(h)) h")
+            }
+            let c = UNMutableNotificationContent()
+            c.title = "Weekly report — \(teamName ?? "your team")"
+            c.body = "\(r.tasks.count) tasks · \(Fmt.hours(total)) h\n" + lines.prefix(6).joined(separator: " · ")
+            c.sound = .default
+            c.userInfo = ["kind": "weekly"]
+            try await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "weekly-\(mark)", content: c, trigger: nil))
+            UserDefaults.standard.set(mark, forKey: weeklyKey)
+        } catch {
+            // Try again on the next check.
+        }
+    }
+
+    /// Monday of the week that contains `d`.
+    static func weekStart(of d: Date) -> Date? {
+        var cal = Calendar(identifier: .gregorian)
+        cal.firstWeekday = 2
+        cal.timeZone = .current
+        return cal.dateInterval(of: .weekOfYear, for: d)?.start
     }
 
     /// Leader only: create / reset / remove team accounts through the team-admin Edge Function.
