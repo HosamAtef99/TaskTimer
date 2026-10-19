@@ -2,6 +2,10 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
+## 1.13
+- Each account keeps its own tasks: two people signing in on the same Mac no longer see (or send) each other's tasks.
+- Signing in on a new Mac brings your tasks back from your account.
+
 ## 1.12
 - Modhesh window shows only tasks that are Pending to Start or In Progress.
 - Chrome extension 1.1: a link made in the app shows up on Modhesh within seconds — the Log Time bar switches to "Fill from TaskTimer" by itself, and linked cards on the board get a TaskTimer badge with the hours.

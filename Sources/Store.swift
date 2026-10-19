@@ -29,14 +29,28 @@ final class Store: ObservableObject {
     private var saveWork: DispatchWorkItem?
     private var retryTimer: Timer?
 
-    private let fileURL: URL = {
+    private let dataDir: URL = {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("TaskTimer Dev", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("data.json")
+        return dir
     }()
 
+    /// Whose tasks are loaded: nil when signed out (this Mac only), otherwise the account's id.
+    /// Each account has its own file, so two people on one Mac never see each other's tasks.
+    private(set) var account: String?
+
+    private var fileURL: URL {
+        if let account { return dataDir.appendingPathComponent("data-\(account).json") }
+        return dataDir.appendingPathComponent("data.json")
+    }
+
+    /// The first account to sign in on this Mac takes over the tasks made before signing in.
+    private let localOwnerKey = "localDataOwner"
+
     private init() {
+        account = CloudAuth.shared.session?.userID
+        claimLocalTasksIfFirst()
         load()
         ticker = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.now = Date() }
@@ -55,6 +69,59 @@ final class Store: ObservableObject {
     }
 
     // MARK: - Persistence
+
+    private func claimLocalTasksIfFirst() {
+        guard let account else { return }
+        let fm = FileManager.default
+        let mine = fileURL
+        let local = dataDir.appendingPathComponent("data.json")
+        guard !fm.fileExists(atPath: mine.path),
+              UserDefaults.standard.string(forKey: localOwnerKey) == nil,
+              fm.fileExists(atPath: local.path) else { return }
+        try? fm.copyItem(at: local, to: mine)
+        UserDefaults.standard.set(account, forKey: localOwnerKey)
+    }
+
+    /// Signing in or out: keep the current person's tasks in their file and load the other's.
+    func switchAccount(_ uid: String?) {
+        guard uid != account else { return }
+        stopAll()
+        saveWork?.cancel()
+        writeFile()
+        account = uid
+        claimLocalTasksIfFirst()
+        tasks = []
+        clients = []
+        load()
+        writeFile()
+    }
+
+    /// A new Mac (or a fresh file): rebuild this account's tasks from the team database.
+    func restore(from rows: [TeamTask]) {
+        guard tasks.isEmpty else { return }
+        var list: [TaskItem] = []
+        for r in rows.sorted(by: { $0.createdAt > $1.createdAt }) {
+            guard let id = UUID(uuidString: r.id) else { continue }
+            let clientID = r.client.isEmpty ? nil : addClient(r.client)?.id
+            var t = TaskItem(name: r.name, clientID: clientID, folderPath: nil)
+            t.id = id
+            t.createdAt = r.createdAt
+            switch r.status {
+            case "incoming": t.status = .incoming
+            case "complete": t.status = .complete
+            default: t.status = .active
+            }
+            t.manualAdjust = r.seconds
+            if let since = r.runningSince { t.sessions = [WorkSession(start: since)] }
+            t.workDate = r.workDate
+            t.parentID = r.parentID.flatMap { UUID(uuidString: $0) }
+            t.deliverables = r.deliverables
+            t.rating = r.rating
+            list.append(t)
+        }
+        tasks = list
+        if !list.isEmpty { flash("Brought back \(list.count) tasks from your account") }
+    }
 
     private func load() {
         guard let data = try? Data(contentsOf: fileURL) else { return }
@@ -76,12 +143,16 @@ final class Store: ObservableObject {
     }
 
     func saveNow() {
+        writeFile()
+        CloudSync.shared.scheduleSync()
+    }
+
+    private func writeFile() {
         let enc = JSONEncoder()
         enc.dateEncodingStrategy = .iso8601
         enc.outputFormatting = [.prettyPrinted, .sortedKeys]
         guard let data = try? enc.encode(AppData(tasks: tasks, clients: clients)) else { return }
         try? data.write(to: fileURL, options: .atomic)
-        CloudSync.shared.scheduleSync()
     }
 
     var dataFolder: URL { fileURL.deletingLastPathComponent() }

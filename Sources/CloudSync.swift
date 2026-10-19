@@ -92,19 +92,31 @@ final class CloudSync: ObservableObject {
     private var pushing = false
     private var pulling = false
 
-    private let pushedKey = "cloudPushed"
-    private let lastPullKey = "cloudLastPull"
+    /// The account the pushed / lastPull state belongs to (kept per account).
+    private var stateUser: String?
+    private var pushedKey: String { "cloudPushed-\(stateUser ?? "none")" }
+    private var lastPullKey: String { "cloudLastPull-\(stateUser ?? "none")" }
 
-    private init() {
-        pushed = (UserDefaults.standard.dictionary(forKey: pushedKey) as? [String: String]) ?? [:]
-        lastPull = UserDefaults.standard.object(forKey: lastPullKey) as? Date
+    private init() {}
+
+    /// Loads the sync state of the signed-in account. False when it isn't the account
+    /// whose tasks are loaded in the app (never send one person's tasks as another's).
+    private func ensureState() -> Bool {
+        guard let uid = CloudAuth.shared.session?.userID, Store.shared.account == uid else { return false }
+        if stateUser != uid {
+            stateUser = uid
+            pushed = (UserDefaults.standard.dictionary(forKey: pushedKey) as? [String: String]) ?? [:]
+            lastPull = UserDefaults.standard.object(forKey: lastPullKey) as? Date
+        }
+        return true
     }
 
     // MARK: - Lifecycle
 
     func start() async {
-        guard CloudAuth.shared.signedIn else { return }
+        guard CloudAuth.shared.signedIn, ensureState() else { return }
         await loadProfile()
+        await restoreIfEmpty()
         await pushNow()
         await pull()
         await checkWeeklyReport()
@@ -130,8 +142,31 @@ final class CloudSync: ObservableObject {
         error = nil
         pushed = [:]
         lastPull = nil
-        UserDefaults.standard.removeObject(forKey: pushedKey)
-        UserDefaults.standard.removeObject(forKey: lastPullKey)
+        stateUser = nil
+        modheshTasks = []
+    }
+
+    /// First sign-in on this Mac for an account that already has tasks: bring them back.
+    private func restoreIfEmpty() async {
+        guard let uid = CloudAuth.shared.session?.userID, Store.shared.account == uid,
+              Store.shared.tasks.isEmpty else { return }
+        do {
+            let rows = try await CloudAPI.select("tasks", [
+                URLQueryItem(name: "select", value: "*"),
+                URLQueryItem(name: "user_id", value: "eq.\(uid)"),
+                URLQueryItem(name: "deleted", value: "eq.false"),
+            ])
+            let list = rows.compactMap { TeamTask($0) }
+            Store.shared.restore(from: list)
+            // These rows are already in the database as they are.
+            for t in Store.shared.tasks {
+                let id = t.id.uuidString.lowercased()
+                pushed[id] = fingerprint(row(for: t, userID: uid))
+            }
+            UserDefaults.standard.set(pushed, forKey: pushedKey)
+        } catch {
+            self.error = error.localizedDescription
+        }
     }
 
     /// Called whenever tasks change; sends them a moment later.
@@ -223,7 +258,7 @@ final class CloudSync: ObservableObject {
     }
 
     func pushNow() async {
-        guard let uid = CloudAuth.shared.session?.userID, !pushing else { return }
+        guard let uid = CloudAuth.shared.session?.userID, !pushing, ensureState() else { return }
         pushing = true
         defer { pushing = false }
 
@@ -275,7 +310,7 @@ final class CloudSync: ObservableObject {
     // MARK: - Tasks a leader added for me
 
     func pull() async {
-        guard let uid = CloudAuth.shared.session?.userID, !pulling else { return }
+        guard let uid = CloudAuth.shared.session?.userID, !pulling, ensureState() else { return }
         pulling = true
         defer { pulling = false }
         var query = [

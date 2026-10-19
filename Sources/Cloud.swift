@@ -134,6 +134,7 @@ final class CloudAuth: ObservableObject {
         session = nil
         save()
         CloudSync.shared.reset()
+        Store.shared.switchAccount(nil)
     }
 
     /// The refresh in progress, shared so two requests never use the same refresh token twice
@@ -176,7 +177,10 @@ final class CloudAuth: ObservableObject {
         defer { busy = false }
         do {
             try await work()
-            if signedIn { await CloudSync.shared.start() }
+            if let uid = session?.userID {
+                Store.shared.switchAccount(uid)
+                await CloudSync.shared.start()
+            }
         } catch {
             message = error.localizedDescription
         }
