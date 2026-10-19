@@ -36,7 +36,7 @@ struct TaskTimerApp: App {
     }
 
     var body: some Scene {
-        Window("TaskTimer", id: "main") {
+        Window("TaskTimer Dev", id: "main") {
             MainView()
                 .environmentObject(store)
         }
@@ -112,7 +112,7 @@ struct MenuBarPanel: View {
             GlowBackground(animate: false)
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    Text("TaskTimer")
+                    Text("TaskTimer Dev")
                         .font(.system(size: 15, weight: .bold, design: .rounded))
                         .gradientText()
                     Spacer()

@@ -7,7 +7,7 @@ import UniformTypeIdentifiers
 /// GitHub Actions builds TaskTimer.app on every push and publishes it as a release with
 /// three files: TaskTimer.app.zip, VERSION and NOTES.txt.
 enum UpdateSource {
-    static let repo = "mo-animation/TaskTimer"   // owner/name
+    static let repo = "HosamAtef99/TaskTimer"   // owner/name
 
     static var isConfigured: Bool { !repo.hasPrefix("__") && repo.contains("/") }
 
@@ -188,7 +188,7 @@ final class UpdateManager: ObservableObject {
 
     nonisolated private static func workDir() -> URL {
         let d = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("TaskTimer/update", isDirectory: true)
+            .appendingPathComponent("TaskTimer Dev/update", isDirectory: true)
         try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
         return d
     }
@@ -196,7 +196,7 @@ final class UpdateManager: ObservableObject {
     nonisolated private static var logURL: URL {
         let logs = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs", isDirectory: true)
         try? FileManager.default.createDirectory(at: logs, withIntermediateDirectories: true)
-        return logs.appendingPathComponent("TaskTimer-update.log")
+        return logs.appendingPathComponent("TaskTimer Dev-update.log")
     }
 
     /// Unpacks a ready-built app, checks it, then quits and lets a tiny helper swap it in.

@@ -25,7 +25,7 @@ final class Store: ObservableObject {
 
     private let fileURL: URL = {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("TaskTimer", isDirectory: true)
+            .appendingPathComponent("TaskTimer Dev", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.appendingPathComponent("data.json")
     }()

@@ -3,13 +3,13 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleName</key>
-	<string>TaskTimer</string>
+	<string>TaskTimer Dev</string>
 	<key>CFBundleDisplayName</key>
-	<string>TaskTimer</string>
+	<string>TaskTimer Dev</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.mosap.tasktimer</string>
+	<string>com.hosam.tasktimer.dev</string>
 	<key>CFBundleExecutable</key>
-	<string>TaskTimer</string>
+	<string>TaskTimerDev</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

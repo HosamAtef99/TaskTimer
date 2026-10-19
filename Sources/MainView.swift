@@ -56,7 +56,7 @@ struct MainView: View {
     private var header: some View {
         HStack(alignment: .center, spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("TaskTimer")
+                Text("TaskTimer Dev")
                     .font(.system(size: 26, weight: .bold, design: .rounded))
                     .gradientText()
                 Text("Today · \(Fmt.short(store.todaySeconds()))")

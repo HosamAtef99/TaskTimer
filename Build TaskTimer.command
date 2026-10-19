@@ -6,6 +6,12 @@
 cd "$(dirname "$0")" || exit 1
 set -e
 
+# Hosam's dev copy: its own name, executable and bundle ID, so it installs
+# next to the team's TaskTimer instead of replacing it.
+APP_NAME="TaskTimer Dev"
+EXE="TaskTimerDev"
+BUNDLE_ID="com.hosam.tasktimer.dev"
+
 say() { printf "\n\033[1;35m▸ %s\033[0m\n" "$1"; }
 fail() {
   printf "\n\033[1;31m✗ %s\033[0m\n" "$1"
@@ -18,7 +24,7 @@ fail() {
 }
 
 VERSION="$(tr -d ' \n\r' < Resources/VERSION 2>/dev/null || echo 1.0)"
-say "TaskTimer $VERSION"
+say "TaskTimer Dev $VERSION"
 
 say "Checking the Swift compiler"
 if ! xcrun --find swiftc >/dev/null 2>&1; then
@@ -59,7 +65,7 @@ if [ -n "$TT_CI" ]; then
   # GitHub build: one app that runs on both Apple Silicon and Intel Macs.
   say "Compiling (arm64 + x86_64)"
   if compile arm64 build/tt-arm64 && compile x86_64 build/tt-x86_64; then
-    lipo -create build/tt-arm64 build/tt-x86_64 -output "$OUT/Contents/MacOS/TaskTimer"
+    lipo -create build/tt-arm64 build/tt-x86_64 -output "$OUT/Contents/MacOS/$EXE"
     rm -f build/tt-arm64 build/tt-x86_64
   else
     cat build_errors.txt
@@ -70,7 +76,7 @@ if [ -n "$TT_CI" ]; then
   fi
 else
   say "Compiling ($ARCH)"
-  if ! compile "$ARCH" "$OUT/Contents/MacOS/TaskTimer"; then
+  if ! compile "$ARCH" "$OUT/Contents/MacOS/$EXE"; then
     cat build_errors.txt
     fail "Build failed. Send build_errors.txt (in this folder) to Claude."
   fi
@@ -97,19 +103,19 @@ DEST="/Applications"
 say "Installing to $DEST"
 if [ -n "$TT_UPDATE" ]; then
   # TaskTimer already saved everything before starting the update.
-  pkill -TERM -x TaskTimer >/dev/null 2>&1 || true
+  pkill -TERM -x "$EXE" >/dev/null 2>&1 || true
 else
-  osascript -e 'tell application "TaskTimer" to quit' >/dev/null 2>&1 || true
+  osascript -e "tell application id \"$BUNDLE_ID\" to quit" >/dev/null 2>&1 || true
 fi
 # Wait until the old copy has really quit before replacing it.
 for _ in $(seq 1 30); do
-  pgrep -x TaskTimer >/dev/null 2>&1 || break
+  pgrep -x "$EXE" >/dev/null 2>&1 || break
   sleep 0.5
 done
-rm -rf "$DEST/TaskTimer.app"
-cp -R "$OUT" "$DEST/"
-xattr -dr com.apple.quarantine "$DEST/TaskTimer.app" 2>/dev/null || true
+rm -rf "$DEST/$APP_NAME.app"
+cp -R "$OUT" "$DEST/$APP_NAME.app"
+xattr -dr com.apple.quarantine "$DEST/$APP_NAME.app" 2>/dev/null || true
 
-say "Done — opening TaskTimer $VERSION"
-open "$DEST/TaskTimer.app"
+say "Done — opening $APP_NAME $VERSION"
+open "$DEST/$APP_NAME.app"
 echo "TT_BUILD_OK"
