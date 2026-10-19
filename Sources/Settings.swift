@@ -22,6 +22,7 @@ enum Pref {
     static let updateSameRow = "updateSameRow"
     static let hideDock = "hideDock"
     static let pauseOnSleep = "pauseOnSleep"
+    static let menuBarStyle = "menuBarStyle"   // "time" (1:05) | "seconds" (01:05:12) | "icon"
     static let openFinderOnCreate = "openFinderOnCreate"
     static let openAEOnCreate = "openAEOnCreate"
 
@@ -82,6 +83,7 @@ enum Pref {
             updateSameRow: true,
             hideDock: false,
             pauseOnSleep: true,
+            menuBarStyle: "time",
             openFinderOnCreate: true,
             openAEOnCreate: false,
             tabMode: "auto",
@@ -116,6 +118,12 @@ enum Fmt {
     static func clock(_ s: TimeInterval) -> String {
         let t = Int(max(0, s))
         return String(format: "%02d:%02d:%02d", t / 3600, (t % 3600) / 60, t % 60)
+    }
+
+    /// "1:05" — hours and minutes, for the menu bar.
+    static func menuClock(_ s: TimeInterval) -> String {
+        let m = Int(max(0, s)) / 60
+        return String(format: "%d:%02d", m / 60, m % 60)
     }
 
     static func short(_ s: TimeInterval) -> String {

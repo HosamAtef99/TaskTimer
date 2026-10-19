@@ -177,6 +177,7 @@ struct SettingsView: View {
     @AppStorage(Pref.updateSameRow) var updateSameRow = true
     @AppStorage(Pref.hideDock) var hideDock = false
     @AppStorage(Pref.pauseOnSleep) var pauseOnSleep = true
+    @AppStorage(Pref.menuBarStyle) var menuBarStyle = "time"
     @AppStorage(Pref.openFinderOnCreate) var openFinder = true
     @AppStorage(Pref.openAEOnCreate) var openAE = false
     @AppStorage(Pref.tabMode) var tabMode = "auto"
@@ -522,6 +523,20 @@ struct SettingsView: View {
                     NSApp.activate(ignoringOtherApps: true)
                 }
             Toggle("Pause the timer when the Mac goes to sleep", isOn: $pauseOnSleep)
+            HStack(spacing: 10) {
+                Text("Menu bar").font(.system(size: 12))
+                Picker("", selection: $menuBarStyle) {
+                    Text("1:05").tag("time")
+                    Text("01:05:12").tag("seconds")
+                    Text("Icon only").tag("icon")
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 240)
+            }
+            Text("If the timer keeps vanishing from the menu bar, the bar is full: pick a shorter style, or hold ⌘ and drag the timer to the right, next to the clock.")
+                .font(.system(size: 11)).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             Divider()
             HStack {
                 Button("Show Data Folder") { NSWorkspace.shared.open(store.dataFolder) }

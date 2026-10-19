@@ -2,6 +2,9 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
+## 1.8.1
+- Menu bar timer is shorter (1:05) so macOS doesn't hide it when the bar is full. Settings → General lets you pick 1:05, 01:05:12 or icon only.
+
 ## 1.8
 - Removing someone from a team keeps their account and their past tasks; another team leader can then add them (Add Member with their email).
 - A leader still sees who did old tasks after that person leaves.

@@ -86,17 +86,23 @@ struct TaskTimerApp: App {
 
 // MARK: - Menu bar
 
+/// Kept short on purpose: when the menu bar is full (especially next to the camera notch)
+/// macOS hides items that don't fit, and a wide label that changes width every second
+/// is the first to disappear.
 struct MenuBarLabel: View {
     @EnvironmentObject var store: Store
+    @AppStorage(Pref.menuBarStyle) var style = "time"
+
     var body: some View {
-        if let r = store.running {
-            HStack(spacing: 4) {
+        if let r = store.running, style != "icon" {
+            let secs = r.totalSeconds(at: store.now)
+            HStack(spacing: 3) {
                 Image(systemName: "timer")
-                Text(Fmt.clock(r.totalSeconds(at: store.now)))
+                Text(style == "seconds" ? Fmt.clock(secs) : Fmt.menuClock(secs))
                     .monospacedDigit()
             }
         } else {
-            Image(systemName: "timer")
+            Image(systemName: store.running == nil ? "timer" : "timer.circle.fill")
         }
     }
 }
