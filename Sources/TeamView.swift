@@ -482,7 +482,7 @@ struct AddMemberSheet: View {
                 }
             } else {
                 FieldRow(label: "Name") {
-                    TextField("e.g. Shereen", text: $name).textFieldStyle(.roundedBorder)
+                    TextField("e.g. Mosab", text: $name).textFieldStyle(.roundedBorder)
                 }
                 FieldRow(label: "Email") {
                     TextField("name@company.com", text: $email).textFieldStyle(.roundedBorder)

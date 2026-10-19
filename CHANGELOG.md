@@ -2,6 +2,11 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
+## 1.7
+- Incoming tasks get their folder when you press Start (in that month's folder), not when they are added. Tasks from your leader too.
+- The AE template path is no longer filled in with someone else's path; it only shows an example.
+- Fixed: two requests renewing the sign-in at the same moment could sign you out.
+
 ## 1.6
 - Accounts are created by the team leader (Team → Add Member); members only sign in.
 - Members can change their password in Settings → Team.

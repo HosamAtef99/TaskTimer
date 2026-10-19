@@ -49,7 +49,9 @@ enum Pref {
     08 - Others
     """
 
-    static let defaultTemplate = "/Users/mousab.hassan/Desktop/Mosap/assets/new.aep"
+    /// No template until each person picks their own (the path below is only shown as an example).
+    static let defaultTemplate = ""
+    static let templateExample = "/Users/you/Templates/new.aep"
 
     static let oldDefaultSubfolders = """
     00 - Render
@@ -62,6 +64,11 @@ enum Pref {
     """
 
     static func registerDefaults() {
+        // The template path used to default to one person's Mac; forget it if it isn't there.
+        if let t = UserDefaults.standard.string(forKey: templatePath),
+           t.hasPrefix("/Users/mousab.hassan/"), !FileManager.default.fileExists(atPath: t) {
+            UserDefaults.standard.removeObject(forKey: templatePath)
+        }
         // If the old folder tree was saved untouched, switch to the new one.
         if let saved = UserDefaults.standard.string(forKey: subfolders),
            saved.trimmingCharacters(in: .whitespacesAndNewlines) == oldDefaultSubfolders.trimmingCharacters(in: .whitespacesAndNewlines) {

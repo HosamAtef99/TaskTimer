@@ -459,7 +459,7 @@ struct SettingsView: View {
             Divider()
             FieldRow(label: "After Effects template (.aep)") {
                 HStack {
-                    TextField("Path", text: $templatePath)
+                    TextField("e.g. \(Pref.templateExample)", text: $templatePath)
                         .textFieldStyle(.roundedBorder)
                         .font(.system(size: 11, design: .monospaced))
                     Button("Choose…") {

@@ -136,10 +136,24 @@ final class CloudAuth: ObservableObject {
         CloudSync.shared.reset()
     }
 
+    /// The refresh in progress, shared so two requests never use the same refresh token twice
+    /// (Supabase would reject the second one and the person would be signed out).
+    private var refreshing: Task<String, Error>?
+
     /// A valid access token, refreshed when it is about to expire.
     func token() async throws -> String {
         guard let s = session else { throw Cloud.CloudError("Not signed in.") }
         if s.expiresAt.timeIntervalSinceNow > 60 { return s.accessToken }
+        if let r = refreshing { return try await r.value }
+        let task = Task<String, Error> { @MainActor in
+            defer { self.refreshing = nil }
+            return try await self.refresh(s)
+        }
+        refreshing = task
+        return try await task.value
+    }
+
+    private func refresh(_ s: CloudSession) async throws -> String {
         do {
             let obj = try await Self.authCall("token?grant_type=refresh_token", ["refresh_token": s.refreshToken])
             try adopt(obj)

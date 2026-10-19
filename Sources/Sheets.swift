@@ -116,7 +116,7 @@ struct NewTaskSheet: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                Toggle("Create task folder", isOn: $makeFolder)
+                Toggle(startNow ? "Create task folder" : "Create task folder when I start it", isOn: $makeFolder)
                 if makeFolder {
                     HStack(spacing: 8) {
                         Image(systemName: "folder").foregroundStyle(Theme.cool)
@@ -167,22 +167,7 @@ struct NewTaskSheet: View {
         .frame(width: 480)
     }
 
-    /// Folder that holds the month folders for this task (client's folder, or the months folder),
-    /// or nil when the task folder goes to a location picked by hand.
-    private var autoRoot: URL? {
-        let fm = FileManager.default
-        switch Pref.string(Pref.folderMode) {
-        case "client":
-            guard let p = store.client(clientID)?.folderPath, !p.isEmpty, fm.fileExists(atPath: p) else { return nil }
-            return URL(fileURLWithPath: p)
-        case "months":
-            let p = Pref.string(Pref.monthsRoot)
-            guard !p.isEmpty, fm.fileExists(atPath: p) else { return nil }
-            return URL(fileURLWithPath: p)
-        default:
-            return nil
-        }
-    }
+    private var autoRoot: URL? { store.autoFolderRoot(for: clientID) }
 
     private var destinationText: String {
         if let root = autoRoot {
@@ -194,57 +179,53 @@ struct NewTaskSheet: View {
     }
 
     private var folderHint: String? {
-        guard autoRoot == nil else { return nil }
-        switch Pref.string(Pref.folderMode) {
-        case "client":
-            if clientID == nil { return "Pick a client to use its folder." }
-            return "This client has no folder yet — set it in Clients (the people icon)."
-        case "months":
-            return "Set the folder that holds the month folders in Settings → Folders."
-        default:
-            return nil
+        if autoRoot == nil {
+            switch Pref.string(Pref.folderMode) {
+            case "client":
+                if clientID == nil { return "Pick a client to use its folder." }
+                return "This client has no folder yet — set it in Clients (the people icon)."
+            case "months":
+                return "Set the folder that holds the month folders in Settings → Folders."
+            default:
+                break
+            }
         }
+        return nil
     }
 
     private func create() {
         error = nil
         let clean = FolderService.cleanName(name)
         guard !clean.isEmpty else { return }
+
+        // Incoming: the folder is made later, when the task is started.
+        if !startNow {
+            if makeFolder, autoRoot == nil, !location.isEmpty {
+                UserDefaults.standard.set(location, forKey: Pref.lastLocation)
+            }
+            store.addTask(name: clean, clientID: clientID, folder: nil, start: false, incoming: true,
+                          wantsFolder: makeFolder, folderBase: autoRoot == nil ? location : nil)
+            store.flash("Added “\(clean)” to Incoming" + (makeFolder ? " — its folder is made when you start it" : ""))
+            dismiss()
+            return
+        }
+
         var folder: URL?
         if makeFolder {
-            var base: URL?
-            if let root = autoRoot {
-                do {
-                    base = try MonthFolder.folder(in: root)
-                } catch {
-                    self.error = error.localizedDescription
-                    return
-                }
-            } else if !location.isEmpty, FileManager.default.fileExists(atPath: location) {
-                base = URL(fileURLWithPath: location)
-                UserDefaults.standard.set(location, forKey: Pref.lastLocation)
-            } else {
-                base = FolderService.chooseLocation()
-            }
-            guard let base else { return }
             do {
-                folder = try FolderService.createProject(name: clean, in: base)
+                guard let f = try store.makeTaskFolder(name: clean, clientID: clientID, location: location) else { return }
+                folder = f
             } catch {
                 self.error = error.localizedDescription
                 return
             }
         }
-        store.addTask(name: clean, clientID: clientID, folder: folder, start: startNow, incoming: !startNow)
-        if let folder {
-            if Pref.bool(Pref.openFinderOnCreate) { NSWorkspace.shared.open(folder) }
-            if Pref.bool(Pref.openAEOnCreate), let ae = FolderService.aeFile(in: folder) {
-                NSWorkspace.shared.open(ae)
-            }
-        }
+        store.addTask(name: clean, clientID: clientID, folder: folder, start: true)
+        if let folder { store.openNewFolder(folder) }
         if folder != nil && FolderService.templateIsMissing {
             store.flash("Created “\(clean)” — no AE template set (Settings → Folders)")
         } else {
-            store.flash(startNow ? "Created “\(clean)” — timer running" : "Added “\(clean)” to Incoming")
+            store.flash("Created “\(clean)” — timer running")
         }
         dismiss()
     }

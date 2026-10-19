@@ -219,9 +219,14 @@ final class Store: ObservableObject {
     // MARK: - Tasks
 
     @discardableResult
-    func addTask(name: String, clientID: UUID?, folder: URL?, start: Bool, incoming: Bool = false) -> UUID {
+    func addTask(name: String, clientID: UUID?, folder: URL?, start: Bool, incoming: Bool = false,
+                 wantsFolder: Bool = false, folderBase: String? = nil) -> UUID {
         var t = TaskItem(name: name, clientID: clientID, folderPath: folder?.path)
         if incoming { t.status = .incoming }
+        if folder == nil && wantsFolder {
+            t.wantsFolder = true
+            t.folderBase = folderBase
+        }
         if let folder { writeMarker(t, in: folder) }
         if start && !incoming {
             stopAll()
@@ -239,6 +244,7 @@ final class Store: ObservableObject {
         t.id = id
         t.createdAt = createdAt
         t.status = .incoming
+        t.wantsFolder = true
         tasks.insert(t, at: 0)
     }
 
@@ -290,6 +296,7 @@ final class Store: ObservableObject {
             // Starting an Incoming task, or a feedback round on a finished one, puts it In Progress.
             if t.status == .incoming || t.status == .complete { t.status = .active }
         }
+        createDeferredFolder(id)
     }
 
     func pause(_ id: UUID) {
@@ -333,6 +340,79 @@ final class Store: ObservableObject {
         flash(status == .complete
               ? "“\(name)” completed · \(Fmt.hours(totalSeconds)) h"
               : "Saved “\(name)” · \(Fmt.hours(totalSeconds)) h")
+    }
+
+    // MARK: - Task folders
+
+    /// The folder that holds month folders for a new task (the client's folder or the
+    /// months folder, per Settings → Folders), or nil when the location is picked by hand.
+    func autoFolderRoot(for clientID: UUID?) -> URL? {
+        let fm = FileManager.default
+        switch Pref.string(Pref.folderMode) {
+        case "client":
+            guard let p = client(clientID)?.folderPath, !p.isEmpty, fm.fileExists(atPath: p) else { return nil }
+            return URL(fileURLWithPath: p)
+        case "months":
+            let p = Pref.string(Pref.monthsRoot)
+            guard !p.isEmpty, fm.fileExists(atPath: p) else { return nil }
+            return URL(fileURLWithPath: p)
+        default:
+            return nil
+        }
+    }
+
+    /// Makes a task folder (this month's folder, the subfolder tree and the AE file).
+    /// Returns nil if the person cancelled choosing a location. An existing folder of the
+    /// same name is reused instead of failing.
+    func makeTaskFolder(name: String, clientID: UUID?, location: String?) throws -> URL? {
+        let fm = FileManager.default
+        let base: URL
+        if let root = autoFolderRoot(for: clientID) {
+            base = try MonthFolder.folder(in: root)
+        } else if let l = location, !l.isEmpty, fm.fileExists(atPath: l) {
+            base = URL(fileURLWithPath: l)
+            UserDefaults.standard.set(l, forKey: Pref.lastLocation)
+        } else if let picked = FolderService.chooseLocation() {
+            base = picked
+        } else {
+            return nil
+        }
+        let clean = FolderService.cleanName(name)
+        let existing = base.appendingPathComponent(clean, isDirectory: true)
+        if fm.fileExists(atPath: existing.path) { return existing }
+        return try FolderService.createProject(name: clean, in: base)
+    }
+
+    /// Opens the new folder / AE file if Settings say so.
+    func openNewFolder(_ folder: URL) {
+        if Pref.bool(Pref.openFinderOnCreate) { NSWorkspace.shared.open(folder) }
+        if Pref.bool(Pref.openAEOnCreate), let ae = FolderService.aeFile(in: folder) {
+            NSWorkspace.shared.open(ae)
+        }
+    }
+
+    /// An Incoming task was started: make the folder it was waiting for.
+    private func createDeferredFolder(_ id: UUID) {
+        guard let t = task(id), t.parentID == nil, t.folderPath == nil, t.wantsFolder == true else { return }
+        do {
+            guard let f = try makeTaskFolder(name: t.name, clientID: t.clientID, location: t.folderBase) else {
+                flash("No folder made for “\(t.name)” — the timer is running")
+                return
+            }
+            update(id) { t in
+                t.folderPath = f.path
+                t.wantsFolder = nil
+                t.folderBase = nil
+            }
+            for s in subtasks(of: id) where s.folderPath == nil {
+                update(s.id) { $0.folderPath = f.path }
+            }
+            if let t2 = task(id) { writeMarker(t2, in: f) }
+            openNewFolder(f)
+            flash("Folder ready: \((f.path as NSString).abbreviatingWithTildeInPath)")
+        } catch {
+            flash("Couldn't make the folder: \(error.localizedDescription)")
+        }
     }
 
     // MARK: - Months
