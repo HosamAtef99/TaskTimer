@@ -365,6 +365,32 @@ struct HeroCard: View {
     }
 }
 
+// MARK: - Modhesh badge
+
+/// Green "Modhesh" tag on tasks linked to a Modhesh task; ✓ once the time was sent there.
+struct ModheshBadge: View {
+    @ObservedObject var cloud = CloudSync.shared
+    let taskID: UUID
+
+    var body: some View {
+        if let link = cloud.modheshLinks[taskID] {
+            HStack(spacing: 3) {
+                Image(systemName: link.sent ? "checkmark.seal.fill" : "link")
+                    .font(.system(size: 9, weight: .bold))
+                Text(link.sent ? "Modhesh ✓" : "Modhesh")
+                    .font(.system(size: 10, weight: .semibold))
+            }
+            .padding(.horizontal, 7).padding(.vertical, 3)
+            .foregroundStyle(Theme.green)
+            .background(Theme.green.opacity(0.15), in: Capsule())
+            .overlay(Capsule().strokeBorder(Theme.green.opacity(link.sent ? 0.5 : 0.25)))
+            .fixedSize()
+            .help(link.sent ? "Linked to Modhesh — time sent there" + (link.status == 5 ? " (waiting for approval)" : "")
+                            : "Linked to a Modhesh task")
+        }
+    }
+}
+
 // MARK: - This month (completed)
 
 /// Completed tasks and hours this month. It only changes when a task is completed
@@ -478,6 +504,7 @@ struct TaskRow: View {
                         .lineLimit(1)
                         .truncationMode(.tail)
                     StatusPill(status: task.status).fixedSize()
+                    ModheshBadge(taskID: task.id)
                     if task.pendingLog != nil {
                         Image(systemName: "exclamationmark.icloud")
                             .foregroundStyle(Theme.pink)
@@ -612,6 +639,7 @@ struct SubtaskRow: View {
                 .font(.system(size: 12, weight: .semibold))
                 .lineLimit(1)
             StatusPill(status: task.status)
+            ModheshBadge(taskID: task.id)
             if task.pendingLog != nil {
                 Image(systemName: "exclamationmark.icloud")
                     .foregroundStyle(Theme.pink)

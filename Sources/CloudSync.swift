@@ -124,6 +124,7 @@ final class CloudSync: ObservableObject {
         await restoreIfEmpty()
         await saveSettings()
         await loadSettings()
+        await loadModheshLinks()
         await pushNow()
         await pull()
         await checkWeeklyReport()
@@ -136,6 +137,7 @@ final class CloudSync: ObservableObject {
                     await self.pull()
                     await self.pushNow()
                     await self.loadModhesh()
+                    if self.ticks % 3 == 0 { await self.loadModheshLinks() }
                     if self.ticks % 5 == 0 {
                         await self.checkWeeklyReport()
                         await self.loadSettings()
@@ -492,6 +494,37 @@ final class CloudSync: ObservableObject {
     func clearNewModhesh() { newModheshCount = 0 }
 
     /// Links a Modhesh task to a TaskTimer task (nil = unlink). The Chrome extension reads this link.
+    /// TaskTimer tasks linked to a Modhesh task (any Modhesh status), and whether their time
+    /// was sent there. Used to mark linked tasks in the lists.
+    struct ModheshLink: Hashable {
+        var status: Int?
+        var sent: Bool
+    }
+    @Published private(set) var modheshLinks: [UUID: ModheshLink] = [:]
+
+    func loadModheshLinks() async {
+        guard let uid = CloudAuth.shared.session?.userID else { return }
+        let since = Calendar.current.date(byAdding: .day, value: -120, to: Date()) ?? Date()
+        do {
+            let rows = try await CloudAPI.select("modhesh_tasks", [
+                URLQueryItem(name: "select", value: "task_id,status,submitted_at"),
+                URLQueryItem(name: "user_id", value: "eq.\(uid)"),
+                URLQueryItem(name: "task_id", value: "not.is.null"),
+                URLQueryItem(name: "updated_at", value: "gt.\(Cloud.iso(since))"),
+            ])
+            var map: [UUID: ModheshLink] = [:]
+            for r in rows {
+                guard let s = r["task_id"] as? String, let id = UUID(uuidString: s) else { continue }
+                let status = r["status"] as? Int
+                let sent = r["submitted_at"] is String || status == 4 || status == 5
+                map[id] = ModheshLink(status: status, sent: sent)
+            }
+            if map != modheshLinks { modheshLinks = map }
+        } catch {
+            // Older database without these columns: nothing to mark.
+        }
+    }
+
     func linkModhesh(_ code: String, to taskID: UUID?) async {
         guard let uid = CloudAuth.shared.session?.userID else { return }
         do {
@@ -501,6 +534,7 @@ final class CloudSync: ObservableObject {
                 URLQueryItem(name: "code", value: "eq.\(code)"),
             ], ["task_id": taskID.map { $0.uuidString.lowercased() as Any } ?? NSNull()])
             await loadModhesh()
+            await loadModheshLinks()
         } catch {
             modheshError = error.localizedDescription
         }

@@ -2,6 +2,9 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
+## 1.17.1
+- Tasks linked to Modhesh have a green "Modhesh" tag in the lists, and "Modhesh ✓" once their time was sent there.
+
 ## 1.17
 - The timer card shows this month: tasks completed and their hours. It changes when you complete a task, not with the running timer.
 - Pause and Done in the timer card are icons now (⌘⇧P / ⌘↩ still work).
