@@ -2,6 +2,9 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
+## 1.15.1
+- Add Extension now really opens Chrome's extensions page (macOS asks once to let TaskTimer control Chrome — press OK). If it can't, the address is copied so you can paste it.
+
 ## 1.15
 - Settings → Modhesh: default stars, deliverables and challenge answer, the automatic link / log switches, and the extension's status.
 - The Chrome extension now comes inside TaskTimer. "Add Extension" opens Chrome's extensions page and the extension folder, with step-by-step help. After that it updates itself whenever TaskTimer updates.

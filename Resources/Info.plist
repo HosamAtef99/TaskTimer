@@ -24,6 +24,8 @@
 	<string>public.app-category.productivity</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>TaskTimer opens Chrome's extensions page so you can add the TaskTimer extension.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 </dict>

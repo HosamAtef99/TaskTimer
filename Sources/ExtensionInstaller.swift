@@ -55,23 +55,31 @@ enum ExtensionInstaller {
         return nil
     }
 
-    /// Opens chrome://extensions (passed to Chrome on its command line, which it accepts
-    /// even when it is already running) and shows the extension folder in Finder.
-    static func openChromeAndFolder() -> Bool {
+    enum ChromeResult { case opened, chromeOnly, noChrome }
+
+    /// Chrome doesn't let other apps open chrome:// pages by link or command line, so the
+    /// extensions page is opened by asking Chrome itself (AppleScript; macOS asks once for
+    /// permission). Also shows the extension folder in Finder.
+    static func openChromeAndFolder() -> ChromeResult {
         refresh()
         NSWorkspace.shared.activateFileViewerSelecting([folder])
-        guard let chrome = chromeURL else { return false }
-        let exe = chrome.appendingPathComponent("Contents/MacOS").appendingPathComponent(
-            (Bundle(url: chrome)?.object(forInfoDictionaryKey: "CFBundleExecutable") as? String) ?? "Google Chrome")
-        let p = Process()
-        p.executableURL = exe
-        p.arguments = ["chrome://extensions"]
-        do {
-            try p.run()
-        } catch {
-            NSWorkspace.shared.open(chrome)
+        guard let chrome = chromeURL else { return .noChrome }
+        let name = FileManager.default.displayName(atPath: chrome.path).replacingOccurrences(of: ".app", with: "")
+        let source = """
+        tell application "\(name)"
+            activate
+            if (count of windows) = 0 then make new window
+            tell front window to make new tab with properties {URL:"chrome://extensions"}
+        end tell
+        """
+        var err: NSDictionary?
+        if let script = NSAppleScript(source: source) {
+            script.executeAndReturnError(&err)
+            if err == nil { return .opened }
+            NSLog("TaskTimer: opening chrome://extensions failed: \(err ?? [:])")
         }
-        return true
+        NSWorkspace.shared.openApplication(at: chrome, configuration: NSWorkspace.OpenConfiguration())
+        return .chromeOnly
     }
 }
 
@@ -80,20 +88,32 @@ struct AddExtensionSheet: View {
     @EnvironmentObject var store: Store
     @Environment(\.dismiss) var dismiss
     @ObservedObject var cloud = CloudSync.shared
-    @Local var noChrome = false
+    @Local var result: ExtensionInstaller.ChromeResult = .opened
 
     var body: some View {
         SheetFrame(title: "Add the Chrome extension", subtitle: "Once — then it updates by itself with TaskTimer",
                    icon: "puzzlepiece.extension.fill") {
-            if noChrome {
+            switch result {
+            case .noChrome:
                 Label("Google Chrome wasn't found on this Mac. Install Chrome, then press Open Chrome again.",
                       systemImage: "exclamationmark.triangle.fill")
                     .font(.system(size: 12)).foregroundStyle(Theme.orange)
                     .fixedSize(horizontal: false, vertical: true)
+            case .chromeOnly:
+                HStack(spacing: 8) {
+                    Label("Chrome didn't open the extensions page. Click Chrome's address bar, paste (⌘V) and press Return — or allow TaskTimer to control Chrome in System Settings → Privacy & Security → Automation, then press Open Chrome again.",
+                          systemImage: "exclamationmark.triangle.fill")
+                        .font(.system(size: 12)).foregroundStyle(Theme.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button("Copy address") { copy("chrome://extensions") }
+                        .buttonStyle(GlassButtonStyle(compact: true))
+                }
+            case .opened:
+                EmptyView()
             }
             VStack(alignment: .leading, spacing: 12) {
                 step(1, "In the Chrome tab that just opened (chrome://extensions), turn on **Developer mode** — top right.")
-                step(2, "Drag the **TaskTimer Chrome Extension** folder from the Finder window onto that Chrome page.\nOr press **Load unpacked**, then ⌘⇧G, paste (the path is copied) and press Select.")
+                step(2, "Drag the **TaskTimer Chrome Extension** folder from the Finder window onto that Chrome page.\nOr press **Load unpacked**, then ⌘⇧G, paste the path (**Copy Path** below) and press Select.")
                 step(3, "Click the puzzle icon 🧩 in Chrome's toolbar → **TaskTimer for Modhesh**, and sign in with the same account as TaskTimer.")
                 step(4, "Stay signed in to Modhesh in Chrome. That's it — TaskTimer shows “Extension connected” within a few minutes.")
             }
@@ -143,15 +163,20 @@ struct AddExtensionSheet: View {
         }
     }
 
-    private func copyPath() {
+    private func copy(_ text: String) {
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(ExtensionInstaller.folder.path, forType: .string)
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+
+    private func copyPath() {
+        copy(ExtensionInstaller.folder.path)
         store.flash("Folder path copied")
     }
 
     private func open() {
-        copyPath()
-        noChrome = !ExtensionInstaller.openChromeAndFolder()
+        result = ExtensionInstaller.openChromeAndFolder()
+        // If Chrome couldn't be told to open the page, have the address ready to paste.
+        if result == .chromeOnly { copy("chrome://extensions") } else { copy(ExtensionInstaller.folder.path) }
     }
 }
 
