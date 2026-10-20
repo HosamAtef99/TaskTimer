@@ -58,7 +58,7 @@
     if (myTasksCache && !force && Date.now() - myTasksCache.at < 30000) return myTasksCache.list;
     const uid = await TT.userId();
     const list = await TT.rest('GET',
-      `tasks?user_id=eq.${uid}&deleted=eq.false&select=id,name,client,status,seconds,running_since,deliverables,rating,parent_id,started_at,created_at&order=created_at.desc&limit=400`);
+      `tasks?user_id=eq.${uid}&deleted=eq.false&select=*&order=created_at.desc&limit=400`);
     const byId = Object.fromEntries(list.map((t) => [t.id, t]));
     for (const t of list) t.display = t.parent_id && byId[t.parent_id] ? `${byId[t.parent_id].name} - ${t.name}` : t.name;
     myTasksCache = { at: Date.now(), list };
@@ -259,7 +259,7 @@
       `${hours(total)} h in TaskTimer` + (logged ? ` − ${hours(logged)} h already logged here = ${hours(toLog)} h` : '') +
       ` · ${deliverables} deliverable${deliverables === 1 ? '' : 's'} · ${'★'.repeat(rating)}` +
       (complete ? ' · Completed' : ''));
-    const btn = el('button', { type: 'button', class: 'tt-btn', onclick: () => fillLogTime(form, body, { toLog, deliverables, rating, complete }) },
+    const btn = el('button', { type: 'button', class: 'tt-btn', onclick: () => fillLogTime(form, body, { toLog, deliverables, rating, complete, challenge: t.challenge || st.challenge }) },
       'Fill from TaskTimer');
     body.replaceChildren(info, el('div', { class: 'tt-row' }, btn));
   }

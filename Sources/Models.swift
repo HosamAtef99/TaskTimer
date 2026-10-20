@@ -83,6 +83,8 @@ struct TaskItem: Identifiable, Codable, Hashable {
     /// Filled in at Done (sent to Modhesh's Log Time).
     var deliverables: Int?
     var rating: Int?
+    /// Modhesh's "Did you face any challenges?" (1 none, 2 communication, 3 briefing, 4 deadline).
+    var challenge: Int?
     /// Incoming task whose folder is made when it is started.
     var wantsFolder: Bool?
     /// For such a task: the location picked by hand (when not using client / month folders).
@@ -120,7 +122,7 @@ struct TaskItem: Identifiable, Codable, Hashable {
     enum CodingKeys: String, CodingKey {
         case id, name, clientID, folderPath, createdAt, sessions, status
         case manualAdjust, loggedSeconds, sheetRow, lastLoggedAt, pendingLog
-        case parentID, sheetTab, workDate, wantsFolder, folderBase, deliverables, rating
+        case parentID, sheetTab, workDate, wantsFolder, folderBase, deliverables, rating, challenge
     }
 
     init(from decoder: Decoder) throws {
@@ -144,6 +146,7 @@ struct TaskItem: Identifiable, Codable, Hashable {
         folderBase = try c.decodeIfPresent(String.self, forKey: .folderBase)
         deliverables = try c.decodeIfPresent(Int.self, forKey: .deliverables)
         rating = try c.decodeIfPresent(Int.self, forKey: .rating)
+        challenge = try c.decodeIfPresent(Int.self, forKey: .challenge)
     }
 }
 

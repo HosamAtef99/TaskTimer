@@ -245,11 +245,12 @@ final class CloudSync: ObservableObject {
             "deleted": false,
             "deliverables": t.deliverables.map { $0 as Any } ?? NSNull(),
             "rating": t.rating.map { $0 as Any } ?? NSNull(),
+            "challenge": t.challenge.map { $0 as Any } ?? NSNull(),
             "started_at": t.sessions.first.map { Cloud.iso($0.start) as Any } ?? NSNull(),
         ]
     }
 
-    private static let newColumns = ["deliverables", "rating", "started_at"]
+    private static let newColumns = ["deliverables", "rating", "started_at", "challenge"]
 
     /// Set when the database doesn't have the deliverables / rating columns yet
     /// (schema.sql not re-run), so syncing keeps working without them.

@@ -425,21 +425,26 @@ struct TaskRow: View {
                     Text(task.name)
                         .font(.system(size: 14, weight: .semibold))
                         .lineLimit(1)
-                    StatusPill(status: task.status)
+                        .truncationMode(.tail)
+                    StatusPill(status: task.status).fixedSize()
                     if task.pendingLog != nil {
                         Image(systemName: "exclamationmark.icloud")
                             .foregroundStyle(Theme.pink)
                             .help(task.pendingLog?.error ?? "Waiting to be sent")
                     }
                 }
-                HStack(spacing: 6) {
-                    clientMenu
-                    Text("·").foregroundStyle(.tertiary)
-                    Text(Fmt.nice.string(from: task.createdAt))
-                    if let r = task.sheetRow {
+                // Drops the date (then the row number) when there's no room, instead of wrapping.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 6) {
+                        clientMenu
                         Text("·").foregroundStyle(.tertiary)
-                        Text("Row \(r)")
+                        Text(Fmt.nice.string(from: task.createdAt)).fixedSize()
+                        if let r = task.sheetRow {
+                            Text("·").foregroundStyle(.tertiary)
+                            Text("Row \(r)").fixedSize()
+                        }
                     }
+                    clientMenu
                 }
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
@@ -450,6 +455,8 @@ struct TaskRow: View {
             VStack(alignment: .trailing, spacing: 2) {
                 Text(task.status == .complete ? "\(Fmt.hours(task.totalSeconds(at: store.now))) h" : Fmt.clock(task.totalSeconds(at: store.now)))
                     .font(.system(size: 15, weight: .medium, design: .rounded).monospacedDigit())
+                    .lineLimit(1)
+                    .fixedSize()
                     .foregroundStyle(task.isRunning ? AnyShapeStyle(Theme.linear) : AnyShapeStyle(HierarchicalShapeStyle.secondary))
                 if hasSubs {
                     Text("Total \(Fmt.hours(store.groupSeconds(task.id))) h")
@@ -481,7 +488,7 @@ struct TaskRow: View {
                     .buttonStyle(CircleIconButtonStyle(size: 28))
                     .help("Add an amend (subtask). It gets its own timer and its own row in the sheet.")
                 Button { store.requestDone(task.id) } label: {
-                    Text(doneLabel(task))
+                    Text(doneLabel(task)).lineLimit(1).fixedSize()
                 }
                 .buttonStyle(GradientButtonStyle(compact: true))
             }
@@ -569,9 +576,11 @@ struct SubtaskRow: View {
 
             Text(task.status == .complete ? "\(Fmt.hours(task.totalSeconds(at: store.now))) h" : Fmt.clock(task.totalSeconds(at: store.now)))
                 .font(.system(size: 13, weight: .medium, design: .rounded).monospacedDigit())
+                .lineLimit(1)
+                .fixedSize()
                 .foregroundStyle(task.isRunning ? AnyShapeStyle(Theme.linear) : AnyShapeStyle(HierarchicalShapeStyle.secondary))
             Button { store.requestDone(task.id) } label: {
-                Text(doneLabel(task))
+                Text(doneLabel(task)).lineLimit(1).fixedSize()
             }
             .buttonStyle(GradientButtonStyle(compact: true))
         }

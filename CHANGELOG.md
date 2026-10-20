@@ -2,6 +2,12 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
+## 1.16
+- Done: the time is now big and simple — hours and minutes, filled in to the nearest half hour, with − / + half-hour buttons.
+- Done asks "Did you face any challenges?" (your default from Settings → Modhesh is pre-picked); the answer is used on Modhesh.
+- Task cards no longer wrap the date or the Done button when the window is narrow.
+- Run the latest schema.sql once (adds the challenge column).
+
 ## 1.15.2
 - "Add Extension" disappears as soon as the extension is in Chrome (TaskTimer checks Chrome itself — no waiting). Signing in to the extension connects it right away.
 

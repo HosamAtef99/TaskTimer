@@ -49,6 +49,7 @@ alter table public.tasks add column if not exists started_at timestamptz;
 -- Filled in at Done; used for Modhesh's Log Time.
 alter table public.tasks add column if not exists deliverables integer;
 alter table public.tasks add column if not exists rating integer check (rating between 1 and 5);
+alter table public.tasks add column if not exists challenge integer;
 
 create index if not exists tasks_team_created on public.tasks (team_id, created_at);
 create index if not exists tasks_user_updated on public.tasks (user_id, updated_at);

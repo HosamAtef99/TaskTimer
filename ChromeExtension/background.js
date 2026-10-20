@@ -143,7 +143,7 @@ async function myData() {
   const uid = await TT.userId();
   const [rows, tasks] = await Promise.all([
     TT.rest('GET', `modhesh_tasks?user_id=eq.${uid}&select=*`),
-    TT.rest('GET', `tasks?user_id=eq.${uid}&deleted=eq.false&select=id,name,client,status,seconds,running_since,deliverables,rating,parent_id,started_at,created_at&order=created_at.desc&limit=400`),
+    TT.rest('GET', `tasks?user_id=eq.${uid}&deleted=eq.false&select=*&order=created_at.desc&limit=400`),
   ]);
   const byId = Object.fromEntries(tasks.map((t) => [t.id, t]));
   for (const t of tasks) t.display = t.parent_id && byId[t.parent_id] ? `${byId[t.parent_id].name} - ${t.name}` : t.name;
@@ -191,7 +191,7 @@ function jobsFrom({ rows, byId }, st = {}) {
       toLog,
       deliverables: t.deliverables ?? st.default_deliverables ?? 1,
       rating: t.rating ?? st.default_rating ?? 5,
-      challenge: st.challenge || 1,
+      challenge: t.challenge || st.challenge || 1,
       complete: true,
       startedAt: t.started_at || t.created_at,
     });

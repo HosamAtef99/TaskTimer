@@ -241,17 +241,20 @@ struct DoneSheet: View {
     @Local var name = ""
     @Local var clientID: UUID? = nil
     @Local var date = Date()
-    @Local var hours: Double = 0
+    @Local var hours = 0
+    @Local var minutes = 0
     @Local var deliverables = 1
     @Local var rating = 5
+    @Local var challenge = 1
     @Local var loaded = false
 
     private var task: TaskItem? { store.task(taskID) }
     private var parent: TaskItem? { task.flatMap { store.parent(of: $0) } }
+    private var totalMinutes: Int { max(0, hours * 60 + minutes) }
 
     var body: some View {
         SheetFrame(title: parent == nil ? "Finish Task" : "Finish Amend",
-                   subtitle: "Write the hours and the day", icon: "checkmark") {
+                   subtitle: "Time, day and how it went", icon: "checkmark") {
             FieldRow(label: parent == nil ? "Task name" : "Amend name") {
                 TextField(parent == nil ? "Task" : "Amend 1", text: $name).textFieldStyle(.roundedBorder)
                 if let p = parent {
@@ -264,28 +267,37 @@ struct DoneSheet: View {
                 ClientPicker(selection: $clientID)
             }
 
+            // Time — big and simple, in steps of half an hour.
+            VStack(alignment: .leading, spacing: 8) {
+                SectionLabel(text: "Time")
+                HStack(spacing: 12) {
+                    Button { bump(-30) } label: { Image(systemName: "minus") }
+                        .buttonStyle(CircleIconButtonStyle(size: 40))
+                        .disabled(totalMinutes == 0)
+                        .help("− 30 min")
+                    timeField($hours, unit: "h", width: 64)
+                    timeField($minutes, unit: "m", width: 64)
+                    Button { bump(30) } label: { Image(systemName: "plus") }
+                        .buttonStyle(CircleIconButtonStyle(filled: true, size: 40))
+                        .help("+ 30 min")
+                    Spacer(minLength: 0)
+                }
+                if let t = task {
+                    Text("Timer: \(Fmt.clock(t.totalSeconds(at: store.now))) — rounded to the nearest half hour. Change it if needed.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(14)
+            .glassCard(radius: 14, highlight: true)
+
             HStack(alignment: .top, spacing: 18) {
                 FieldRow(label: "Day") {
                     DatePicker("", selection: $date, displayedComponents: .date)
                         .labelsHidden()
                         .datePickerStyle(.field)
                 }
-                FieldRow(label: "Hours") {
-                    HStack(spacing: 6) {
-                        TextField("", value: $hours, format: .number.precision(.fractionLength(0...2)))
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 70)
-                            .multilineTextAlignment(.trailing)
-                        Stepper("", onIncrement: { hours += 0.25 },
-                                onDecrement: { hours = max(0, hours - 0.25) })
-                            .labelsHidden()
-                        Text("h").foregroundStyle(.secondary)
-                    }
-                }
-                Spacer()
-            }
-
-            HStack(alignment: .top, spacing: 18) {
                 FieldRow(label: "Deliverables") {
                     HStack(spacing: 6) {
                         TextField("", value: $deliverables, format: .number)
@@ -308,14 +320,15 @@ struct DoneSheet: View {
                         }
                     }
                 }
-                Spacer()
+                Spacer(minLength: 0)
             }
 
-            if let t = task {
-                Text("Timer: \(Fmt.clock(t.totalSeconds(at: store.now))) (≈ \(Fmt.hours(t.totalSeconds(at: store.now))) h). Hours are filled in to the nearest quarter — change them if needed.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+            FieldRow(label: "Did you face any challenges?") {
+                Picker("", selection: $challenge) {
+                    ForEach(ModheshSettings.challenges, id: \.0) { c in Text(c.1).tag(c.0) }
+                }
+                .labelsHidden()
+                .frame(maxWidth: 260, alignment: .leading)
             }
 
             HStack {
@@ -332,8 +345,41 @@ struct DoneSheet: View {
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
-        .frame(width: 500)
+        .frame(width: 520)
         .onAppear(perform: load)
+        .onChange(of: minutes) { m in
+            if m >= 60 { hours += m / 60; minutes = m % 60 }
+            if m < 0 { minutes = 0 }
+        }
+        .onChange(of: hours) { h in if h < 0 { hours = 0 } }
+    }
+
+    private func timeField(_ value: Binding<Int>, unit: String, width: CGFloat) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 4) {
+            TextField("0", value: value, format: .number)
+                .textFieldStyle(.plain)
+                .font(.system(size: 30, weight: .semibold, design: .rounded).monospacedDigit())
+                .multilineTextAlignment(.trailing)
+                .frame(width: width)
+            Text(unit)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 10).padding(.vertical, 4)
+        .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    /// Moves to the next / previous half hour.
+    private func bump(_ delta: Int) {
+        var total = totalMinutes
+        if delta > 0 {
+            total = (total / 30 + 1) * 30
+        } else {
+            total = total % 30 == 0 ? total - 30 : (total / 30) * 30
+        }
+        total = max(0, total)
+        hours = total / 60
+        minutes = total % 60
     }
 
     private func load() {
@@ -343,19 +389,22 @@ struct DoneSheet: View {
         clientID = t.clientID
         date = t.workDate ?? Date()
         let secs = t.totalSeconds(at: Date())
-        var h = (secs / 3600 * 4).rounded() / 4
-        if secs > 0 && h == 0 { h = 0.25 }
-        hours = h
+        var m = Int((secs / 1800).rounded()) * 30          // nearest half hour
+        if secs > 0 && m == 0 { m = 30 }
+        hours = m / 60
+        minutes = m % 60
         deliverables = t.deliverables ?? max(0, Pref.int(Pref.defaultDeliverables))
         rating = t.rating ?? min(5, max(1, Pref.int(Pref.defaultRating)))
+        challenge = t.challenge ?? min(4, max(1, Pref.int(Pref.defaultChallenge)))
     }
 
     private func save(_ status: TaskStatus) {
         let n = name.trimmingCharacters(in: .whitespaces)
         guard !n.isEmpty else { return }
         store.complete(taskID, name: n, clientID: clientID, status: status,
-                       date: date, totalSeconds: max(0, hours) * 3600,
-                       deliverables: max(0, deliverables), rating: min(5, max(1, rating)))
+                       date: date, totalSeconds: TimeInterval(totalMinutes * 60),
+                       deliverables: max(0, deliverables), rating: min(5, max(1, rating)),
+                       challenge: challenge)
         dismiss()
     }
 }
