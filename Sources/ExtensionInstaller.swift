@@ -88,6 +88,7 @@ struct AddExtensionSheet: View {
     @EnvironmentObject var store: Store
     @Environment(\.dismiss) var dismiss
     @ObservedObject var cloud = CloudSync.shared
+    @ObservedObject var monitor = ExtensionMonitor.shared
     @Local var result: ExtensionInstaller.ChromeResult = .opened
 
     var body: some View {
@@ -121,10 +122,12 @@ struct AddExtensionSheet: View {
             .glassCard(radius: 14)
 
             HStack(spacing: 6) {
-                Circle().fill(cloud.extensionConnected ? Theme.green : Color.secondary.opacity(0.4)).frame(width: 8, height: 8)
-                Text(cloud.extensionConnected ? "Extension connected ✓" : "Waiting for the extension…")
+                let ok = monitor.installed || cloud.extensionConnected
+                Circle().fill(ok ? Theme.green : Color.secondary.opacity(0.4)).frame(width: 8, height: 8)
+                Text(cloud.extensionConnected ? "Extension connected ✓"
+                     : (monitor.installed ? "Added to Chrome ✓ — now sign in to it (step 3)" : "Waiting for the extension…"))
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(cloud.extensionConnected ? Theme.green : .secondary)
+                    .foregroundStyle(ok ? Theme.green : .secondary)
             }
 
             HStack(spacing: 8) {
@@ -144,7 +147,8 @@ struct AddExtensionSheet: View {
         .onAppear { open() }
         .task {
             while !Task.isCancelled && !cloud.extensionConnected {
-                try? await Task.sleep(nanoseconds: 10_000_000_000)
+                try? await Task.sleep(nanoseconds: 4_000_000_000)
+                monitor.check()
                 await cloud.loadSettings()
             }
         }
@@ -180,45 +184,108 @@ struct AddExtensionSheet: View {
     }
 }
 
-/// "Add Extension" button + status, used in Settings → Modhesh and the Modhesh window.
+/// Knows whether the extension has been added to Chrome on this Mac, by reading Chrome's own
+/// profile settings (no sign-in or network needed), so "Add Extension" disappears right away.
+@MainActor
+final class ExtensionMonitor: ObservableObject {
+    static let shared = ExtensionMonitor()
+    @Published private(set) var installed = false
+    private var timer: Timer?
+
+    private init() {
+        check()
+        timer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.check() }
+        }
+        NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification,
+                                               object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.check() }
+        }
+    }
+
+    func check() {
+        let target = ExtensionInstaller.folder.standardizedFileURL.path
+        Task.detached(priority: .utility) {
+            let found = Self.scan(target)
+            await MainActor.run { if self.installed != found { self.installed = found } }
+        }
+    }
+
+    nonisolated private static func scan(_ target: String) -> Bool {
+        let fm = FileManager.default
+        let base = fm.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Google")
+        for chrome in ["Chrome", "Chrome Beta", "Chrome Canary"] {
+            let root = base.appendingPathComponent(chrome)
+            guard let profiles = try? fm.contentsOfDirectory(atPath: root.path) else { continue }
+            for p in profiles where p == "Default" || p.hasPrefix("Profile ") {
+                for file in ["Secure Preferences", "Preferences"] {
+                    let url = root.appendingPathComponent(p).appendingPathComponent(file)
+                    guard let data = try? Data(contentsOf: url),
+                          let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                          let ext = obj["extensions"] as? [String: Any],
+                          let settings = ext["settings"] as? [String: Any] else { continue }
+                    for case let e as [String: Any] in settings.values {
+                        guard let path = e["path"] as? String else { continue }
+                        let full = URL(fileURLWithPath: path).standardizedFileURL.path
+                        if full == target || path.hasSuffix("/TaskTimer Chrome Extension") { return true }
+                    }
+                }
+            }
+        }
+        return false
+    }
+}
+
+/// Extension status, used in Settings → Modhesh and the Modhesh window. The "Add Extension"
+/// button only shows while the extension isn't in Chrome.
 struct ExtensionStatusRow: View {
     @ObservedObject var cloud = CloudSync.shared
+    @ObservedObject var monitor = ExtensionMonitor.shared
     @Local var showHelp = false
+
+    private var added: Bool { monitor.installed || cloud.extensionConnected }
 
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "puzzlepiece.extension.fill")
                 .font(.system(size: 18))
-                .foregroundStyle(cloud.extensionConnected ? AnyShapeStyle(Theme.green) : AnyShapeStyle(Theme.cool))
+                .foregroundStyle(added ? AnyShapeStyle(Theme.green) : AnyShapeStyle(Theme.cool))
             VStack(alignment: .leading, spacing: 2) {
-                Text(cloud.extensionConnected ? "Chrome extension connected" : "Chrome extension not added")
-                    .font(.system(size: 13, weight: .semibold))
+                Text(title).font(.system(size: 13, weight: .semibold))
                 Text(detail)
                     .font(.system(size: 11)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 8)
-            if cloud.extensionConnected {
-                Button("Reinstall…") { showHelp = true }
-                    .buttonStyle(GlassButtonStyle(compact: true))
+            if added {
+                Button("Help") { showHelp = true }
+                    .buttonStyle(.borderless)
+                    .font(.system(size: 11))
             } else {
                 Button { showHelp = true } label: { Label("Add Extension", systemImage: "plus") }
                     .buttonStyle(GradientButtonStyle(compact: true))
             }
         }
         .padding(12)
-        .glassCard(radius: 12, highlight: !cloud.extensionConnected)
+        .glassCard(radius: 12, highlight: !added)
         .sheet(isPresented: $showHelp) {
             AddExtensionSheet().environmentObject(Store.shared)
         }
+        .onAppear { monitor.check() }
+    }
+
+    private var title: String {
+        if cloud.extensionConnected { return "Chrome extension connected" }
+        if monitor.installed { return "Chrome extension added" }
+        return "Chrome extension not added"
     }
 
     private var detail: String {
         if let d = cloud.extensionSeen, cloud.extensionConnected {
             return "Version \(cloud.extensionVersion ?? "?") · checked in \(Fmt.relative(d))"
         }
-        if let d = cloud.extensionSeen {
-            return "Last seen \(Fmt.relative(d)) — is Chrome open and the extension signed in?"
+        if monitor.installed {
+            return "Sign in to it with your TaskTimer account: click 🧩 in Chrome → TaskTimer for Modhesh."
         }
         return "Needed to read Modhesh and log your time there."
     }

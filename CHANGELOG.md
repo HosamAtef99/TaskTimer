@@ -2,6 +2,9 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
+## 1.15.2
+- "Add Extension" disappears as soon as the extension is in Chrome (TaskTimer checks Chrome itself — no waiting). Signing in to the extension connects it right away.
+
 ## 1.15.1
 - Add Extension now really opens Chrome's extensions page (macOS asks once to let TaskTimer control Chrome — press OK). If it can't, the address is copied so you can paste it.
 

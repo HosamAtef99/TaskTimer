@@ -8,6 +8,7 @@ struct ModheshView: View {
     @EnvironmentObject var store: Store
     @Environment(\.dismiss) var dismiss
     @ObservedObject var cloud = CloudSync.shared
+    @ObservedObject var monitor = ExtensionMonitor.shared
     @Local var showLinked = false
 
     var body: some View {
@@ -17,7 +18,7 @@ struct ModheshView: View {
         let linked = all.filter { $0.taskID != nil && store.task($0.taskID!) != nil }
 
         SheetFrame(title: "Modhesh", subtitle: "Link each Modhesh task to the task you timed", icon: "link") {
-            if !cloud.extensionConnected {
+            if !cloud.extensionConnected && !monitor.installed {
                 ExtensionStatusRow()
             }
             if let e = cloud.modheshError {

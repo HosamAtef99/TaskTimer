@@ -21,6 +21,7 @@ $('signin').addEventListener('click', async () => {
   $('signin').disabled = true;
   try {
     await TT.signIn(email, password);
+    chrome.runtime.sendMessage({ type: 'signedIn' }).catch(() => {});
     $('password').value = '';
     await render();
   } catch (e) {

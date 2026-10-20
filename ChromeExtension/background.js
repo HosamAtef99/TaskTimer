@@ -285,5 +285,9 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     tick().then(() => reply({ ok: true }));
     return true;
   }
+  if (msg.type === 'signedIn') {
+    checkIn().then(() => readModhesh()).then(() => reply({ ok: true }));
+    return true;
+  }
   return false;
 });
