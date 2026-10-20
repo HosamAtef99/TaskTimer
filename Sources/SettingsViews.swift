@@ -179,8 +179,6 @@ struct SettingsView: View {
     @AppStorage(Pref.pauseOnSleep) var pauseOnSleep = true
     @AppStorage(Pref.menuBarStyle) var menuBarStyle = "time"
     @AppStorage(Pref.renderNotify) var renderNotify = true
-    @AppStorage(Pref.defaultDeliverables) var defaultDeliverables = 1
-    @AppStorage(Pref.defaultRating) var defaultRating = 5
     @AppStorage(Pref.openFinderOnCreate) var openFinder = true
     @AppStorage(Pref.openAEOnCreate) var openAE = false
     @AppStorage(Pref.tabMode) var tabMode = "auto"
@@ -203,6 +201,7 @@ struct SettingsView: View {
             Picker("", selection: $tab) {
                 if Features.sheet { Text("Sheet").tag(0) }
                 Text("Team").tag(3)
+                Text("Modhesh").tag(4)
                 Text("Folders").tag(1)
                 Text("General").tag(2)
             }
@@ -213,6 +212,7 @@ struct SettingsView: View {
                 switch tab {
                 case 0: sheetTab
                 case 3: AccountSection()
+                case 4: ModheshSettings()
                 case 1: foldersTab
                 default: generalTab
                 }
@@ -527,11 +527,6 @@ struct SettingsView: View {
                 }
             Toggle("Pause the timer when the Mac goes to sleep", isOn: $pauseOnSleep)
             Toggle("Notify me when a render finishes (watches each task's Render folder)", isOn: $renderNotify)
-            HStack(spacing: 18) {
-                Stepper("Default deliverables: \(defaultDeliverables)", value: $defaultDeliverables, in: 0...50)
-                Stepper("Default stars: \(defaultRating)", value: $defaultRating, in: 1...5)
-            }
-            .font(.system(size: 12))
             HStack(spacing: 10) {
                 Text("Menu bar").font(.system(size: 12))
                 Picker("", selection: $menuBarStyle) {
@@ -577,6 +572,80 @@ struct SettingsView: View {
     }
 }
 
+
+// MARK: - Modhesh
+
+struct ModheshSettings: View {
+    @ObservedObject var cloud = CloudSync.shared
+    @ObservedObject var auth = CloudAuth.shared
+    @AppStorage(Pref.defaultDeliverables) var deliverables = 1
+    @AppStorage(Pref.defaultRating) var rating = 5
+    @AppStorage(Pref.defaultChallenge) var challenge = 1
+    @AppStorage(Pref.modheshAutoLink) var autoLink = true
+    @AppStorage(Pref.modheshAutoSubmit) var autoSubmit = true
+
+    static let challenges = [(1, "No Challenges at all"), (2, "Communication Challenge"),
+                             (3, "Briefing Challenge"), (4, "Deadline Challenge")]
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                if !auth.signedIn {
+                    Label("Sign in under Settings → Team first — Modhesh works through your TaskTimer account.",
+                          systemImage: "person.crop.circle.badge.exclamationmark")
+                        .font(.system(size: 12)).foregroundStyle(Theme.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                ExtensionStatusRow()
+
+                SectionLabel(text: "Defaults for Log Time")
+                HStack(alignment: .top, spacing: 24) {
+                    FieldRow(label: "Deliverables") {
+                        Stepper("\(deliverables)", value: $deliverables, in: 0...50)
+                    }
+                    FieldRow(label: "Stars") {
+                        HStack(spacing: 4) {
+                            ForEach(1...5, id: \.self) { n in
+                                Button { rating = n } label: {
+                                    Image(systemName: n <= rating ? "star.fill" : "star")
+                                        .font(.system(size: 15))
+                                        .foregroundStyle(n <= rating ? AnyShapeStyle(Theme.orange) : AnyShapeStyle(HierarchicalShapeStyle.tertiary))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+                FieldRow(label: "Did you face any challenges?") {
+                    Picker("", selection: $challenge) {
+                        ForEach(Self.challenges, id: \.0) { c in Text(c.1).tag(c.0) }
+                    }
+                    .labelsHidden()
+                    .frame(maxWidth: 260, alignment: .leading)
+                }
+                Text("Deliverables and stars are filled in on Done (you can change them per task). The challenge answer is used for every task.")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Divider()
+                SectionLabel(text: "Automatic")
+                Toggle("Link Modhesh tasks to TaskTimer tasks with the same name", isOn: $autoLink)
+                Toggle("Log finished tasks on Modhesh by themselves and send them to my team leader", isOn: $autoSubmit)
+                Text("A task that's still Pending to Start on Modhesh is moved to In Progress first (with your start date), then logged.")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .font(.system(size: 12))
+            .padding(.trailing, 6)
+        }
+        .onChange(of: deliverables) { _ in cloud.scheduleSettingsSave() }
+        .onChange(of: rating) { _ in cloud.scheduleSettingsSave() }
+        .onChange(of: challenge) { _ in cloud.scheduleSettingsSave() }
+        .onChange(of: autoLink) { _ in cloud.scheduleSettingsSave() }
+        .onChange(of: autoSubmit) { _ in cloud.scheduleSettingsSave() }
+        .task { await cloud.loadSettings() }
+    }
+}
 
 // MARK: - Team account
 

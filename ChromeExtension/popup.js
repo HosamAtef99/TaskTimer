@@ -5,13 +5,7 @@ async function render() {
   $('out').hidden = !!s;
   $('in').hidden = !s;
   if (s) $('who').textContent = s.email || '';
-  const { autoSubmit, autoLink } = await chrome.storage.local.get(['autoSubmit', 'autoLink']);
-  $('autoSubmit').checked = autoSubmit !== false;
-  $('autoLink').checked = autoLink !== false;
 }
-
-$('autoSubmit').addEventListener('change', (e) => chrome.storage.local.set({ autoSubmit: e.target.checked }));
-$('autoLink').addEventListener('change', (e) => chrome.storage.local.set({ autoLink: e.target.checked }));
 $('runNow').addEventListener('click', async () => {
   $('runMsg').textContent = 'Checking…';
   await chrome.storage.local.set({ attempts: {} });

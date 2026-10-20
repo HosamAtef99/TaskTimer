@@ -14,22 +14,33 @@ struct MainView: View {
     @Local var showClients = false
     @Local var showTeam = false
     @Local var showModhesh = false
+    @Local var width: CGFloat = 900
     @ObservedObject var cloud = CloudSync.shared
+
+    /// Layout follows the window width so nothing gets cut off when it's made smaller.
+    private var compact: Bool { width < 780 }
+    private var narrow: Bool { width < 640 }
 
     var body: some View {
         ZStack(alignment: .bottom) {
             GlowBackground()
 
-            VStack(spacing: 16) {
+            VStack(spacing: narrow ? 12 : 16) {
                 header
                 UpdateBanner()
-                HeroCard()
+                HeroCard(compact: compact)
                 listControls
                 taskList
             }
-            .padding(.horizontal, 22)
+            .padding(.horizontal, narrow ? 12 : (compact ? 16 : 22))
             .padding(.top, 30)
             .padding(.bottom, 12)
+            .frame(maxWidth: .infinity)
+            .background(GeometryReader { g in
+                Color.clear
+                    .onAppear { width = g.size.width }
+                    .onChange(of: g.size.width) { width = $0 }
+            })
 
             if let t = store.toast {
                 Text(t)
@@ -40,7 +51,7 @@ struct MainView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .frame(minWidth: 560, minHeight: 620)
+        .frame(minWidth: 470, minHeight: 560)
         .sheet(item: $store.doneTarget) { target in
             if Features.sheet {
                 SheetDoneSheet(taskID: target.id).environmentObject(store)
@@ -71,46 +82,45 @@ struct MainView: View {
     // MARK: Header
 
     private var header: some View {
-        HStack(alignment: .center, spacing: 10) {
+        HStack(alignment: .center, spacing: compact ? 6 : 10) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("TaskTimer Dev")
-                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                    .font(.system(size: narrow ? 20 : (compact ? 22 : 26), weight: .bold, design: .rounded))
                     .gradientText()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
                 Text("Today · \(Fmt.short(store.todaySeconds()))")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
-            Spacer()
+            .layoutPriority(1)
+            Spacer(minLength: 4)
             if Features.sheet && store.pendingCount > 0 {
                 Button {
                     Task { await store.retryPending(silent: false) }
                 } label: {
-                    Label("\(store.pendingCount) not sent · Retry", systemImage: "arrow.clockwise")
-                        .foregroundStyle(Theme.pink)
+                    if compact {
+                        Image(systemName: "arrow.clockwise").foregroundStyle(Theme.pink)
+                    } else {
+                        Label("\(store.pendingCount) not sent · Retry", systemImage: "arrow.clockwise")
+                            .foregroundStyle(Theme.pink)
+                    }
                 }
                 .buttonStyle(GlassButtonStyle(compact: true))
                 .help("These logs failed to reach the sheet. Click to try again.")
             }
-            if cloud.profile != nil {
-                let open = cloud.modheshTasks.filter { $0.taskID == nil && CloudSync.modheshActive($0.status) }.count
-                if cloud.newModheshCount > 0 {
-                    Button { showModhesh = true; cloud.clearNewModhesh() } label: {
-                        Label("Modhesh · \(cloud.newModheshCount) new", systemImage: "bell.badge.fill")
-                    }
-                    .buttonStyle(GradientButtonStyle(compact: true))
-                    .help("New tasks arrived on Modhesh")
-                } else {
-                    Button { showModhesh = true } label: {
-                        Label(open > 0 ? "Modhesh (\(open))" : "Modhesh", systemImage: "link")
-                    }
-                    .buttonStyle(GlassButtonStyle(compact: true))
-                    .help("Link Modhesh tasks to your TaskTimer tasks")
-                }
-            }
+            if cloud.profile != nil { modheshButton }
             if cloud.isLeader {
-                Button { showTeam = true } label: { Label("Team", systemImage: "person.3.fill") }
-                    .buttonStyle(GlassButtonStyle(compact: true))
-                    .help("Your team's tasks and live timers")
+                if compact {
+                    Button { showTeam = true } label: { Image(systemName: "person.3.fill") }
+                        .buttonStyle(CircleIconButtonStyle())
+                        .help("Your team's tasks and live timers")
+                } else {
+                    Button { showTeam = true } label: { Label("Team", systemImage: "person.3.fill") }
+                        .buttonStyle(GlassButtonStyle(compact: true))
+                        .help("Your team's tasks and live timers")
+                }
             }
             Button { showClients = true } label: { Image(systemName: "person.2") }
                 .buttonStyle(CircleIconButtonStyle())
@@ -118,51 +128,115 @@ struct MainView: View {
             Button { store.showSettings = true } label: { Image(systemName: "gearshape") }
                 .buttonStyle(CircleIconButtonStyle())
                 .help("Settings")
-            Button {
-                if let url = FolderService.chooseExistingFolder() {
-                    _ = store.importFolder(url)
-                    filter = .inProgress
-                }
-            } label: { Image(systemName: "folder.badge.plus") }
-                .buttonStyle(CircleIconButtonStyle())
-                .help("Import an existing task folder")
-            Button { store.showNewTask = true } label: {
-                Label("New Task", systemImage: "plus")
+            if !narrow {
+                Button {
+                    if let url = FolderService.chooseExistingFolder() {
+                        _ = store.importFolder(url)
+                        filter = .inProgress
+                    }
+                } label: { Image(systemName: "folder.badge.plus") }
+                    .buttonStyle(CircleIconButtonStyle())
+                    .help("Import an existing task folder")
             }
-            .buttonStyle(GradientButtonStyle())
+            if compact {
+                Button { store.showNewTask = true } label: { Image(systemName: "plus") }
+                    .buttonStyle(CircleIconButtonStyle(filled: true))
+                    .help("New Task (⌘N)")
+            } else {
+                Button { store.showNewTask = true } label: {
+                    Label("New Task", systemImage: "plus")
+                }
+                .buttonStyle(GradientButtonStyle())
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var modheshButton: some View {
+        let open = cloud.modheshTasks.filter { $0.taskID == nil && CloudSync.modheshActive($0.status) }.count
+        let fresh = cloud.newModheshCount
+        if compact {
+            Button { showModhesh = true; cloud.clearNewModhesh() } label: {
+                Image(systemName: fresh > 0 ? "bell.badge.fill" : "link")
+            }
+            .buttonStyle(CircleIconButtonStyle(filled: fresh > 0))
+            .overlay(alignment: .topTrailing) {
+                if fresh + open > 0 {
+                    Text("\(fresh > 0 ? fresh : open)")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 4).padding(.vertical, 1)
+                        .background(Theme.pink, in: Capsule())
+                        .offset(x: 4, y: -4)
+                }
+            }
+            .help(fresh > 0 ? "New tasks arrived on Modhesh" : "Modhesh")
+        } else if fresh > 0 {
+            Button { showModhesh = true; cloud.clearNewModhesh() } label: {
+                Label("Modhesh · \(fresh) new", systemImage: "bell.badge.fill")
+            }
+            .buttonStyle(GradientButtonStyle(compact: true))
+            .help("New tasks arrived on Modhesh")
+        } else {
+            Button { showModhesh = true } label: {
+                Label(open > 0 ? "Modhesh (\(open))" : "Modhesh", systemImage: "link")
+            }
+            .buttonStyle(GlassButtonStyle(compact: true))
+            .help("Link Modhesh tasks to your TaskTimer tasks")
         }
     }
 
     // MARK: List
 
+    private var filterPicker: some View {
+        Picker("", selection: $filter) {
+            ForEach(TaskFilter.allCases) { f in
+                Text(f == .incoming && incomingCount > 0 ? "Incoming (\(incomingCount))" : f.rawValue).tag(f)
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+    }
+
+    private var monthPicker: some View {
+        Picker("", selection: $month) {
+            Text("All months").tag(Date?.none)
+            ForEach(monthChoices, id: \.self) { m in
+                Text(Fmt.monthYear.string(from: m)).tag(Date?.some(m))
+            }
+        }
+        .labelsHidden()
+        .frame(minWidth: 110, maxWidth: 150)
+        .help("Show tasks created in this month")
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+            TextField("Search tasks or clients", text: $search)
+                .textFieldStyle(.plain)
+        }
+        .padding(.horizontal, 10).padding(.vertical, 6)
+        .background(.thinMaterial, in: Capsule())
+    }
+
+    @ViewBuilder
     private var listControls: some View {
-        HStack(spacing: 10) {
-            Picker("", selection: $filter) {
-                ForEach(TaskFilter.allCases) { f in
-                    Text(f == .incoming && incomingCount > 0 ? "Incoming (\(incomingCount))" : f.rawValue).tag(f)
+        if width < 820 {
+            VStack(spacing: 8) {
+                filterPicker
+                HStack(spacing: 8) {
+                    monthPicker
+                    searchField.frame(maxWidth: .infinity)
                 }
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(maxWidth: 380)
-            Picker("", selection: $month) {
-                Text("All months").tag(Date?.none)
-                ForEach(monthChoices, id: \.self) { m in
-                    Text(Fmt.monthYear.string(from: m)).tag(Date?.some(m))
-                }
+        } else {
+            HStack(spacing: 10) {
+                filterPicker.frame(maxWidth: 400)
+                monthPicker
+                Spacer(minLength: 8)
+                searchField.frame(minWidth: 140, maxWidth: 220)
             }
-            .labelsHidden()
-            .frame(width: 150)
-            .help("Show tasks created in this month")
-            Spacer()
-            HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                TextField("Search tasks or clients", text: $search)
-                    .textFieldStyle(.plain)
-                    .frame(width: 170)
-            }
-            .padding(.horizontal, 10).padding(.vertical, 6)
-            .background(.thinMaterial, in: Capsule())
         }
     }
 
@@ -232,17 +306,18 @@ struct MainView: View {
 
 struct HeroCard: View {
     @EnvironmentObject var store: Store
+    var compact = false
 
     var body: some View {
         let running = store.running
-        HStack(spacing: 22) {
+        HStack(spacing: compact ? 14 : 22) {
             let secs = running?.totalSeconds(at: store.now) ?? 0
             ZStack {
                 TimerRing(running: running != nil,
                           progress: running == nil ? 0 : (secs.truncatingRemainder(dividingBy: 3600)) / 3600,
-                          size: 112)
+                          size: compact ? 76 : 112)
                 Image(systemName: running == nil ? "moon.zzz" : "bolt.fill")
-                    .font(.system(size: 26, weight: .semibold))
+                    .font(.system(size: compact ? 20 : 26, weight: .semibold))
                     .foregroundStyle(Theme.cool)
             }
 
@@ -250,7 +325,7 @@ struct HeroCard: View {
                 if let t = running {
                     SectionLabel(text: "Now working on")
                     Text(store.displayName(t))
-                        .font(.system(size: 20, weight: .semibold))
+                        .font(.system(size: compact ? 16 : 20, weight: .semibold))
                         .lineLimit(2)
                     if !store.clientName(t.clientID).isEmpty {
                         Text(store.clientName(t.clientID))
@@ -258,8 +333,9 @@ struct HeroCard: View {
                             .foregroundStyle(.secondary)
                     }
                     Text(Fmt.clock(secs))
-                        .font(.system(size: 34, weight: .semibold, design: .rounded).monospacedDigit())
+                        .font(.system(size: compact ? 26 : 34, weight: .semibold, design: .rounded).monospacedDigit())
                         .gradientText()
+                        .lineLimit(1)
                     HStack(spacing: 8) {
                         Button { store.pause(t.id) } label: { Label("Pause", systemImage: "pause.fill") }
                             .buttonStyle(GlassButtonStyle())
@@ -270,7 +346,9 @@ struct HeroCard: View {
                 } else {
                     SectionLabel(text: "Idle")
                     Text("No timer running")
-                        .font(.system(size: 20, weight: .semibold))
+                        .font(.system(size: compact ? 17 : 20, weight: .semibold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
                     Text("Start a task below, or create a new one.")
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
@@ -278,7 +356,7 @@ struct HeroCard: View {
             }
             Spacer(minLength: 0)
         }
-        .padding(20)
+        .padding(compact ? 14 : 20)
         .glassCard(radius: 24, highlight: running != nil)
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: running?.id)
     }

@@ -74,6 +74,19 @@ alter table public.modhesh_tasks add column if not exists submitted_at timestamp
 alter table public.modhesh_tasks add column if not exists submit_note text;
 alter table public.modhesh_tasks add column if not exists auto_linked boolean not null default false;
 
+-- Each person's Modhesh settings (set in TaskTimer → Settings → Modhesh, read by the Chrome extension).
+create table if not exists public.user_settings (
+  user_id              uuid primary key default auth.uid() references public.profiles(id) on delete cascade,
+  challenge            integer not null default 1,      -- 1 No Challenges, 2 Communication, 3 Briefing, 4 Deadline
+  default_rating       integer not null default 5,
+  default_deliverables integer not null default 1,
+  auto_link            boolean not null default true,
+  auto_submit          boolean not null default true,
+  extension_seen_at    timestamptz,                     -- the extension checks in here
+  extension_version    text,
+  updated_at           timestamptz not null default now()
+);
+
 -- ───────────────────────── Helpers ─────────────────────────
 
 create or replace function public.my_team() returns uuid
@@ -146,6 +159,12 @@ create policy profiles_update on public.profiles for update to authenticated
 
 revoke update on public.profiles from authenticated;
 grant update (full_name) on public.profiles to authenticated;
+
+-- Settings: each person their own.
+alter table public.user_settings enable row level security;
+drop policy if exists settings_own on public.user_settings;
+create policy settings_own on public.user_settings for all to authenticated
+  using (user_id = auth.uid()) with check (user_id = auth.uid());
 
 -- Modhesh tasks: each person sees and changes only their own.
 alter table public.modhesh_tasks enable row level security;

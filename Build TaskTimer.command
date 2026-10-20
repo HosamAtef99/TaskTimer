@@ -88,6 +88,8 @@ cp Resources/Info.plist "$OUT/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$OUT/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VERSION" "$OUT/Contents/Info.plist"
 iconutil -c icns Resources/AppIcon.iconset -o "$OUT/Contents/Resources/AppIcon.icns"
+# The Chrome extension ships inside the app; TaskTimer copies it into place on launch.
+cp -R ChromeExtension "$OUT/Contents/Resources/ChromeExtension"
 codesign --force --deep --sign - "$OUT" >/dev/null 2>&1 || true
 
 if [ -n "$TT_CI" ]; then

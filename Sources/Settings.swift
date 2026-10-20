@@ -22,10 +22,14 @@ enum Pref {
     static let updateSameRow = "updateSameRow"
     static let hideDock = "hideDock"
     static let pauseOnSleep = "pauseOnSleep"
-    static let menuBarStyle = "menuBarStyle"
+    static let menuBarStyle = "menuBarStyle"   // "time" (1:05) | "seconds" (01:05:12) | "icon"
     static let renderNotify = "renderNotify"
     static let defaultDeliverables = "defaultDeliverables"
-    static let defaultRating = "defaultRating"   // "time" (1:05) | "seconds" (01:05:12) | "icon"
+    static let defaultRating = "defaultRating"
+    // Modhesh (Settings → Modhesh; sent to the Chrome extension through the team database)
+    static let defaultChallenge = "defaultChallenge"   // 1 No Challenges, 2 Communication, 3 Briefing, 4 Deadline
+    static let modheshAutoLink = "modheshAutoLink"
+    static let modheshAutoSubmit = "modheshAutoSubmit"
     static let openFinderOnCreate = "openFinderOnCreate"
     static let openAEOnCreate = "openAEOnCreate"
 
@@ -90,6 +94,9 @@ enum Pref {
             renderNotify: true,
             defaultDeliverables: 1,
             defaultRating: 5,
+            defaultChallenge: 1,
+            modheshAutoLink: true,
+            modheshAutoSubmit: true,
             openFinderOnCreate: true,
             openAEOnCreate: false,
             tabMode: "auto",

@@ -52,8 +52,31 @@ function parseCardHtml(html, status) {
   };
 }
 
+/// Tells TaskTimer the extension is installed and signed in.
+async function checkIn() {
+  try {
+    const uid = await TT.userId();
+    await TT.rest('POST', 'user_settings', [{
+      user_id: uid,
+      extension_seen_at: new Date().toISOString(),
+      extension_version: chrome.runtime.getManifest().version,
+    }], 'resolution=merge-duplicates,return=minimal');
+  } catch (e) { /* table not there yet */ }
+}
+
+/// TaskTimer copies newer extension files into this folder when it updates; pick them up.
+async function reloadIfUpdated() {
+  try {
+    const r = await fetch(chrome.runtime.getURL('manifest.json'), { cache: 'no-store' });
+    const onDisk = (await r.json()).version;
+    if (onDisk && onDisk !== chrome.runtime.getManifest().version) chrome.runtime.reload();
+  } catch (e) { /* ignore */ }
+}
+
 async function readModhesh() {
+  await reloadIfUpdated();
   if (!(await TT.session())) return;
+  checkIn();
   try {
     const now = new Date();
     const months = [[now.getMonth() + 1, now.getFullYear()]];
@@ -150,7 +173,7 @@ async function autoLink({ uid, rows, tasks }) {
 
 // ───────────── 2. what needs logging ─────────────
 
-function jobsFrom({ rows, byId }) {
+function jobsFrom({ rows, byId }, st = {}) {
   const jobs = [];
   for (const r of rows) {
     const t = r.task_id && byId[r.task_id];
@@ -166,8 +189,9 @@ function jobsFrom({ rows, byId }) {
       task: t.display,
       total,
       toLog,
-      deliverables: t.deliverables ?? 1,
-      rating: t.rating ?? 5,
+      deliverables: t.deliverables ?? st.default_deliverables ?? 1,
+      rating: t.rating ?? st.default_rating ?? 5,
+      challenge: st.challenge || 1,
       complete: true,
       startedAt: t.started_at || t.created_at,
     });
@@ -183,16 +207,16 @@ async function tick() {
   if (running) return;
   const s = await TT.session();
   if (!s) return;
-  const { autoSubmit, autoLink: auto, attempts = {} } =
-    await chrome.storage.local.get(['autoSubmit', 'autoLink', 'attempts']);
+  const { attempts = {} } = await chrome.storage.local.get(['attempts']);
   running = true;
   try {
+    const st = await TT.settings();   // TaskTimer → Settings → Modhesh
     const data = await myData();
-    if (auto !== false) await autoLink(data);
-    if (autoSubmit === false) return;
+    if (st.auto_link !== false) await autoLink(data);
+    if (st.auto_submit === false) return;
     // Don't retry the same task more often than every 15 minutes.
     const now = Date.now();
-    pending = jobsFrom(data).filter((j) => !attempts[j.code] || now - attempts[j.code] > 15 * 60000);
+    pending = jobsFrom(data, st).filter((j) => !attempts[j.code] || now - attempts[j.code] > 15 * 60000);
     if (!pending.length) return;
     for (const j of pending) attempts[j.code] = now;
     await chrome.storage.local.set({ attempts });

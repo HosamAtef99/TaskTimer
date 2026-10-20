@@ -65,7 +65,22 @@ const TT = (() => {
     return j;
   }
 
+  /// Settings → Modhesh from TaskTimer (cached for a minute).
+  let settingsCache = null;
+  async function settings() {
+    if (settingsCache && Date.now() - settingsCache.at < 60000) return settingsCache.value;
+    let value = { challenge: 1, default_rating: 5, default_deliverables: 1, auto_link: true, auto_submit: true };
+    try {
+      const uid = (await session())?.userId;
+      const rows = await rest('GET', `user_settings?user_id=eq.${uid}&select=*`);
+      if (rows && rows[0]) value = { ...value, ...rows[0] };
+    } catch (e) { /* table not there yet: defaults */ }
+    settingsCache = { at: Date.now(), value };
+    return value;
+  }
+
   return {
+    settings,
     session,
     signIn: (email, password) => auth('token?grant_type=password', { email, password }),
     signOut: () => save(null),

@@ -78,11 +78,7 @@ curl -fsSL https://raw.githubusercontent.com/mo-animation/TaskTimer/main/install
 
 الإضافة بتبعت تاسكاتك من مدهش لـ TaskTimer، وبتملالك **Log Time** و**Start Date** في مدهش من التايمر. **الـ Save دايماً بيبقى عليك.**
 
-**التسطيب (مرة واحدة لكل واحد):**
-1. نزّل [TaskTimer-Chrome.zip](https://github.com/HosamAtef99/TaskTimer/releases/latest/download/TaskTimer-Chrome.zip) وفك الضغط في فولدر ثابت (متمسحوش بعد كده).
-2. في Chrome افتح `chrome://extensions` وشغّل **Developer mode** فوق على اليمين.
-3. اضغط **Load unpacked** واختار الفولدر.
-4. دوس على أيقونة الإضافة (🧩 ← TaskTimer for Modhesh) وسجّل دخول بحساب TaskTimer.
+**التسطيب (مرة واحدة لكل واحد):** الإضافة جوه البرنامج. من **Settings ← Modhesh ← Add Extension** هيفتح كروم على صفحة الإضافات وفولدر الإضافة، ويوريك الخطوات (Developer mode، واسحب الفولدر على الصفحة، وسجّل دخول). بعد كده بتتحدّث لوحدها مع كل تحديث للبرنامج.
 
 **بيشتغل لوحده (من نسخة 2.0 للإضافة):**
 - كل ٥ دقايق بتقرا تاسكاتك من مدهش **من غير ما تفتحه** (طالما كروم مفتوح وإنت عامل Login في مدهش).

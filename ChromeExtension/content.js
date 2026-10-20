@@ -213,11 +213,15 @@
   // Log Time
 
   /// "No Challenges at all" is the default answer, unless something else is ticked.
-  function defaultChallenge(form) {
+  async function defaultChallenge(form, value) {
     const boxes = [...form.querySelectorAll('[name="task_challenge[]"]')];
     if (!boxes.length || boxes.some((c) => c.checked)) return;
-    const none = boxes.find((c) => c.value === '1');
-    if (none) none.click();
+    let v = value;
+    if (!v) {
+      try { v = (await TT.settings()).challenge; } catch (e) { v = 1; }
+    }
+    const box = boxes.find((c) => c.value === String(v || 1)) || boxes.find((c) => c.value === '1');
+    if (box) box.click();
   }
 
   async function decorateLogTime(form) {
@@ -241,12 +245,13 @@
     }
   }
 
-  function showLogTime(form, body, t, row) {
+  async function showLogTime(form, body, t, row) {
     const total = liveSeconds(t);
     const logged = (row && Number(row.logged_seconds)) || 0;
     const toLog = Math.max(0, total - logged);
-    const deliverables = t.deliverables ?? 1;
-    const rating = t.rating ?? 5;
+    const st = await TT.settings().catch(() => ({}));
+    const deliverables = t.deliverables ?? st.default_deliverables ?? 1;
+    const rating = t.rating ?? st.default_rating ?? 5;
     const complete = t.status === 'complete';
 
     const info = el('div', {},
@@ -269,11 +274,7 @@
     if (star) star.click();
     setValue(form.querySelector('[name=task_rating]'), String(v.rating));
 
-    const challenges = [...form.querySelectorAll('[name="task_challenge[]"]')];
-    if (challenges.length && !challenges.some((c) => c.checked)) {
-      const none = challenges.find((c) => c.value === '1');
-      if (none) none.click();
-    }
+    await defaultChallenge(form, v.challenge);
 
     let approverNote = '';
     let approver = '';

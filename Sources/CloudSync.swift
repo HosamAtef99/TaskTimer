@@ -117,6 +117,8 @@ final class CloudSync: ObservableObject {
         guard CloudAuth.shared.signedIn, ensureState() else { return }
         await loadProfile()
         await restoreIfEmpty()
+        await saveSettings()
+        await loadSettings()
         await pushNow()
         await pull()
         await checkWeeklyReport()
@@ -127,6 +129,7 @@ final class CloudSync: ObservableObject {
                     await self?.pushNow()
                     await self?.checkWeeklyReport()
                     await self?.loadModhesh()
+                    await self?.loadSettings()
                 }
             }
         }
@@ -399,6 +402,60 @@ final class CloudSync: ObservableObject {
             modheshError = m.contains("modhesh_tasks")
                 ? "Run the latest schema.sql in Supabase first (it adds the Modhesh table)."
                 : m
+        }
+    }
+
+    // MARK: - Modhesh settings (shared with the Chrome extension)
+
+    /// When the Chrome extension last checked in (nil = never seen for this account).
+    @Published private(set) var extensionSeen: Date?
+    @Published private(set) var extensionVersion: String?
+    private var settingsWork: DispatchWorkItem?
+
+    var extensionConnected: Bool {
+        guard let d = extensionSeen else { return false }
+        return Date().timeIntervalSince(d) < 24 * 3600
+    }
+
+    /// Sends Settings → Modhesh to the database a moment after a change.
+    func scheduleSettingsSave() {
+        settingsWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            Task { @MainActor in await self?.saveSettings() }
+        }
+        settingsWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8, execute: work)
+    }
+
+    func saveSettings() async {
+        guard let uid = CloudAuth.shared.session?.userID else { return }
+        do {
+            try await CloudAPI.upsert("user_settings", [[
+                "user_id": uid,
+                "challenge": min(4, max(1, Pref.int(Pref.defaultChallenge))),
+                "default_rating": min(5, max(1, Pref.int(Pref.defaultRating))),
+                "default_deliverables": max(0, Pref.int(Pref.defaultDeliverables)),
+                "auto_link": Pref.bool(Pref.modheshAutoLink),
+                "auto_submit": Pref.bool(Pref.modheshAutoSubmit),
+                "updated_at": Cloud.iso(Date()),
+            ]])
+        } catch {
+            let m = error.localizedDescription
+            if !m.contains("user_settings") { self.error = m }
+        }
+    }
+
+    func loadSettings() async {
+        guard let uid = CloudAuth.shared.session?.userID else { return }
+        do {
+            let rows = try await CloudAPI.select("user_settings", [
+                URLQueryItem(name: "select", value: "extension_seen_at,extension_version"),
+                URLQueryItem(name: "user_id", value: "eq.\(uid)"),
+            ])
+            extensionSeen = Cloud.date(rows.first?["extension_seen_at"])
+            extensionVersion = rows.first?["extension_version"] as? String
+        } catch {
+            // Table not created yet: treated as "extension not added".
         }
     }
 

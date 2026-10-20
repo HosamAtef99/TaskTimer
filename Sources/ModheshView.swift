@@ -17,6 +17,9 @@ struct ModheshView: View {
         let linked = all.filter { $0.taskID != nil && store.task($0.taskID!) != nil }
 
         SheetFrame(title: "Modhesh", subtitle: "Link each Modhesh task to the task you timed", icon: "link") {
+            if !cloud.extensionConnected {
+                ExtensionStatusRow()
+            }
             if let e = cloud.modheshError {
                 Label(e, systemImage: "exclamationmark.triangle.fill")
                     .font(.system(size: 12)).foregroundStyle(Theme.pink)
@@ -70,8 +73,11 @@ struct ModheshView: View {
                     .keyboardShortcut(.defaultAction)
             }
         }
-        .frame(width: 720, height: 620)
-        .task { await cloud.loadModhesh() }
+        .frame(minWidth: 520, idealWidth: 720, maxWidth: 760, minHeight: 480, idealHeight: 620)
+        .task {
+            await cloud.loadModhesh()
+            await cloud.loadSettings()
+        }
     }
 
     // MARK: Rows

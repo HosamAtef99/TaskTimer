@@ -2,6 +2,13 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
+## 1.15
+- Settings → Modhesh: default stars, deliverables and challenge answer, the automatic link / log switches, and the extension's status.
+- The Chrome extension now comes inside TaskTimer. "Add Extension" opens Chrome's extensions page and the extension folder, with step-by-step help. After that it updates itself whenever TaskTimer updates.
+- The Modhesh window shows "Add Extension" until the extension is connected.
+- The main window fits any width: buttons turn into icons and the filters wrap when the window is narrow.
+- Run the latest schema.sql once (adds the settings table).
+
 ## 1.14.1
 - Chrome extension 2.1: a finished task that is still "Pending to Start" on Modhesh is moved to In Progress first (only the status and the Start Date — from when you started it in TaskTimer — are changed), then its time is logged and sent to your approver.
 

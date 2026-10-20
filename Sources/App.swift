@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             UpdateManager.shared.start()
             NotificationHandler.shared.install()
             RenderWatcher.shared.start()
+            ExtensionInstaller.refresh()
             if Features.sheet { SheetSync.shared.start() }
             Task { @MainActor in await CloudSync.shared.start() }
         }
