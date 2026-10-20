@@ -23,6 +23,7 @@ struct TeamView: View {
     @Local var section = "tasks"           // "tasks" | "summary"
     @Local var period = "month"
     @Local var loadedAt: Date? = nil
+    @Local var cursor: Date? = nil
 
     var body: some View {
         SheetFrame(title: cloud.teamName ?? "Team",
@@ -40,7 +41,7 @@ struct TeamView: View {
                 taskTable
             }
             HStack {
-                Text(loadedAt.map { "Updated \(Fmt.relative($0)) · refreshes every 30 seconds" } ?? "")
+                Text(loadedAt.map { "Updated \(Fmt.relative($0)) · refreshes every minute" } ?? "")
                     .font(.system(size: 10)).foregroundStyle(.tertiary)
                 Spacer()
                 Button("Done") { dismiss() }
@@ -57,9 +58,12 @@ struct TeamView: View {
             }
         }
         .task(id: month) {
+            await load()
+            // Then only what changed, once a minute (keeps the free database allowance).
             while !Task.isCancelled {
-                await load()
-                try? await Task.sleep(nanoseconds: 30_000_000_000)
+                try? await Task.sleep(nanoseconds: 60_000_000_000)
+                if Task.isCancelled { break }
+                await refresh()
             }
         }
         .sheet(isPresented: $showAssign) {
@@ -326,6 +330,29 @@ struct TeamView: View {
             let r = try await cloud.loadTeam(month: month)
             members = r.members
             tasks = r.tasks
+            cursor = r.tasks.compactMap(\.updatedAt).max() ?? Date().addingTimeInterval(-60)
+            error = nil
+            loadedAt = Date()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    /// Merges the tasks that changed since the last look.
+    private func refresh() async {
+        guard let since = cursor else { return await load() }
+        do {
+            let changed = try await cloud.teamChanges(since: since)
+            guard !changed.isEmpty else { loadedAt = Date(); return }
+            var byID = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0) })
+            for t in changed {
+                if t.deleted { byID.removeValue(forKey: t.id) } else { byID[t.id] = t }
+            }
+            tasks = byID.values.sorted { $0.createdAt > $1.createdAt }
+            cursor = max(since, changed.compactMap(\.updatedAt).max() ?? since)
+            if changed.contains(where: { t in !members.contains(where: { $0.id == t.userID }) }) {
+                members = (try? await cloud.loadTeam(month: month).members) ?? members
+            }
             error = nil
             loadedAt = Date()
         } catch {

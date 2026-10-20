@@ -58,7 +58,7 @@
     if (myTasksCache && !force && Date.now() - myTasksCache.at < 30000) return myTasksCache.list;
     const uid = await TT.userId();
     const list = await TT.rest('GET',
-      `tasks?user_id=eq.${uid}&deleted=eq.false&select=*&order=created_at.desc&limit=400`);
+      `tasks?user_id=eq.${uid}&deleted=eq.false&select=*&order=created_at.desc&limit=150`);
     const byId = Object.fromEntries(list.map((t) => [t.id, t]));
     for (const t of list) t.display = t.parent_id && byId[t.parent_id] ? `${byId[t.parent_id].name} - ${t.name}` : t.name;
     myTasksCache = { at: Date.now(), list };
@@ -177,7 +177,7 @@
           if (t) { clearInterval(timer); onLinked(t, row); }
         }
       } catch (e) { /* try again */ }
-    }, 3000);
+    }, 5000);
   }
 
   async function chooser(body, code, title, onPick) {
@@ -516,8 +516,12 @@
     badgeBusy = true;
     try {
       const uid = await TT.userId();
-      const rows = await TT.rest('GET', `modhesh_tasks?user_id=eq.${uid}&task_id=not.is.null&select=code,task_id`);
-      const tasks = await myTasks(true);
+      const rows = await TT.rest('GET', `modhesh_tasks?user_id=eq.${uid}&task_id=not.is.null&status=in.(1,6)&select=code,task_id`);
+      const ids = [...new Set(rows.map((r) => r.task_id))];
+      const tasks = ids.length
+        ? await TT.rest('GET', `tasks?id=in.(${ids.join(',')})&select=id,name,parent_id,seconds,running_since`)
+        : [];
+      for (const t of tasks) t.display = t.name;
       const byId = Object.fromEntries(tasks.map((t) => [t.id, t]));
       const byCode = Object.fromEntries(rows.map((r) => [r.code, byId[r.task_id]]));
       for (const card of document.querySelectorAll('.kanban-card')) {
@@ -574,9 +578,9 @@
       // Ignore changes we made ourselves (badges), or this would run in a loop.
       if (list.every((m) => ours(m.target) || [...m.addedNodes, ...m.removedNodes].every(ours))) return;
       clearTimeout(badgeTimer);
-      badgeTimer = setTimeout(decorateBoard, 600);
+      badgeTimer = setTimeout(decorateBoard, 2000);
     }).observe(document.documentElement, { childList: true, subtree: true });
-    setInterval(() => { if (!document.hidden) decorateBoard(); }, 5000);
+    setInterval(() => { if (!document.hidden) decorateBoard(); }, 60000);
     syncModhesh();
     setInterval(syncModhesh, 3 * 60 * 1000);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) syncModhesh(); });

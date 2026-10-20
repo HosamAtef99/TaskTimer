@@ -12,7 +12,7 @@ const MODHESH = 'https://modhesh.social-eyez.com';
 const ACTIVE = [1, 6]; // Pending to Start, In Progress
 
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.alarms.create('tick', { periodInMinutes: 1 });
+  chrome.alarms.create('tick', { periodInMinutes: 2 });
   chrome.alarms.create('modhesh', { periodInMinutes: 5 });
   readModhesh();
   chrome.storage.local.get('autoSubmit').then(({ autoSubmit }) => {
@@ -20,7 +20,7 @@ chrome.runtime.onInstalled.addListener(() => {
   });
 });
 chrome.runtime.onStartup.addListener(() => {
-  chrome.alarms.create('tick', { periodInMinutes: 1 });
+  chrome.alarms.create('tick', { periodInMinutes: 2 });
   chrome.alarms.create('modhesh', { periodInMinutes: 5 });
   readModhesh();
 });
@@ -103,9 +103,15 @@ async function readModhesh() {
     }
     if (!seen.size) return;
     const uid = await TT.userId();
-    const rows = [...seen.values()].map((t) => ({ ...t, user_id: uid, updated_at: new Date().toISOString() }));
+    // Only send what changed since last time.
+    const { sentModhesh = {} } = await chrome.storage.local.get('sentModhesh');
+    const changed = [...seen.values()].filter((t) => sentModhesh[t.code] !== JSON.stringify(t));
+    if (!changed.length) return;
+    const rows = changed.map((t) => ({ ...t, user_id: uid, updated_at: new Date().toISOString() }));
     await TT.rest('POST', 'modhesh_tasks', rows, 'resolution=merge-duplicates,return=minimal');
-    console.log(`[TaskTimer] read ${rows.length} Modhesh tasks`);
+    for (const t of changed) sentModhesh[t.code] = JSON.stringify(t);
+    await chrome.storage.local.set({ sentModhesh, linkCheck: Date.now() });
+    console.log(`[TaskTimer] sent ${rows.length} changed Modhesh tasks`);
     tick();
   } catch (e) {
     console.log('[TaskTimer] reading Modhesh failed', e.message);
@@ -139,14 +145,34 @@ function strongMatch(a, b) {
   return j >= 0.6 ? j : 0;
 }
 
-async function myData() {
+// Kept small on purpose (the free database has a monthly download allowance):
+// only active Modhesh tasks, and only the TaskTimer tasks they're linked to.
+async function withNames(tasks) {
+  const known = new Map(tasks.map((t) => [t.id, t]));
+  const missing = [...new Set(tasks.map((t) => t.parent_id).filter((p) => p && !known.has(p)))];
+  if (missing.length) {
+    const parents = await TT.rest('GET', `tasks?id=in.(${missing.join(',')})&select=id,name`);
+    for (const p of parents) known.set(p.id, p);
+  }
+  for (const t of tasks) t.display = t.parent_id && known.get(t.parent_id) ? `${known.get(t.parent_id).name} - ${t.name}` : t.name;
+  return tasks;
+}
+
+async function myData(needCandidates) {
   const uid = await TT.userId();
-  const [rows, tasks] = await Promise.all([
-    TT.rest('GET', `modhesh_tasks?user_id=eq.${uid}&select=*`),
-    TT.rest('GET', `tasks?user_id=eq.${uid}&deleted=eq.false&select=*&order=created_at.desc&limit=400`),
-  ]);
+  const rows = await TT.rest('GET',
+    `modhesh_tasks?user_id=eq.${uid}&status=in.(1,6)&select=code,title,status,logged_seconds,submitted_seconds,task_id`);
+  const ids = [...new Set(rows.map((r) => r.task_id).filter(Boolean))];
+  const linked = ids.length ? await TT.rest('GET', `tasks?id=in.(${ids.join(',')})&deleted=eq.false&select=*`) : [];
+  let tasks = linked;
+  if (needCandidates && rows.some((r) => !r.task_id)) {
+    const since = new Date(Date.now() - 60 * 864e5).toISOString();
+    const recent = await TT.rest('GET',
+      `tasks?user_id=eq.${uid}&deleted=eq.false&created_at=gt.${encodeURIComponent(since)}&select=id,name,parent_id,created_at&order=created_at.desc&limit=300`);
+    tasks = [...linked, ...recent.filter((t) => !ids.includes(t.id))];
+  }
+  await withNames(tasks);
   const byId = Object.fromEntries(tasks.map((t) => [t.id, t]));
-  for (const t of tasks) t.display = t.parent_id && byId[t.parent_id] ? `${byId[t.parent_id].name} - ${t.name}` : t.name;
   return { uid, rows, tasks, byId };
 }
 
@@ -207,12 +233,17 @@ async function tick() {
   if (running) return;
   const s = await TT.session();
   if (!s) return;
-  const { attempts = {} } = await chrome.storage.local.get(['attempts']);
+  const { attempts = {}, linkCheck = 0 } = await chrome.storage.local.get(['attempts', 'linkCheck']);
   running = true;
   try {
     const st = await TT.settings();   // TaskTimer → Settings → Modhesh
-    const data = await myData();
-    if (st.auto_link !== false) await autoLink(data);
+    // Name matching needs the recent task list: only when Modhesh changed, or every 30 minutes.
+    const wantLink = st.auto_link !== false && (linkCheck > 0 || Date.now() + linkCheck > 30 * 60000);
+    const data = await myData(wantLink);
+    if (wantLink) {
+      await autoLink(data);
+      await chrome.storage.local.set({ linkCheck: -Date.now() });
+    }
     if (st.auto_submit === false) return;
     // Don't retry the same task more often than every 15 minutes.
     const now = Date.now();

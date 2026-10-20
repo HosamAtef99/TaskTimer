@@ -35,6 +35,8 @@ struct TeamTask: Identifiable, Hashable {
     var createdAt: Date
     var assignedBy: String?
     var ownerName: String?
+    var updatedAt: Date?
+    var deleted: Bool
     var deliverables: Int?
     var rating: Int?
 
@@ -66,6 +68,8 @@ struct TeamTask: Identifiable, Hashable {
         createdAt = Cloud.date(row["created_at"]) ?? Date()
         assignedBy = (row["assigned_by"] as? String)?.lowercased()
         ownerName = row["owner_name"] as? String
+        updatedAt = Cloud.date(row["updated_at"])
+        deleted = (row["deleted"] as? Bool) ?? false
         deliverables = row["deliverables"] as? Int
         rating = row["rating"] as? Int
     }
@@ -90,6 +94,7 @@ final class CloudSync: ObservableObject {
     private var pushWork: DispatchWorkItem?
     private var timer: Timer?
     private var pushing = false
+    private var ticks = 0
     private var pulling = false
 
     /// The account the pushed / lastPull state belongs to (kept per account).
@@ -123,13 +128,18 @@ final class CloudSync: ObservableObject {
         await pull()
         await checkWeeklyReport()
         if timer == nil {
-            timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+            // Every 2 minutes, kept light (the free database has a monthly download allowance).
+            timer = Timer.scheduledTimer(withTimeInterval: 120, repeats: true) { [weak self] _ in
                 Task { @MainActor in
-                    await self?.pull()
-                    await self?.pushNow()
-                    await self?.checkWeeklyReport()
-                    await self?.loadModhesh()
-                    await self?.loadSettings()
+                    guard let self else { return }
+                    self.ticks += 1
+                    await self.pull()
+                    await self.pushNow()
+                    await self.loadModhesh()
+                    if self.ticks % 5 == 0 {
+                        await self.checkWeeklyReport()
+                        await self.loadSettings()
+                    }
                 }
             }
         }
@@ -378,6 +388,7 @@ final class CloudSync: ObservableObject {
             let rows = try await CloudAPI.select("modhesh_tasks", [
                 URLQueryItem(name: "select", value: "*"),
                 URLQueryItem(name: "user_id", value: "eq.\(uid)"),
+                URLQueryItem(name: "status", value: "in.(1,6)"),   // only what still needs work
                 URLQueryItem(name: "order", value: "updated_at.desc"),
             ])
             modheshTasks = rows.compactMap { r in
@@ -541,6 +552,17 @@ final class CloudSync: ObservableObject {
         }
         let tasks = byID.values.sorted { $0.createdAt > $1.createdAt }
         return (members, tasks)
+    }
+
+    /// Team tasks changed since `since` (deleted ones included, so they can be removed).
+    /// Used by the Team window to refresh without downloading the whole month again.
+    func teamChanges(since: Date) async throws -> [TeamTask] {
+        guard let team = profile?.teamID else { return [] }
+        return try await CloudAPI.select("tasks", [
+            URLQueryItem(name: "select", value: "*"),
+            URLQueryItem(name: "team_id", value: "eq.\(team)"),
+            URLQueryItem(name: "updated_at", value: "gt.\(Cloud.iso(since))"),
+        ]).compactMap { TeamTask($0) }
     }
 
     /// Team tasks done (by day) or created in [from, to).

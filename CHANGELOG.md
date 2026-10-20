@@ -2,6 +2,9 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
+## 1.16.1
+- Much lighter on the team database (to stay inside the free plan with the whole team): syncing every 2 minutes, only Modhesh tasks that still need work, the Team window downloads only what changed, and the Chrome extension (2.4) only reads the tasks it needs.
+
 ## 1.16
 - Done: the time is now big and simple — hours and minutes, filled in to the nearest half hour, with − / + half-hour buttons.
 - Done asks "Did you face any challenges?" (your default from Settings → Modhesh is pre-picked); the answer is used on Modhesh.
