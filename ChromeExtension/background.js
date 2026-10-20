@@ -166,9 +166,9 @@ async function myData(needCandidates) {
   const linked = ids.length ? await TT.rest('GET', `tasks?id=in.(${ids.join(',')})&deleted=eq.false&select=*`) : [];
   let tasks = linked;
   if (needCandidates && rows.some((r) => !r.task_id)) {
-    const since = new Date(Date.now() - 60 * 864e5).toISOString();
+    const since = new Date(Date.now() - 21 * 864e5).toISOString();
     const recent = await TT.rest('GET',
-      `tasks?user_id=eq.${uid}&deleted=eq.false&created_at=gt.${encodeURIComponent(since)}&select=id,name,parent_id,created_at&order=created_at.desc&limit=300`);
+      `tasks?user_id=eq.${uid}&deleted=eq.false&created_at=gt.${encodeURIComponent(since)}&select=id,name,parent_id,created_at&order=created_at.desc&limit=120`);
     tasks = [...linked, ...recent.filter((t) => !ids.includes(t.id))];
   }
   await withNames(tasks);
@@ -180,7 +180,7 @@ async function myData(needCandidates) {
 
 async function autoLink({ uid, rows, tasks }) {
   const taken = new Set(rows.filter((r) => r.task_id).map((r) => r.task_id));
-  const since = Date.now() - 60 * 864e5;
+  const since = Date.now() - 21 * 864e5;
   const pool = tasks.filter((t) => !taken.has(t.id) && new Date(t.created_at).getTime() > since);
   for (const r of rows) {
     if (r.task_id || !ACTIVE.includes(r.status)) continue;
