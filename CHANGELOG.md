@@ -2,6 +2,10 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
+## 1.17
+- The timer card shows this month: tasks completed and their hours. It changes when you complete a task, not with the running timer.
+- Pause and Done in the timer card are icons now (⌘⇧P / ⌘↩ still work).
+
 ## 1.16.2
 - Chrome extension 2.4.1: name matching looks at the last 3 weeks of tasks only (even lighter on the database).
 

@@ -336,12 +336,14 @@ struct HeroCard: View {
                         .font(.system(size: compact ? 26 : 34, weight: .semibold, design: .rounded).monospacedDigit())
                         .gradientText()
                         .lineLimit(1)
-                    HStack(spacing: 8) {
-                        Button { store.pause(t.id) } label: { Label("Pause", systemImage: "pause.fill") }
-                            .buttonStyle(GlassButtonStyle())
-                        Button { store.requestDone(t.id) } label: { Label("Done", systemImage: "checkmark") }
-                            .buttonStyle(GradientButtonStyle())
+                    HStack(spacing: 10) {
+                        Button { store.pause(t.id) } label: { Image(systemName: "pause.fill") }
+                            .buttonStyle(CircleIconButtonStyle(size: compact ? 34 : 40))
+                            .help("Pause (⌘⇧P)")
+                        Button { store.requestDone(t.id) } label: { Image(systemName: "checkmark") }
+                            .buttonStyle(CircleIconButtonStyle(filled: true, size: compact ? 34 : 40))
                             .keyboardShortcut(.return, modifiers: .command)
+                            .help("Done (⌘↩)")
                     }
                 } else {
                     SectionLabel(text: "Idle")
@@ -354,11 +356,60 @@ struct HeroCard: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            Spacer(minLength: 0)
+            Spacer(minLength: 8)
+            MonthStats(compact: compact)
         }
         .padding(compact ? 14 : 20)
         .glassCard(radius: 24, highlight: running != nil)
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: running?.id)
+    }
+}
+
+// MARK: - This month (completed)
+
+/// Completed tasks and hours this month. It only changes when a task is completed
+/// (or edited), not with the running timer.
+struct MonthStats: View {
+    @EnvironmentObject var store: Store
+    var compact = false
+
+    var body: some View {
+        let cal = Calendar.current
+        let now = Date()
+        let done = store.tasks.filter { t in
+            t.status == .complete && cal.isDate(t.workDate ?? t.createdAt, equalTo: now, toGranularity: .month)
+        }
+        let seconds = done.reduce(0) { $0 + $1.totalSeconds(at: $1.sessions.last?.end ?? $1.createdAt) }
+        let month = DateFormatter()
+        month.dateFormat = "MMMM"
+        return VStack(alignment: .leading, spacing: compact ? 6 : 10) {
+            SectionLabel(text: month.string(from: now))
+            stat(value: "\(done.count)", label: done.count == 1 ? "task done" : "tasks done", icon: "checkmark.circle.fill")
+            stat(value: Fmt.hours(seconds), label: "hours", icon: "clock.fill")
+        }
+        .padding(compact ? 10 : 14)
+        .frame(minWidth: compact ? 96 : 130, alignment: .leading)
+        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Color.primary.opacity(0.08)))
+        .help("Completed this month (by the day you finished them)")
+    }
+
+    private func stat(value: String, label: String, icon: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: compact ? 11 : 13))
+                .foregroundStyle(Theme.cool)
+            Text(value)
+                .font(.system(size: compact ? 20 : 26, weight: .semibold, design: .rounded).monospacedDigit())
+                .gradientText()
+                .lineLimit(1)
+                .fixedSize()
+            Text(label)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .fixedSize()
+        }
     }
 }
 
