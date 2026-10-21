@@ -567,7 +567,7 @@ final class CloudSync: ObservableObject {
 
     func loadModheshLinks() async {
         guard let uid = CloudAuth.shared.session?.userID else { return }
-        let since = Calendar.current.date(byAdding: .day, value: -120, to: Date()) ?? Date()
+        let since = Calendar.current.date(byAdding: .day, value: -365, to: Date()) ?? Date()
         do {
             let rows = try await CloudAPI.select("modhesh_tasks", [
                 URLQueryItem(name: "select", value: "task_id,status,submitted_at"),

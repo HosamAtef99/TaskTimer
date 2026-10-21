@@ -167,10 +167,12 @@ enum FolderService {
         return found.first
     }
 
-    /// Moves each file into its matching subfolder; returns (file name, folder name) pairs.
-    static func sort(_ urls: [URL], into project: URL) -> [(String, String)] {
+    struct Moved { let name: String; let folder: String; let url: URL }
+
+    /// Moves each file into its matching subfolder.
+    static func sort(_ urls: [URL], into project: URL) -> [Moved] {
         let fm = FileManager.default
-        var moved: [(String, String)] = []
+        var moved: [Moved] = []
         let others = folder(in: project, matching: othersKeywords) ?? project
 
         for src in urls {
@@ -189,7 +191,11 @@ enum FolderService {
             }
 
             // Never move a file onto itself or a folder into its own child.
-            if src.deletingLastPathComponent().standardizedFileURL == target.standardizedFileURL { continue }
+            if src.deletingLastPathComponent().standardizedFileURL == target.standardizedFileURL {
+                // Already in place: nothing to move, but it can still be imported.
+                moved.append(Moved(name: src.lastPathComponent, folder: target.lastPathComponent, url: src))
+                continue
+            }
             if target.path.hasPrefix(src.path + "/") || target.path == src.path { continue }
 
             var dest = target.appendingPathComponent(src.lastPathComponent)
@@ -202,7 +208,7 @@ enum FolderService {
             }
             do {
                 try fm.moveItem(at: src, to: dest)
-                moved.append((dest.lastPathComponent, target.lastPathComponent))
+                moved.append(Moved(name: dest.lastPathComponent, folder: target.lastPathComponent, url: dest))
             } catch {
                 NSLog("TaskTimer sort failed: \(error.localizedDescription)")
             }

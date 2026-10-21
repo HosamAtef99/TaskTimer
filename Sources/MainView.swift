@@ -6,10 +6,29 @@ enum TaskFilter: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+/// Where each task stands on Modhesh.
+enum ModheshFilter: String, CaseIterable, Identifiable {
+    case any = "Modhesh: All"
+    case closed = "Closed on Modhesh"
+    case open = "Not closed yet"
+    case unlinked = "Not linked"
+    var id: String { rawValue }
+
+    func matches(_ link: CloudSync.ModheshLink?) -> Bool {
+        switch self {
+        case .any: return true
+        case .closed: return link?.sent == true
+        case .open: return link != nil && link?.sent != true
+        case .unlinked: return link == nil
+        }
+    }
+}
+
 struct MainView: View {
     @EnvironmentObject var store: Store
     @Local var filter: TaskFilter = .inProgress
     @Local var month: Date? = nil      // nil = all months
+    @Local var modhesh: ModheshFilter = .any
     @Local var search = ""
     @Local var showClients = false
     @Local var showTeam = false
@@ -210,6 +229,17 @@ struct MainView: View {
         .help("Show tasks created in this month")
     }
 
+    private var modheshPicker: some View {
+        Picker("", selection: $modhesh) {
+            ForEach(ModheshFilter.allCases) { f in
+                Text(f.rawValue).tag(f)
+            }
+        }
+        .labelsHidden()
+        .frame(minWidth: 120, maxWidth: 160)
+        .help("Closed on Modhesh = time sent there. Not closed yet = linked, waiting for Done.")
+    }
+
     private var searchField: some View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
@@ -227,6 +257,7 @@ struct MainView: View {
                 filterPicker
                 HStack(spacing: 8) {
                     monthPicker
+                    if cloud.profile != nil { modheshPicker }
                     searchField.frame(maxWidth: .infinity)
                 }
             }
@@ -234,6 +265,7 @@ struct MainView: View {
             HStack(spacing: 10) {
                 filterPicker.frame(maxWidth: 400)
                 monthPicker
+                if cloud.profile != nil { modheshPicker }
                 Spacer(minLength: 8)
                 searchField.frame(minWidth: 140, maxWidth: 220)
             }
@@ -269,6 +301,9 @@ struct MainView: View {
                 }
             }
             guard passFilter else { return false }
+            if modhesh != .any && cloud.profile != nil {
+                guard group.contains(where: { modhesh.matches(cloud.modheshLinks[$0.id]) }) else { return false }
+            }
             if q.isEmpty { return true }
             return group.contains { s in
                 s.name.localizedCaseInsensitiveContains(q)
@@ -447,6 +482,8 @@ struct TaskRow: View {
     @Local var hovering = false
     @Local var dropping = false
     @Local var confirmDelete = false
+    @Local var importQueue: [FolderService.Moved] = []
+    @Local var askImport = false
 
     var body: some View {
         let subs = store.subtasks(of: task.id)
@@ -479,14 +516,54 @@ struct TaskRow: View {
             if moved.isEmpty {
                 store.flash("Nothing moved.")
             } else {
-                let summary = Dictionary(grouping: moved, by: { $0.1 })
+                let summary = Dictionary(grouping: moved, by: { $0.folder })
                     .map { "\($0.value.count) → \($0.key)" }
                     .sorted()
                     .joined(separator: ",  ")
                 store.flash("Sorted \(moved.count) file\(moved.count == 1 ? "" : "s"): \(summary)")
+                // Offer to bring them into the After Effects project that's open.
+                if AfterEffects.isRunning && AfterEffects.canImport(moved.map(\.url)) {
+                    importQueue = moved
+                    askImport = true
+                }
             }
             return true
         } isTargeted: { dropping = $0 }
+        .alert("Import into After Effects?", isPresented: $askImport) {
+            Button("Import") { runImport() }
+                .keyboardShortcut(.defaultAction)
+            Button("Not now", role: .cancel) { importQueue = [] }
+        } message: {
+            let n = importQueue.count
+            Text("\(n == 1 ? "“\(importQueue.first?.name ?? "")”" : "\(n) files") goes into the After Effects project that's open now, in a project folder named after where \(n == 1 ? "it" : "they") went (e.g. “\(importQueue.first?.folder ?? "")”).")
+        }
+    }
+
+    /// One After Effects project folder per task subfolder the files went to.
+    private func runImport() {
+        let groups = Dictionary(grouping: importQueue, by: { $0.folder }).sorted { $0.key < $1.key }
+        importQueue = []
+        var total = 0
+        func next(_ i: Int) {
+            guard i < groups.count else {
+                store.flash(total == 0 ? "Nothing was imported into After Effects."
+                                       : "Imported \(total) item\(total == 1 ? "" : "s") into After Effects")
+                return
+            }
+            AfterEffects.importFiles(groups[i].value.map(\.url), bin: groups[i].key) { result in
+                switch result {
+                case .success(let n):
+                    total += n
+                    next(i + 1)
+                case .failure(let e):
+                    let a = NSAlert()
+                    a.messageText = "Couldn't import into After Effects"
+                    a.informativeText = e.localizedDescription
+                    a.runModal()
+                }
+            }
+        }
+        next(0)
     }
 
     private func mainRow(hasSubs: Bool) -> some View {
