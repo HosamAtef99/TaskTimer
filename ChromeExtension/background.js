@@ -25,7 +25,7 @@ chrome.runtime.onStartup.addListener(() => {
 });
 chrome.alarms.onAlarm.addListener((a) => {
   if (a.name === 'tick') tick();
-  if (a.name === 'modhesh') readModhesh();
+  if (a.name === 'modhesh') readModhesh(true);
 });
 
 // ───────────── 0. read Modhesh every 5 minutes (no tab needed) ─────────────
@@ -72,9 +72,21 @@ async function reloadIfUpdated() {
   } catch (e) { /* ignore */ }
 }
 
-async function readModhesh() {
+/// Tells TaskTimer what the last read of Modhesh found (shown in Settings → Modhesh).
+async function report(text) {
+  try {
+    const uid = await TT.userId();
+    await TT.rest('POST', 'user_settings', [{ user_id: uid, modhesh_status: text, modhesh_read_at: new Date().toISOString() }],
+      'resolution=merge-duplicates,return=minimal');
+  } catch (e) { /* older database */ }
+}
+
+let lastRead = 0;
+async function readModhesh(force) {
   await reloadIfUpdated();
   if (!(await TT.session())) return;
+  if (!force && Date.now() - lastRead < 60000) return;
+  lastRead = Date.now();
   checkIn();
   try {
     const now = new Date();
@@ -91,6 +103,7 @@ async function readModhesh() {
       const type = r.headers.get('content-type') || '';
       if (!r.ok || !type.includes('json')) {
         console.log('[TaskTimer] Modhesh needs you to sign in there');
+        await report('Not signed in to Modhesh in Chrome — open Modhesh and sign in.');
         return;
       }
       const j = await r.json();
@@ -102,14 +115,17 @@ async function readModhesh() {
         }
       }
     }
-    if (!seen.size) return;
+    const active = [...seen.values()].filter((t) => ACTIVE.includes(t.status)).length;
+    if (!seen.size) { await report('Modhesh has no tasks for you this month or last.'); return; }
     const uid = await TT.userId();
 
     // Only take Modhesh tasks that belong to this TaskTimer account.
     if (!(await sameOwner(uid, owner))) {
       console.log(`[TaskTimer] Modhesh is signed in as "${owner}", not this TaskTimer account — not taking its tasks`);
+      await report(`Modhesh in Chrome is “${owner}”, not this account — its tasks aren't taken.`);
       return;
     }
+    await report(`${seen.size} tasks read from Modhesh${owner ? ` (${owner})` : ''} · ${active} pending or in progress.`);
 
     // Only send what changed since last time (remembered per account).
     const key = `sentModhesh_${uid}`;
@@ -377,8 +393,12 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     tick().then(() => reply({ ok: true }));
     return true;
   }
+  if (msg.type === 'readNow') {
+    readModhesh(false).then(() => reply({ ok: true }));
+    return true;
+  }
   if (msg.type === 'signedIn') {
-    checkIn().then(() => readModhesh()).then(() => reply({ ok: true }));
+    checkIn().then(() => readModhesh(true)).then(() => reply({ ok: true }));
     return true;
   }
   return false;

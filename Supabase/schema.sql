@@ -81,6 +81,8 @@ alter table if exists public.user_settings add column if not exists modhesh_name
 alter table if exists public.user_settings add column if not exists modhesh_seen_name text;   -- name last seen on Modhesh
 alter table if exists public.user_settings add column if not exists modhesh_mismatch boolean not null default false;
 alter table if exists public.user_settings add column if not exists modhesh_reset_at timestamptz;          -- "Clear & re-check"
+alter table if exists public.user_settings add column if not exists modhesh_status text;                   -- last read, in words
+alter table if exists public.user_settings add column if not exists modhesh_read_at timestamptz;
 
 -- Each person's Modhesh settings (set in TaskTimer → Settings → Modhesh, read by the Chrome extension).
 create table if not exists public.user_settings (
@@ -96,6 +98,8 @@ create table if not exists public.user_settings (
   modhesh_seen_name    text,
   modhesh_mismatch     boolean not null default false,
   modhesh_reset_at     timestamptz,
+  modhesh_status       text,
+  modhesh_read_at      timestamptz,
   updated_at           timestamptz not null default now()
 );
 

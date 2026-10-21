@@ -2,6 +2,11 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
+## 1.18.2
+- Fixed: Modhesh tasks could be taken and then removed again (an old part of the extension skipped the "whose Modhesh is this" check). Extension 2.6 reads Modhesh in one place only.
+- Settings → Modhesh and the Modhesh window show what the last read found ("13 tasks read from Modhesh (Hossam Atef) · 3 pending or in progress", or why nothing was taken).
+- Run the latest schema.sql once.
+
 ## 1.18.1
 - Modhesh window: "Clear & re-check" removes every Modhesh task there that wasn't sent yet and reads your Modhesh again from scratch.
 

@@ -85,6 +85,13 @@ struct ModheshView: View {
         .task {
             await cloud.loadModhesh()
             await cloud.loadSettings()
+            // Keep the status line and the list fresh while this window is open.
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 30_000_000_000)
+                if Task.isCancelled { break }
+                await cloud.loadSettings()
+                await cloud.loadModhesh()
+            }
         }
         .confirmationDialog("Clear Modhesh tasks and re-check?", isPresented: $confirmReset) {
             Button("Clear & re-check", role: .destructive) {

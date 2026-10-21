@@ -166,6 +166,8 @@ final class CloudSync: ObservableObject {
         modheshSeenName = nil
         modheshConfirmedName = nil
         modheshMismatch = false
+        modheshStatus = nil
+        modheshReadAt = nil
     }
 
     /// First sign-in on this Mac for an account that already has tasks: bring them back.
@@ -435,6 +437,9 @@ final class CloudSync: ObservableObject {
     @Published private(set) var modheshSeenName: String?
     @Published private(set) var modheshConfirmedName: String?
     @Published private(set) var modheshMismatch = false
+    /// What the extension's last read of Modhesh found, in words, and when.
+    @Published private(set) var modheshStatus: String?
+    @Published private(set) var modheshReadAt: Date?
     private var settingsWork: DispatchWorkItem?
 
     var extensionConnected: Bool {
@@ -483,6 +488,8 @@ final class CloudSync: ObservableObject {
             modheshSeenName = r?["modhesh_seen_name"] as? String
             modheshConfirmedName = r?["modhesh_name"] as? String
             modheshMismatch = (r?["modhesh_mismatch"] as? Bool) ?? false
+            modheshStatus = r?["modhesh_status"] as? String
+            modheshReadAt = Cloud.date(r?["modhesh_read_at"])
         } catch {
             // Table not created yet: treated as "extension not added".
         }

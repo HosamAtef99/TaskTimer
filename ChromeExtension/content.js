@@ -581,8 +581,11 @@
       badgeTimer = setTimeout(decorateBoard, 2000);
     }).observe(document.documentElement, { childList: true, subtree: true });
     setInterval(() => { if (!document.hidden) decorateBoard(); }, 60000);
-    syncModhesh();
-    setInterval(syncModhesh, 3 * 60 * 1000);
-    document.addEventListener('visibilitychange', () => { if (!document.hidden) syncModhesh(); });
+    // Reading Modhesh is done by the background worker (it checks whose Modhesh this is).
+    // Opening the page just asks it to read now.
+    chrome.runtime.sendMessage({ type: 'readNow' }).catch(() => {});
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) chrome.runtime.sendMessage({ type: 'readNow' }).catch(() => {});
+    });
   }
 })();

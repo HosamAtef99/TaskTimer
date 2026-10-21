@@ -652,6 +652,24 @@ struct ModheshOwnerRow: View {
     @ObservedObject var cloud = CloudSync.shared
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ownerInfo
+            if let status = cloud.modheshStatus, !status.isEmpty {
+                Label {
+                    Text(status + (cloud.modheshReadAt.map { " (\(Fmt.relative($0)))" } ?? ""))
+                } icon: {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                }
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .help("What the Chrome extension found the last time it read Modhesh")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var ownerInfo: some View {
         if let seen = cloud.modheshSeenName, !seen.isEmpty {
             if cloud.modheshMismatch {
                 VStack(alignment: .leading, spacing: 8) {
