@@ -75,6 +75,12 @@ alter table public.modhesh_tasks add column if not exists submitted_at timestamp
 alter table public.modhesh_tasks add column if not exists submit_note text;
 alter table public.modhesh_tasks add column if not exists auto_linked boolean not null default false;
 
+-- Whose Modhesh is open in Chrome: the extension only takes Modhesh tasks when that person
+-- matches the TaskTimer account (by name), or when the person confirmed it in TaskTimer.
+alter table if exists public.user_settings add column if not exists modhesh_name text;        -- confirmed Modhesh name
+alter table if exists public.user_settings add column if not exists modhesh_seen_name text;   -- name last seen on Modhesh
+alter table if exists public.user_settings add column if not exists modhesh_mismatch boolean not null default false;
+
 -- Each person's Modhesh settings (set in TaskTimer → Settings → Modhesh, read by the Chrome extension).
 create table if not exists public.user_settings (
   user_id              uuid primary key default auth.uid() references public.profiles(id) on delete cascade,
@@ -85,6 +91,9 @@ create table if not exists public.user_settings (
   auto_submit          boolean not null default true,
   extension_seen_at    timestamptz,                     -- the extension checks in here
   extension_version    text,
+  modhesh_name         text,
+  modhesh_seen_name    text,
+  modhesh_mismatch     boolean not null default false,
   updated_at           timestamptz not null default now()
 );
 

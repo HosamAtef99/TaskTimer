@@ -159,6 +159,13 @@ final class CloudSync: ObservableObject {
         lastPull = nil
         stateUser = nil
         modheshTasks = []
+        modheshLinks = [:]
+        newModheshCount = 0
+        extensionSeen = nil
+        extensionVersion = nil
+        modheshSeenName = nil
+        modheshConfirmedName = nil
+        modheshMismatch = false
     }
 
     /// First sign-in on this Mac for an account that already has tasks: bring them back.
@@ -424,6 +431,10 @@ final class CloudSync: ObservableObject {
     /// When the Chrome extension last checked in (nil = never seen for this account).
     @Published private(set) var extensionSeen: Date?
     @Published private(set) var extensionVersion: String?
+    /// The person whose Modhesh is open in Chrome, and whether that isn't this account.
+    @Published private(set) var modheshSeenName: String?
+    @Published private(set) var modheshConfirmedName: String?
+    @Published private(set) var modheshMismatch = false
     private var settingsWork: DispatchWorkItem?
 
     var extensionConnected: Bool {
@@ -449,7 +460,7 @@ final class CloudSync: ObservableObject {
                 "challenge": min(4, max(1, Pref.int(Pref.defaultChallenge))),
                 "default_rating": min(5, max(1, Pref.int(Pref.defaultRating))),
                 "default_deliverables": max(0, Pref.int(Pref.defaultDeliverables)),
-                "auto_link": Pref.bool(Pref.modheshAutoLink),
+                "auto_link": false,   // automatic linking was removed (it linked the wrong tasks)
                 "auto_submit": Pref.bool(Pref.modheshAutoSubmit),
                 "updated_at": Cloud.iso(Date()),
             ]])
@@ -463,13 +474,30 @@ final class CloudSync: ObservableObject {
         guard let uid = CloudAuth.shared.session?.userID else { return }
         do {
             let rows = try await CloudAPI.select("user_settings", [
-                URLQueryItem(name: "select", value: "extension_seen_at,extension_version"),
+                URLQueryItem(name: "select", value: "*"),
                 URLQueryItem(name: "user_id", value: "eq.\(uid)"),
             ])
-            extensionSeen = Cloud.date(rows.first?["extension_seen_at"])
-            extensionVersion = rows.first?["extension_version"] as? String
+            let r = rows.first
+            extensionSeen = Cloud.date(r?["extension_seen_at"])
+            extensionVersion = r?["extension_version"] as? String
+            modheshSeenName = r?["modhesh_seen_name"] as? String
+            modheshConfirmedName = r?["modhesh_name"] as? String
+            modheshMismatch = (r?["modhesh_mismatch"] as? Bool) ?? false
         } catch {
             // Table not created yet: treated as "extension not added".
+        }
+    }
+
+    /// "This Modhesh is mine": take tasks from the Modhesh account that's open in Chrome.
+    func confirmModheshOwner() async {
+        guard let uid = CloudAuth.shared.session?.userID, let name = modheshSeenName else { return }
+        do {
+            try await CloudAPI.upsert("user_settings", [[
+                "user_id": uid, "modhesh_name": name, "modhesh_mismatch": false,
+            ]])
+            await loadSettings()
+        } catch {
+            self.error = error.localizedDescription
         }
     }
 

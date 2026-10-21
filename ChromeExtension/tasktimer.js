@@ -67,8 +67,8 @@ const TT = (() => {
 
   /// Settings → Modhesh from TaskTimer (cached for a minute).
   let settingsCache = null;
-  async function settings() {
-    if (settingsCache && Date.now() - settingsCache.at < 60000) return settingsCache.value;
+  async function settings(fresh) {
+    if (!fresh && settingsCache && Date.now() - settingsCache.at < 60000) return settingsCache.value;
     let value = { challenge: 1, default_rating: 5, default_deliverables: 1, auto_link: true, auto_submit: true };
     try {
       const uid = (await session())?.userId;

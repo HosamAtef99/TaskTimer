@@ -21,6 +21,7 @@ struct ModheshView: View {
             if !cloud.extensionConnected && !monitor.installed {
                 ExtensionStatusRow()
             }
+            ModheshOwnerRow()
             if let e = cloud.modheshError {
                 Label(e, systemImage: "exclamationmark.triangle.fill")
                     .font(.system(size: 12)).foregroundStyle(Theme.pink)

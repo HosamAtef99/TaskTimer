@@ -581,7 +581,6 @@ struct ModheshSettings: View {
     @AppStorage(Pref.defaultDeliverables) var deliverables = 1
     @AppStorage(Pref.defaultRating) var rating = 5
     @AppStorage(Pref.defaultChallenge) var challenge = 1
-    @AppStorage(Pref.modheshAutoLink) var autoLink = true
     @AppStorage(Pref.modheshAutoSubmit) var autoSubmit = true
 
     static let challenges = [(1, "No Challenges at all"), (2, "Communication Challenge"),
@@ -597,6 +596,7 @@ struct ModheshSettings: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 ExtensionStatusRow()
+                ModheshOwnerRow()
 
                 SectionLabel(text: "Defaults for Log Time")
                 HStack(alignment: .top, spacing: 24) {
@@ -629,7 +629,6 @@ struct ModheshSettings: View {
 
                 Divider()
                 SectionLabel(text: "Automatic")
-                Toggle("Link Modhesh tasks to TaskTimer tasks with the same name", isOn: $autoLink)
                 Toggle("Log finished tasks on Modhesh by themselves and send them to my team leader", isOn: $autoSubmit)
                 Text("A task that's still Pending to Start on Modhesh is moved to In Progress first (with your start date), then logged.")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
@@ -641,9 +640,41 @@ struct ModheshSettings: View {
         .onChange(of: deliverables) { _ in cloud.scheduleSettingsSave() }
         .onChange(of: rating) { _ in cloud.scheduleSettingsSave() }
         .onChange(of: challenge) { _ in cloud.scheduleSettingsSave() }
-        .onChange(of: autoLink) { _ in cloud.scheduleSettingsSave() }
         .onChange(of: autoSubmit) { _ in cloud.scheduleSettingsSave() }
         .task { await cloud.loadSettings() }
+    }
+}
+
+// MARK: - Whose Modhesh
+
+/// Shows whose Modhesh is open in Chrome. Tasks are only taken when it's this account's person.
+struct ModheshOwnerRow: View {
+    @ObservedObject var cloud = CloudSync.shared
+
+    var body: some View {
+        if let seen = cloud.modheshSeenName, !seen.isEmpty {
+            if cloud.modheshMismatch {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("Modhesh in Chrome is signed in as “\(seen)” — not this TaskTimer account, so its tasks aren't taken.",
+                          systemImage: "exclamationmark.triangle.fill")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Theme.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: 8) {
+                        Text("Sign in to Modhesh as yourself, or if “\(seen)” is you:")
+                            .font(.system(size: 11)).foregroundStyle(.secondary)
+                        Button("It's me") { Task { @MainActor in await cloud.confirmModheshOwner() } }
+                            .buttonStyle(GlassButtonStyle(compact: true))
+                    }
+                }
+                .padding(12)
+                .glassCard(radius: 12, highlight: true)
+            } else {
+                Label("Modhesh account: \(seen)", systemImage: "person.crop.circle.badge.checkmark")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+        }
     }
 }
 

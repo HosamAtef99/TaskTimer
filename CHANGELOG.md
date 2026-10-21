@@ -2,6 +2,12 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
+## 1.18
+- Modhesh tasks now belong to the right person: the extension only takes tasks from the Modhesh account that matches your TaskTimer name (or that you confirm with "It's me" in Settings → Modhesh). Tasks picked up from someone else's Modhesh are removed.
+- Signing out clears everything Modhesh-related from the app, so the next account starts clean.
+- Automatic linking by name is gone (it linked wrong tasks). Links it made that weren't sent yet are undone; link tasks yourself from the Modhesh window.
+- Run the latest schema.sql once.
+
 ## 1.17.1
 - Tasks linked to Modhesh have a green "Modhesh" tag in the lists, and "Modhesh ✓" once their time was sent there.
 

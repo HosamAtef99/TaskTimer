@@ -1,7 +1,6 @@
 // TaskTimer for Modhesh — background worker.
-// Every minute:
-//   1. Links Modhesh tasks to TaskTimer tasks when the names clearly match.
-//   2. For linked tasks you've marked Done in TaskTimer, logs the time on Modhesh
+// Every 5 minutes it reads your Modhesh tasks (only when the Modhesh open in Chrome is yours).
+// Every 2 minutes, for tasks you linked in TaskTimer and marked Done there, it logs the time on Modhesh
 //      (hours, deliverables, stars, No Challenges, Complete + your team leader as approver).
 // Logging happens in a Modhesh tab (it opens one in the background if none is open,
 // and closes it afterwards). The same hours are never sent twice.
@@ -83,6 +82,7 @@ async function readModhesh() {
     const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     months.push([prev.getMonth() + 1, prev.getFullYear()]);
     const seen = new Map();
+    let owner = '';
     for (const [m, y] of months) {
       const r = await fetch(`${MODHESH}/tasks/my?task_id=&priority=&start_month=${m}&start_year=${y}&is_weekend=`, {
         credentials: 'include',
@@ -98,24 +98,74 @@ async function readModhesh() {
         for (const c of col.cards || []) {
           const t = parseCardHtml(c.html || '', Number(status));
           if (t && t.title && !seen.has(t.code)) seen.set(t.code, t);
+          if (!owner) owner = assigneeOf(c.html || '');
         }
       }
     }
     if (!seen.size) return;
     const uid = await TT.userId();
-    // Only send what changed since last time.
-    const { sentModhesh = {} } = await chrome.storage.local.get('sentModhesh');
+
+    // Only take Modhesh tasks that belong to this TaskTimer account.
+    if (!(await sameOwner(uid, owner))) {
+      console.log(`[TaskTimer] Modhesh is signed in as "${owner}", not this TaskTimer account — not taking its tasks`);
+      return;
+    }
+
+    // Only send what changed since last time (remembered per account).
+    const key = `sentModhesh_${uid}`;
+    const { [key]: sentModhesh = {} } = await chrome.storage.local.get(key);
     const changed = [...seen.values()].filter((t) => sentModhesh[t.code] !== JSON.stringify(t));
     if (!changed.length) return;
     const rows = changed.map((t) => ({ ...t, user_id: uid, updated_at: new Date().toISOString() }));
     await TT.rest('POST', 'modhesh_tasks', rows, 'resolution=merge-duplicates,return=minimal');
     for (const t of changed) sentModhesh[t.code] = JSON.stringify(t);
-    await chrome.storage.local.set({ sentModhesh, linkCheck: Date.now() });
+    await chrome.storage.local.set({ [key]: sentModhesh });
     console.log(`[TaskTimer] sent ${rows.length} changed Modhesh tasks`);
     tick();
   } catch (e) {
     console.log('[TaskTimer] reading Modhesh failed', e.message);
   }
+}
+
+// ───────────── whose Modhesh is this? ─────────────
+
+/// The person the Modhesh cards are assigned to ("Hossam Atef").
+function assigneeOf(html) {
+  return decode((html.match(/class="text-gray-800 fw-semibold fs-7[^"]*"[^>]*>([\s\S]*?)<\/(?:div|span|a)>/) || [])[1]);
+}
+
+/// Every word of the shorter name appears in the longer one ("Abdelkhalek" ~ "Ahmed Abdelkhalek").
+function namesMatch(a, b) {
+  const A = [...words(a)], B = [...words(b)];
+  if (!A.length || !B.length) return false;
+  const [short, long] = A.length <= B.length ? [A, new Set(B)] : [B, new Set(A)];
+  return short.every((w) => long.has(w));
+}
+
+/// True when the Modhesh open in Chrome is this TaskTimer account's person — matched by name
+/// (TaskTimer name or email), or confirmed in TaskTimer → Settings → Modhesh.
+async function sameOwner(uid, owner) {
+  const st = await TT.settings(true);
+  let ok;
+  if (!owner) {
+    ok = !st.modhesh_mismatch;          // no cards to tell from: keep the last answer
+  } else if (st.modhesh_name) {
+    ok = norm(st.modhesh_name) === norm(owner);
+  } else {
+    const me = (await TT.rest('GET', `profiles?id=eq.${uid}&select=full_name,email`))[0] || {};
+    const fromEmail = String(me.email || '').split('@')[0].replace(/[._-]+/g, ' ');
+    ok = namesMatch(me.full_name, owner) || namesMatch(fromEmail, owner);
+  }
+  if (owner && (owner !== st.modhesh_seen_name || ok === !!st.modhesh_mismatch)) {
+    await TT.rest('POST', 'user_settings', [{ user_id: uid, modhesh_seen_name: owner, modhesh_mismatch: !ok }],
+      'resolution=merge-duplicates,return=minimal').catch(() => {});
+  }
+  if (!ok) {
+    // Remove Modhesh tasks this account picked up from someone else's Modhesh (never linked ones).
+    await TT.rest('DELETE', `modhesh_tasks?user_id=eq.${uid}&task_id=is.null`, null, 'return=minimal').catch(() => {});
+    await chrome.storage.local.remove(`sentModhesh_${uid}`);
+  }
+  return ok;
 }
 
 // ───────────── helpers ─────────────
@@ -233,17 +283,21 @@ async function tick() {
   if (running) return;
   const s = await TT.session();
   if (!s) return;
-  const { attempts = {}, linkCheck = 0 } = await chrome.storage.local.get(['attempts', 'linkCheck']);
+  const { attempts = {} } = await chrome.storage.local.get(['attempts']);
   running = true;
   try {
     const st = await TT.settings();   // TaskTimer → Settings → Modhesh
-    // Name matching needs the recent task list: only when Modhesh changed, or every 30 minutes.
-    const wantLink = st.auto_link !== false && (linkCheck > 0 || Date.now() + linkCheck > 30 * 60000);
-    const data = await myData(wantLink);
-    if (wantLink) {
-      await autoLink(data);
-      await chrome.storage.local.set({ linkCheck: -Date.now() });
+    if (st.modhesh_mismatch) return;  // Modhesh in Chrome is someone else's
+    // Automatic linking by name is gone (it linked wrong tasks): undo the ones it made
+    // that haven't been sent yet, once per account.
+    const uid = await TT.userId();
+    const flag = `autoLinksUndone_${uid}`;
+    if (!(await chrome.storage.local.get(flag))[flag]) {
+      await TT.rest('PATCH', `modhesh_tasks?user_id=eq.${uid}&auto_linked=eq.true&submitted_at=is.null`,
+        { task_id: null, auto_linked: false }, 'return=minimal').catch(() => {});
+      await chrome.storage.local.set({ [flag]: true });
     }
+    const data = await myData(false);
     if (st.auto_submit === false) return;
     // Don't retry the same task more often than every 15 minutes.
     const now = Date.now();
