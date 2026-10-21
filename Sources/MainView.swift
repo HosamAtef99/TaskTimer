@@ -529,41 +529,9 @@ struct TaskRow: View {
             }
             return true
         } isTargeted: { dropping = $0 }
-        .alert("Import into After Effects?", isPresented: $askImport) {
-            Button("Import") { runImport() }
-                .keyboardShortcut(.defaultAction)
-            Button("Not now", role: .cancel) { importQueue = [] }
-        } message: {
-            let n = importQueue.count
-            Text("\(n == 1 ? "“\(importQueue.first?.name ?? "")”" : "\(n) files") goes into the After Effects project that's open now, in a project folder named after where \(n == 1 ? "it" : "they") went (e.g. “\(importQueue.first?.folder ?? "")”).")
+        .sheet(isPresented: $askImport) {
+            ImportToAESheet(files: importQueue).environmentObject(store)
         }
-    }
-
-    /// One After Effects project folder per task subfolder the files went to.
-    private func runImport() {
-        let groups = Dictionary(grouping: importQueue, by: { $0.folder }).sorted { $0.key < $1.key }
-        importQueue = []
-        var total = 0
-        func next(_ i: Int) {
-            guard i < groups.count else {
-                store.flash(total == 0 ? "Nothing was imported into After Effects."
-                                       : "Imported \(total) item\(total == 1 ? "" : "s") into After Effects")
-                return
-            }
-            AfterEffects.importFiles(groups[i].value.map(\.url), bin: groups[i].key) { result in
-                switch result {
-                case .success(let n):
-                    total += n
-                    next(i + 1)
-                case .failure(let e):
-                    let a = NSAlert()
-                    a.messageText = "Couldn't import into After Effects"
-                    a.informativeText = e.localizedDescription
-                    a.runModal()
-                }
-            }
-        }
-        next(0)
     }
 
     private func mainRow(hasSubs: Bool) -> some View {
@@ -771,4 +739,92 @@ struct SubtaskRow: View {
 func doneLabel(_ t: TaskItem) -> String {
     if t.status == .complete { return Features.sheet ? "Log again" : "Edit" }
     return "Done"
+}
+
+// MARK: - Import into After Effects
+
+/// Asked after files are dropped on a task while After Effects is open.
+struct ImportToAESheet: View {
+    @EnvironmentObject var store: Store
+    @Environment(\.dismiss) var dismiss
+    let files: [FolderService.Moved]
+    @Local var kind: AfterEffects.LayeredKind = AfterEffects.LayeredKind.last
+    @Local var working = false
+
+    var body: some View {
+        let layered = AfterEffects.hasLayered(files.map(\.url))
+        SheetFrame(title: "Import into After Effects?", subtitle: "Into the project that's open now", icon: "square.and.arrow.down.on.square") {
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(files.prefix(8), id: \.url) { f in
+                    HStack(spacing: 6) {
+                        Image(systemName: "doc").foregroundStyle(.secondary)
+                        Text(f.name).lineLimit(1).truncationMode(.middle)
+                        Text("→ \(f.folder)").foregroundStyle(.secondary).lineLimit(1)
+                    }
+                    .font(.system(size: 12))
+                }
+                if files.count > 8 {
+                    Text("+ \(files.count - 8) more").font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+            }
+            if layered {
+                VStack(alignment: .leading, spacing: 6) {
+                    SectionLabel(text: "PSD / AI import kind")
+                    Picker("", selection: $kind) {
+                        ForEach(AfterEffects.LayeredKind.allCases) { k in Text(k.title).tag(k) }
+                    }
+                    .labelsHidden()
+                    .frame(maxWidth: 300, alignment: .leading)
+                }
+            }
+            Text("Each file goes into a project folder named after where it was moved, e.g. “\(files.first?.folder ?? "")”.")
+                .font(.system(size: 11)).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Spacer()
+                Button("Not now") { dismiss() }
+                    .buttonStyle(GlassButtonStyle())
+                    .keyboardShortcut(.cancelAction)
+                Button(working ? "Importing…" : "Import") { run() }
+                    .buttonStyle(GradientButtonStyle())
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(working)
+            }
+        }
+        .frame(width: 460)
+    }
+
+    /// One After Effects project folder per task subfolder the files went to.
+    private func run() {
+        AfterEffects.LayeredKind.last = kind
+        working = true
+        let groups = Dictionary(grouping: files, by: { $0.folder }).sorted { $0.key < $1.key }
+        let chosen = kind
+        var total = 0
+        var problems: [String] = []
+        func next(_ i: Int) {
+            guard i < groups.count else {
+                working = false
+                dismiss()
+                if !problems.isEmpty {
+                    let a = NSAlert()
+                    a.messageText = "Some files didn't go into After Effects"
+                    a.informativeText = problems.joined(separator: "\n")
+                    a.runModal()
+                } else {
+                    store.flash(total == 0 ? "Nothing was imported into After Effects."
+                                           : "Imported \(total) item\(total == 1 ? "" : "s") into After Effects")
+                }
+                return
+            }
+            AfterEffects.importFiles(groups[i].value.map(\.url), bin: groups[i].key, layered: chosen) { result in
+                switch result {
+                case .success(let n): total += n
+                case .failure(let e): problems.append(e.localizedDescription)
+                }
+                next(i + 1)
+            }
+        }
+        next(0)
+    }
 }

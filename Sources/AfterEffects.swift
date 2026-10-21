@@ -55,7 +55,29 @@ enum AfterEffects {
 
     /// Imports into the open project, into a project folder named `bin` (made if missing).
     /// Calls back on the main thread with how many came in, or an error.
-    static func importFiles(_ urls: [URL], bin: String, done: @escaping (Result<Int, Error>) -> Void) {
+    /// How PSD / AI files come in — the same choices as After Effects' own import window.
+    enum LayeredKind: String, CaseIterable, Identifiable {
+        case retainSizes = "COMP_CROPPED_LAYERS"
+        case composition = "COMP"
+        case footage = "FOOTAGE"
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .retainSizes: return "Composition - Retain Layer Sizes"
+            case .composition: return "Composition"
+            case .footage: return "Footage (merged layers)"
+            }
+        }
+        static var last: LayeredKind {
+            get { LayeredKind(rawValue: UserDefaults.standard.string(forKey: "aeLayeredKind") ?? "") ?? .retainSizes }
+            set { UserDefaults.standard.set(newValue.rawValue, forKey: "aeLayeredKind") }
+        }
+    }
+
+    static func hasLayered(_ urls: [URL]) -> Bool { items(from: urls).contains { $0.layered } }
+
+    static func importFiles(_ urls: [URL], bin: String, layered kind: LayeredKind = .retainSizes,
+                            done: @escaping (Result<Int, Error>) -> Void) {
         let list = items(from: urls)
         guard let app = running, let id = app.bundleIdentifier else {
             done(.failure(Err("After Effects isn't open.")))
@@ -82,15 +104,27 @@ enum AfterEffects {
           }
           if (!bin) bin = app.project.items.addFolder(name);
           var n = 0, errs = [];
+          // PSD / AI: the chosen kind first, then the others if After Effects refuses it.
+          var layeredKinds = [ImportAsType.\(kind.rawValue), ImportAsType.COMP_CROPPED_LAYERS, ImportAsType.COMP, ImportAsType.FOOTAGE];
           for (var k = 0; k < list.length; k++) {
-            try {
-              var io = new ImportOptions(new File(list[k][0]));
-              if (list[k][1]) io.sequence = true;
-              if (list[k][2] && io.canImportAs(ImportAsType.COMP)) io.importAs = ImportAsType.COMP;
-              else if (io.canImportAs(ImportAsType.FOOTAGE)) io.importAs = ImportAsType.FOOTAGE;
-              var item = app.project.importFile(io);
-              if (item) { item.parentFolder = bin; n++; }
-            } catch (e) { errs.push(decodeURI(new File(list[k][0]).name) + ": " + e.toString()); }
+            var f = new File(list[k][0]);
+            var kinds = list[k][2] ? layeredKinds : [ImportAsType.FOOTAGE];
+            var item = null, last = "";
+            for (var j = 0; j < kinds.length && !item; j++) {
+              try {
+                var io = new ImportOptions(f);
+                if (list[k][1]) io.sequence = true;
+                if (io.canImportAs(kinds[j])) io.importAs = kinds[j];
+                else if (list[k][2]) continue;
+                item = app.project.importFile(io);
+              } catch (e) { last = e.toString(); }
+            }
+            if (item) {
+              try { item.parentFolder = bin; } catch (e) {}
+              n++;
+            } else {
+              errs.push(decodeURI(f.name) + ": " + (last || "After Effects couldn't import it"));
+            }
           }
           app.endUndoGroup();
           return n + "|" + errs.join("\\n");
@@ -122,8 +156,9 @@ enum AfterEffects {
                 let text = result?.stringValue ?? ""
                 let parts = text.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false)
                 let n = Int(parts.first ?? "") ?? list.count
-                if n == 0, parts.count > 1, !parts[1].isEmpty {
-                    done(.failure(Err(String(parts[1]))))
+                if parts.count > 1, !parts[1].isEmpty {
+                    // Show what didn't come in, even when the rest did.
+                    done(.failure(Err((n > 0 ? "\(n) imported. Not imported:\n" : "") + String(parts[1]))))
                 } else {
                     done(.success(n))
                 }
