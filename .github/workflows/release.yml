@@ -16,7 +16,8 @@ concurrency:
 
 jobs:
   build:
-    runs-on: macos-latest
+    # Apple Silicon Mac runners are often full; the Intel ones build the same universal app.
+    runs-on: macos-15-intel
     steps:
       - uses: actions/checkout@v4
 
