@@ -2,6 +2,9 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
+## 1.18.1
+- Modhesh window: "Clear & re-check" removes every Modhesh task there that wasn't sent yet and reads your Modhesh again from scratch.
+
 ## 1.18
 - Modhesh tasks now belong to the right person: the extension only takes tasks from the Modhesh account that matches your TaskTimer name (or that you confirm with "It's me" in Settings → Modhesh). Tasks picked up from someone else's Modhesh are removed.
 - Signing out clears everything Modhesh-related from the app, so the next account starts clean.

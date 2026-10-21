@@ -239,6 +239,12 @@ enum CloudAPI {
     }
 
     @MainActor
+    @discardableResult
+    static func delete(_ table: String, _ query: [URLQueryItem]) async throws -> Data {
+        try await call("DELETE", table, query: query, body: nil, prefer: "return=minimal")
+    }
+
+    @MainActor
     static func update(_ table: String, _ query: [URLQueryItem], _ values: [String: Any]) async throws {
         _ = try await call("PATCH", table, query: query, body: values, prefer: "return=minimal")
     }

@@ -488,6 +488,34 @@ final class CloudSync: ObservableObject {
         }
     }
 
+    /// Removes every Modhesh task on this account that wasn't sent yet, forgets whose Modhesh it
+    /// was, and asks the extension to read Modhesh again from scratch.
+    func resetModhesh() async {
+        guard let uid = CloudAuth.shared.session?.userID else { return }
+        do {
+            _ = try await CloudAPI.delete("modhesh_tasks", [
+                URLQueryItem(name: "user_id", value: "eq.\(uid)"),
+                URLQueryItem(name: "submitted_at", value: "is.null"),
+            ])
+            try await CloudAPI.upsert("user_settings", [[
+                "user_id": uid,
+                "modhesh_name": NSNull(), "modhesh_seen_name": NSNull(), "modhesh_mismatch": false,
+                "modhesh_reset_at": Cloud.iso(Date()),
+            ]])
+            UserDefaults.standard.removeObject(forKey: "modheshSeen-\(uid)")
+            modheshTasks = []
+            modheshLinks = [:]
+            newModheshCount = 0
+            modheshError = nil
+            await loadSettings()
+            await loadModhesh()
+            await loadModheshLinks()
+            Store.shared.flash("Modhesh cleared — your tasks come back within 5 minutes")
+        } catch {
+            modheshError = error.localizedDescription
+        }
+    }
+
     /// "This Modhesh is mine": take tasks from the Modhesh account that's open in Chrome.
     func confirmModheshOwner() async {
         guard let uid = CloudAuth.shared.session?.userID, let name = modheshSeenName else { return }

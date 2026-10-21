@@ -146,6 +146,13 @@ function namesMatch(a, b) {
 /// (TaskTimer name or email), or confirmed in TaskTimer → Settings → Modhesh.
 async function sameOwner(uid, owner) {
   const st = await TT.settings(true);
+  // "Clear & re-check" in TaskTimer: forget what was sent, send everything again.
+  const resetKey = `modheshReset_${uid}`;
+  const { [resetKey]: seenReset } = await chrome.storage.local.get(resetKey);
+  if (st.modhesh_reset_at && st.modhesh_reset_at !== seenReset) {
+    await chrome.storage.local.remove(`sentModhesh_${uid}`);
+    await chrome.storage.local.set({ [resetKey]: st.modhesh_reset_at });
+  }
   let ok;
   if (!owner) {
     ok = !st.modhesh_mismatch;          // no cards to tell from: keep the last answer

@@ -10,6 +10,7 @@ struct ModheshView: View {
     @ObservedObject var cloud = CloudSync.shared
     @ObservedObject var monitor = ExtensionMonitor.shared
     @Local var showLinked = false
+    @Local var confirmReset = false
 
     var body: some View {
         // Only what still needs work: Pending to Start and In Progress.
@@ -69,6 +70,11 @@ struct ModheshView: View {
                     Label("Refresh", systemImage: "arrow.clockwise")
                 }
                 .buttonStyle(GlassButtonStyle(compact: true))
+                Button { confirmReset = true } label: {
+                    Label("Clear & re-check", systemImage: "trash")
+                }
+                .buttonStyle(GlassButtonStyle(compact: true))
+                .help("Remove all Modhesh tasks shown here and read your Modhesh again")
                 Spacer()
                 Button("Done") { dismiss() }
                     .buttonStyle(GradientButtonStyle())
@@ -79,6 +85,13 @@ struct ModheshView: View {
         .task {
             await cloud.loadModhesh()
             await cloud.loadSettings()
+        }
+        .confirmationDialog("Clear Modhesh tasks and re-check?", isPresented: $confirmReset) {
+            Button("Clear & re-check", role: .destructive) {
+                Task { @MainActor in await cloud.resetModhesh() }
+            }
+        } message: {
+            Text("Removes every Modhesh task here (and their links) that wasn't sent yet. Tasks whose time was already sent stay. Your own Modhesh tasks come back within 5 minutes, as long as Chrome is signed in to your Modhesh.")
         }
     }
 
