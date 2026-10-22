@@ -770,6 +770,9 @@ struct ImportToAESheet: View {
             if layered {
                 VStack(alignment: .leading, spacing: 6) {
                     SectionLabel(text: "PSD / AI import kind")
+                    Text("If After Effects shows its own import window for a PSD, choose there — the files wait for it.")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                     Picker("", selection: $kind) {
                         ForEach(AfterEffects.LayeredKind.allCases) { k in Text(k.title).tag(k) }
                     }
@@ -798,33 +801,23 @@ struct ImportToAESheet: View {
     private func run() {
         AfterEffects.LayeredKind.last = kind
         working = true
-        let groups = Dictionary(grouping: files, by: { $0.folder }).sorted { $0.key < $1.key }
-        let chosen = kind
-        var total = 0
-        var problems: [String] = []
-        func next(_ i: Int) {
-            guard i < groups.count else {
-                working = false
-                dismiss()
-                if !problems.isEmpty {
-                    let a = NSAlert()
-                    a.messageText = "Some files didn't go into After Effects"
-                    a.informativeText = problems.joined(separator: "\n")
-                    a.runModal()
-                } else {
-                    store.flash(total == 0 ? "Nothing was imported into After Effects."
-                                           : "Imported \(total) item\(total == 1 ? "" : "s") into After Effects")
-                }
-                return
-            }
-            AfterEffects.importFiles(groups[i].value.map(\.url), bin: groups[i].key, layered: chosen) { result in
-                switch result {
-                case .success(let n): total += n
-                case .failure(let e): problems.append(e.localizedDescription)
-                }
-                next(i + 1)
+        let groups = Dictionary(grouping: files, by: { $0.folder })
+            .sorted { $0.key < $1.key }
+            .map { (bin: $0.key, urls: $0.value.map(\.url)) }
+        let store = self.store
+        // Close this window first: After Effects may show its own PSD import window.
+        dismiss()
+        AfterEffects.importFiles(groups, layered: kind) { result in
+            switch result {
+            case .success(let n):
+                store.flash(n == 0 ? "Nothing was imported into After Effects."
+                                   : "Imported \(n) item\(n == 1 ? "" : "s") into After Effects")
+            case .failure(let e):
+                let a = NSAlert()
+                a.messageText = "Some files didn't go into After Effects"
+                a.informativeText = e.localizedDescription
+                a.runModal()
             }
         }
-        next(0)
     }
 }

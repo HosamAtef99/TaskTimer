@@ -76,9 +76,13 @@ enum AfterEffects {
 
     static func hasLayered(_ urls: [URL]) -> Bool { items(from: urls).contains { $0.layered } }
 
-    static func importFiles(_ urls: [URL], bin: String, layered kind: LayeredKind = .retainSizes,
+    /// Imports everything in ONE After Effects script, so a window After Effects opens itself
+    /// (its PSD import window) just pauses the script instead of blocking the next one.
+    /// Plain files first, PSD / AI last. Each group goes into a project folder named `bin`.
+    static func importFiles(_ groups: [(bin: String, urls: [URL])], layered kind: LayeredKind = .retainSizes,
                             done: @escaping (Result<Int, Error>) -> Void) {
-        let list = items(from: urls)
+        let all = groups.flatMap { g in items(from: g.urls).map { (g.bin, $0) } }
+        let list = all.filter { !$0.1.layered } + all.filter { $0.1.layered }
         guard let app = running, let id = app.bundleIdentifier else {
             done(.failure(Err("After Effects isn't open.")))
             return
@@ -90,40 +94,38 @@ enum AfterEffects {
             let arr = data.flatMap { String(data: $0, encoding: .utf8) } ?? "[\"\"]"
             return String(arr.dropFirst().dropLast())
         }
-        let entries = list.map { "[\(js($0.path)),\($0.sequence),\($0.layered)]" }.joined(separator: ",")
+        let entries = list.map { "[\(js($0.1.path)),\($0.1.sequence),\($0.1.layered),\(js($0.0))]" }.joined(separator: ",")
         let script = """
         (function () {
           var list = [\(entries)];
-          var name = \(js(bin));
           if (!app.project) app.newProject();
-          app.beginUndoGroup("TaskTimer import");
-          var bin = null;
-          for (var i = 1; i <= app.project.numItems; i++) {
-            var it = app.project.item(i);
-            if (it instanceof FolderItem && it.name === name && it.parentFolder.id === app.project.rootFolder.id) { bin = it; break; }
+          var bins = {};
+          function binFor(name) {
+            if (bins[name]) return bins[name];
+            for (var i = 1; i <= app.project.numItems; i++) {
+              var it = app.project.item(i);
+              if (it instanceof FolderItem && it.name === name && it.parentFolder.id === app.project.rootFolder.id) { bins[name] = it; return it; }
+            }
+            bins[name] = app.project.items.addFolder(name);
+            return bins[name];
           }
-          if (!bin) bin = app.project.items.addFolder(name);
+          app.beginUndoGroup("TaskTimer import");
           var n = 0, errs = [];
-          // PSD / AI: the chosen kind first, then the others if After Effects refuses it.
-          var layeredKinds = [ImportAsType.\(kind.rawValue), ImportAsType.COMP_CROPPED_LAYERS, ImportAsType.COMP, ImportAsType.FOOTAGE];
           for (var k = 0; k < list.length; k++) {
             var f = new File(list[k][0]);
-            var kinds = list[k][2] ? layeredKinds : [ImportAsType.FOOTAGE];
-            var item = null, last = "";
-            for (var j = 0; j < kinds.length && !item; j++) {
-              try {
-                var io = new ImportOptions(f);
-                if (list[k][1]) io.sequence = true;
-                if (io.canImportAs(kinds[j])) io.importAs = kinds[j];
-                else if (list[k][2]) continue;
-                item = app.project.importFile(io);
-              } catch (e) { last = e.toString(); }
-            }
-            if (item) {
-              try { item.parentFolder = bin; } catch (e) {}
-              n++;
-            } else {
-              errs.push(decodeURI(f.name) + ": " + (last || "After Effects couldn't import it"));
+            try {
+              var io = new ImportOptions(f);
+              if (list[k][1]) io.sequence = true;
+              var kind = list[k][2] ? ImportAsType.\(kind.rawValue) : ImportAsType.FOOTAGE;
+              if (io.canImportAs(kind)) io.importAs = kind;
+              var item = app.project.importFile(io);
+              if (item) {
+                try { item.parentFolder = binFor(list[k][3]); } catch (e) {}
+                n++;
+              }
+            } catch (e) {
+              var m = e.toString();
+              if (!/cancel/i.test(m)) errs.push(decodeURI(f.name) + ": " + m);
             }
           }
           app.endUndoGroup();
@@ -135,7 +137,10 @@ enum AfterEffects {
             .replacingOccurrences(of: "\"", with: "\\\"")
         let source = """
         tell application id "\(id)"
-            DoScript "\(escaped)"
+            activate
+            with timeout of 3600 seconds
+                DoScript "\(escaped)"
+            end timeout
         end tell
         """
 
@@ -147,6 +152,8 @@ enum AfterEffects {
                     let code = err[NSAppleScript.errorNumber] as? Int
                     if code == -1743 {
                         done(.failure(Err("TaskTimer isn't allowed to control After Effects. Turn it on in System Settings → Privacy & Security → Automation → TaskTimer Dev.")))
+                    } else if code == -1712 {
+                        done(.failure(Err("After Effects didn't answer in time.")))
                     } else {
                         let msg = err[NSAppleScript.errorMessage] as? String ?? "After Effects didn't answer."
                         done(.failure(Err(msg)))
