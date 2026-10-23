@@ -109,25 +109,50 @@ enum AfterEffects {
             bins[name] = app.project.items.addFolder(name);
             return bins[name];
           }
+          // Never touch what's already in the project: only items this import made are moved
+          // into the folder, and a new item whose name is taken gets " (new)" added.
+          function snapshot() {
+            var ids = {}, names = {}, files = {};
+            for (var i = 1; i <= app.project.numItems; i++) {
+              var it = app.project.item(i);
+              ids[it.id] = true;
+              names[it.name] = true;
+              try { if (it instanceof FootageItem && it.file) files[it.file.fsName] = true; } catch (e) {}
+            }
+            return { ids: ids, names: names, files: files };
+          }
           app.beginUndoGroup("TaskTimer import");
-          var n = 0, errs = [];
+          var n = 0, errs = [], skipped = [];
           for (var k = 0; k < list.length; k++) {
             var f = new File(list[k][0]);
+            var before = snapshot();
+            if (before.files[f.fsName]) { skipped.push(decodeURI(f.name)); continue; }
             try {
               var io = new ImportOptions(f);
               if (list[k][1]) io.sequence = true;
               var kind = list[k][2] ? ImportAsType.\(kind.rawValue) : ImportAsType.FOOTAGE;
               if (io.canImportAs(kind)) io.importAs = kind;
               var item = app.project.importFile(io);
-              if (item) {
-                try { item.parentFolder = binFor(list[k][3]); } catch (e) {}
-                n++;
+              if (!item) continue;
+              var bin = binFor(list[k][3]);
+              var made = [];
+              for (var i = 1; i <= app.project.numItems; i++) {
+                var it = app.project.item(i);
+                if (!before.ids[it.id] && it.id !== bin.id) made.push(it);
               }
+              for (var j = 0; j < made.length; j++) {
+                var it = made[j];
+                if (it.parentFolder.id !== app.project.rootFolder.id) continue;
+                if (before.names[it.name]) it.name = it.name + " (new)";
+                try { it.parentFolder = bin; } catch (e) {}
+              }
+              n++;
             } catch (e) {
               var m = e.toString();
               if (!/cancel/i.test(m)) errs.push(decodeURI(f.name) + ": " + m);
             }
           }
+          if (skipped.length) errs.push("Already in the project, not imported again: " + skipped.join(", "));
           app.endUndoGroup();
           return n + "|" + errs.join("\\n");
         })();

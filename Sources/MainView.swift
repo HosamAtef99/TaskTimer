@@ -41,6 +41,19 @@ struct MainView: View {
     private var narrow: Bool { width < 640 }
 
     var body: some View {
+        // The width comes from the window itself (not from the content, which could be wider
+        // than the window and keep the wide layout on).
+        GeometryReader { g in
+            content
+                .frame(width: g.size.width, height: g.size.height)
+                .clipped()
+                .onAppear { width = g.size.width }
+                .onChange(of: g.size.width) { width = $0 }
+        }
+        .frame(minWidth: 470, minHeight: 560)
+    }
+
+    private var content: some View {
         ZStack(alignment: .bottom) {
             GlowBackground()
 
@@ -55,11 +68,6 @@ struct MainView: View {
             .padding(.top, 30)
             .padding(.bottom, 12)
             .frame(maxWidth: .infinity)
-            .background(GeometryReader { g in
-                Color.clear
-                    .onAppear { width = g.size.width }
-                    .onChange(of: g.size.width) { width = $0 }
-            })
 
             if let t = store.toast {
                 Text(t)
@@ -70,7 +78,6 @@ struct MainView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .frame(minWidth: 470, minHeight: 560)
         .sheet(item: $store.doneTarget) { target in
             if Features.sheet {
                 SheetDoneSheet(taskID: target.id).environmentObject(store)
@@ -225,7 +232,7 @@ struct MainView: View {
             }
         }
         .labelsHidden()
-        .frame(minWidth: 110, maxWidth: 150)
+        .frame(minWidth: 90, maxWidth: 150)
         .help("Show tasks created in this month")
     }
 
@@ -236,7 +243,7 @@ struct MainView: View {
             }
         }
         .labelsHidden()
-        .frame(minWidth: 120, maxWidth: 160)
+        .frame(minWidth: 90, maxWidth: 160)
         .help("Closed on Modhesh = time sent there. Not closed yet = linked, waiting for Done.")
     }
 
@@ -252,12 +259,22 @@ struct MainView: View {
 
     @ViewBuilder
     private var listControls: some View {
-        if width < 820 {
+        let hasCloud = cloud.profile != nil
+        if width < 640 {
+            VStack(spacing: 8) {
+                filterPicker
+                HStack(spacing: 8) {
+                    monthPicker.frame(maxWidth: .infinity)
+                    if hasCloud { modheshPicker.frame(maxWidth: .infinity) }
+                }
+                searchField
+            }
+        } else if width < 900 {
             VStack(spacing: 8) {
                 filterPicker
                 HStack(spacing: 8) {
                     monthPicker
-                    if cloud.profile != nil { modheshPicker }
+                    if hasCloud { modheshPicker }
                     searchField.frame(maxWidth: .infinity)
                 }
             }
@@ -265,7 +282,7 @@ struct MainView: View {
             HStack(spacing: 10) {
                 filterPicker.frame(maxWidth: 400)
                 monthPicker
-                if cloud.profile != nil { modheshPicker }
+                if hasCloud { modheshPicker }
                 Spacer(minLength: 8)
                 searchField.frame(minWidth: 140, maxWidth: 220)
             }
