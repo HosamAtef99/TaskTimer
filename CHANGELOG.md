@@ -2,6 +2,20 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
+## 1.19.3
+- The main window fits again when it's made narrow (filters go on separate rows).
+- After Effects import never changes what's already in the project; a file already imported is skipped.
+
+## 1.19.2
+- After Effects import runs as one script, PSDs last, so After Effects' own PSD window doesn't block the other files.
+
+## 1.19.1
+- Choose how PSD / AI files come into After Effects (Composition - Retain Layer Sizes, Composition, Footage).
+
+## 1.19
+- Modhesh filter: Closed on Modhesh / Not closed yet / Not linked.
+- Drop files on a task: they're sorted into its folders, then you're asked whether to import them into the After Effects project that's open.
+
 ## 1.18.2
 - Fixed: Modhesh tasks could be taken and then removed again (an old part of the extension skipped the "whose Modhesh is this" check). Extension 2.6 reads Modhesh in one place only.
 - Settings → Modhesh and the Modhesh window show what the last read found ("13 tasks read from Modhesh (Hossam Atef) · 3 pending or in progress", or why nothing was taken).
