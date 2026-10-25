@@ -9,6 +9,7 @@ struct TeamProfile: Identifiable, Hashable {
     var role: String
     var teamID: String?
     var isAdmin = false
+    var banned = false
 
     var isLeader: Bool { role == "leader" }
 
@@ -20,13 +21,15 @@ struct TeamProfile: Identifiable, Hashable {
         name = n.isEmpty ? email : n
         role = row["role"] as? String ?? "member"
         teamID = (row["team_id"] as? String)?.lowercased()
-        isAdmin = row["is_admin"] as? Bool ?? false
+        isAdmin = role == "admin" || (row["is_admin"] as? Bool ?? false)
+        banned = row["banned"] as? Bool ?? false
     }
 }
 
 struct TeamTask: Identifiable, Hashable {
     let id: String
     var userID: String
+    var teamID: String?
     var parentID: String?
     var name: String
     var client: String
@@ -60,6 +63,7 @@ struct TeamTask: Identifiable, Hashable {
         guard let id = row["id"] as? String, let user = row["user_id"] as? String else { return nil }
         self.id = id.lowercased()
         userID = user.lowercased()
+        teamID = (row["team_id"] as? String)?.lowercased()
         parentID = (row["parent_id"] as? String)?.lowercased()
         name = row["name"] as? String ?? ""
         client = row["client"] as? String ?? ""
@@ -296,6 +300,8 @@ final class CloudSync: ObservableObject {
 
     func pushNow() async {
         guard let uid = CloudAuth.shared.session?.userID, !pushing, ensureState() else { return }
+        // Admins don't have tasks of their own.
+        if isAdmin { return }
         pushing = true
         defer { pushing = false }
 
@@ -691,6 +697,27 @@ final class CloudSync: ObservableObject {
             URLQueryItem(name: "or", value: "(and(work_date.gte.\(d1),work_date.lt.\(d2)),and(work_date.is.null,created_at.gte.\(t1),created_at.lt.\(t2)))"),
         ])
         return (members, rows.compactMap { TeamTask($0) })
+    }
+
+    /// Admins: every team's tasks worked in [from, to) (by work day, or creation day when there's
+    /// none), plus every timer running now. Only the columns the Admin stats need.
+    func loadAllTasks(from: Date, to: Date) async throws -> (inRange: [TeamTask], running: [TeamTask]) {
+        guard isAdmin else { throw Cloud.CloudError("Only an admin can see every team.") }
+        let cols = "id,user_id,team_id,parent_id,name,client,status,seconds,running_since,work_date,created_at,owner_name,deleted"
+        let d1 = Fmt.isoDay.string(from: from), d2 = Fmt.isoDay.string(from: to)
+        let t1 = Cloud.iso(from), t2 = Cloud.iso(to)
+        let rows = try await CloudAPI.select("tasks", [
+            URLQueryItem(name: "select", value: cols),
+            URLQueryItem(name: "deleted", value: "eq.false"),
+            URLQueryItem(name: "or", value: "(and(work_date.gte.\(d1),work_date.lt.\(d2)),and(work_date.is.null,created_at.gte.\(t1),created_at.lt.\(t2)))"),
+            URLQueryItem(name: "limit", value: "10000"),
+        ])
+        let running = try await CloudAPI.select("tasks", [
+            URLQueryItem(name: "select", value: cols),
+            URLQueryItem(name: "deleted", value: "eq.false"),
+            URLQueryItem(name: "running_since", value: "not.is.null"),
+        ])
+        return (rows.compactMap { TeamTask($0) }, running.compactMap { TeamTask($0) })
     }
 
     // MARK: - Weekly report (leaders)

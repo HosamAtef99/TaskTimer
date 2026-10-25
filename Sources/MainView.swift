@@ -33,7 +33,6 @@ struct MainView: View {
     @Local var showClients = false
     @Local var showTeam = false
     @Local var showModhesh = false
-    @Local var showAdmin = false
     @Local var width: CGFloat = 900
     @ObservedObject var cloud = CloudSync.shared
 
@@ -61,9 +60,14 @@ struct MainView: View {
             VStack(spacing: narrow ? 12 : 16) {
                 header
                 UpdateBanner()
-                HeroCard(compact: compact)
-                listControls
-                taskList
+                if cloud.isAdmin {
+                    // Admins don't time tasks: their main window is the Admin panel.
+                    AdminView(embedded: true)
+                } else {
+                    HeroCard(compact: compact)
+                    listControls
+                    taskList
+                }
             }
             .padding(.horizontal, narrow ? 12 : (compact ? 16 : 22))
             .padding(.top, 30)
@@ -101,9 +105,7 @@ struct MainView: View {
         .sheet(isPresented: $showModhesh) {
             ModheshView().environmentObject(store)
         }
-        .sheet(isPresented: $showAdmin) {
-            AdminView().environmentObject(store)
-        }
+
         .onChange(of: store.teamReportRequest) { want in
             if want && cloud.isLeader { showTeam = true }
         }
@@ -119,7 +121,7 @@ struct MainView: View {
                     .gradientText()
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
-                Text("Today · \(Fmt.short(store.todaySeconds()))")
+                Text(cloud.isAdmin ? "Admin" : "Today · \(Fmt.short(store.todaySeconds()))")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -140,48 +142,47 @@ struct MainView: View {
                 .buttonStyle(GlassButtonStyle(compact: true))
                 .help("These logs failed to reach the sheet. Click to try again.")
             }
-            if cloud.profile != nil { modheshButton }
-            if cloud.isLeader {
-                if compact {
-                    Button { showTeam = true } label: { Image(systemName: "person.3.fill") }
-                        .buttonStyle(CircleIconButtonStyle())
-                        .help("Your team's tasks and live timers")
-                } else {
-                    Button { showTeam = true } label: { Label("Team", systemImage: "person.3.fill") }
-                        .buttonStyle(GlassButtonStyle(compact: true))
-                        .help("Your team's tasks and live timers")
+            if !cloud.isAdmin {
+                if cloud.profile != nil { modheshButton }
+                if cloud.isLeader {
+                    if compact {
+                        Button { showTeam = true } label: { Image(systemName: "person.3.fill") }
+                            .buttonStyle(CircleIconButtonStyle())
+                            .help("Your team's tasks and live timers")
+                    } else {
+                        Button { showTeam = true } label: { Label("Team", systemImage: "person.3.fill") }
+                            .buttonStyle(GlassButtonStyle(compact: true))
+                            .help("Your team's tasks and live timers")
+                    }
                 }
-            }
-            if cloud.isAdmin {
-                Button { showAdmin = true } label: { Image(systemName: "shield.lefthalf.filled") }
+                Button { showClients = true } label: { Image(systemName: "person.2") }
                     .buttonStyle(CircleIconButtonStyle())
-                    .help("Admin: accounts, teams and roles")
+                    .help("Clients")
             }
-            Button { showClients = true } label: { Image(systemName: "person.2") }
-                .buttonStyle(CircleIconButtonStyle())
-                .help("Clients")
             Button { store.showSettings = true } label: { Image(systemName: "gearshape") }
                 .buttonStyle(CircleIconButtonStyle())
                 .help("Settings")
-            if !narrow {
-                Button {
-                    if let url = FolderService.chooseExistingFolder() {
-                        _ = store.importFolder(url)
-                        filter = .inProgress
-                    }
-                } label: { Image(systemName: "folder.badge.plus") }
-                    .buttonStyle(CircleIconButtonStyle())
-                    .help("Import an existing task folder")
-            }
-            if compact {
-                Button { store.showNewTask = true } label: { Image(systemName: "plus") }
-                    .buttonStyle(CircleIconButtonStyle(filled: true))
-                    .help("New Task (⌘N)")
-            } else {
-                Button { store.showNewTask = true } label: {
-                    Label("New Task", systemImage: "plus")
+            if !cloud.isAdmin {
+                if !narrow {
+                    Button {
+                        if let url = FolderService.chooseExistingFolder() {
+                            _ = store.importFolder(url)
+                            filter = .inProgress
+                        }
+                    } label: { Image(systemName: "folder.badge.plus") }
+                        .buttonStyle(CircleIconButtonStyle())
+                        .help("Import an existing task folder")
                 }
-                .buttonStyle(GradientButtonStyle())
+                if compact {
+                    Button { store.showNewTask = true } label: { Image(systemName: "plus") }
+                        .buttonStyle(CircleIconButtonStyle(filled: true))
+                        .help("New Task (⌘N)")
+                } else {
+                    Button { store.showNewTask = true } label: {
+                        Label("New Task", systemImage: "plus")
+                    }
+                    .buttonStyle(GradientButtonStyle())
+                }
             }
         }
     }

@@ -2,6 +2,12 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
+## 1.22
+- Admin is its own role now: an admin isn't in a team and doesn't time tasks. Signing in as an admin opens the Admin panel as the main window.
+- Admin → Hours: every team's hours for a month, each person's hours, tasks done and in progress, who's working now (and on what), each person's task list, CSV export.
+- Admin → People: delete an account for good, unblock accounts blocked by older versions, flags emails that look wrong.
+- Run the latest schema.sql once, and deploy the new team-admin function.
+
 ## 1.21
 - After Effects renders go to the task's Render folder: a comp added to the Render Queue in a task's project gets its output set to that task's Render folder (Settings → General, on by default). Changing the output by hand afterwards is kept.
 

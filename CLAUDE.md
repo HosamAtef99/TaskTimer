@@ -48,7 +48,7 @@ When you make a decision that the other person would need to know, add it here.
 | `AERenderHelper.swift` | Puts a small ExtendScript helper into the running AE (`app.scheduleTask`, every 2 s, `$.global.TaskTimerRQ`): Render Queue items added in a task's project get their output set to the task's Render folder. Added once per AE launch (max 2 tries, no `activate`), setting `Pref.aeRenderToTask` |
 | `Cloud.swift` / `CloudSync.swift` | Supabase auth + REST, push/pull, team, Modhesh state, weekly report |
 | `TeamView.swift` | Leader window: tasks, summary, add member (new account, or an existing account by email), reset/remove member, assign task, CSV. `isValidEmail` / `EmailHint` live here |
-| `AdminView.swift` | Admin window (`profiles.is_admin`): every account and team; add accounts, move people between teams, set role / admin, reset passwords, create / rename / delete teams |
+| `AdminView.swift` | Admin panel — the **main window for admin accounts** (`AdminView(embedded: true)` in `MainView`). Tabs: Hours (every team's and person's hours / done / in progress / working now for a month, per-person task list, CSV), People (move between teams, set role, reset password, unblock, delete account for good), Teams (create / rename / delete empty) |
 | `ModheshView.swift` | Link Modhesh tasks to TaskTimer tasks or amends (manual only) |
 | `ExtensionInstaller.swift` | Copies the bundled extension to `~/Library/Application Support/TaskTimer Dev/…`, opens `chrome://extensions` through AppleScript, detects the installed extension from Chrome's prefs |
 | `RenderWatcher.swift` | "Render finished" notification with Stop/Done. Watches a task's Render folder while the task or any amend is in progress; new **or overwritten** files (size + modified date), finished after 45 s with no change |
@@ -62,11 +62,17 @@ When you make a decision that the other person would need to know, add it here.
   add a column, add it there with `add column if not exists` and tell the other person to run
   the file in SQL Editor → New query. Code that reads new columns must still work when the
   column isn't there yet (see the push fallback in `CloudSync`).
-- Roles: `profiles.role` is `member` or `leader`. **Admin is a separate flag**,
-  `profiles.is_admin`, so an admin can also be a leader or member of a team. Nobody can set
-  it from the app for themselves (only `full_name` is updatable by users); only admins can,
-  through the Edge Function, and there must always be at least one admin. The first admin is
-  set by hand in SQL.
+- Roles: `profiles.role` is `member`, `leader` or `admin` (Hosam's call: **an admin is only an
+  admin** — never in a team, no tasks of their own, not a leader; the app doesn't sync an
+  admin's local tasks). `profiles.is_admin` is kept equal to `role = 'admin'` for older app
+  builds; `is_admin()` in SQL checks the role. Admins can read every profile, team and task
+  (RLS). Nobody can make themselves admin (users can only update `full_name`); only admins
+  can, through the Edge Function, and there must always be at least one admin. The first
+  admin is set by hand in SQL.
+- Deleting an account (admin) deletes the sign-in, profile and **all their tasks** (cascade),
+  so their hours leave team history too. Taking someone out of a team keeps everything.
+- Accounts blocked by old versions (`auth.users.banned_until`) show as "Blocked" in Admin →
+  People, with Unblock; resetting a password also unblocks.
 - Members only see their own data. Leaders see their team's tasks and can insert `incoming`
   tasks for teammates, but can't edit anyone's hours.
 - A task's `team_id` and `owner_name` are fixed at insert by a trigger. Removing someone
@@ -74,8 +80,8 @@ When you make a decision that the other person would need to know, add it here.
 - Edge Function `Supabase/functions/team-admin` holds the
   **service_role key server-side**. Leader actions: `create`, `add_existing`, `reset`,
   `remove` (own team only). Admin actions start with `admin_` (`admin_list`,
-  `admin_create_user`, `admin_update_user`, `admin_reset`, `admin_create_team`,
-  `admin_rename_team`, `admin_delete_team`). Emails are checked on both sides with the
+  `admin_create_user`, `admin_update_user`, `admin_reset`, `admin_unban`, `admin_delete_user`,
+  `admin_create_team`, `admin_rename_team`, `admin_delete_team`). Emails are checked on both sides with the
   same pattern (`name@domain.tld`). **After changing the function, it has to be deployed
   again in Supabase**: Edge Functions → team-admin → Code → paste → Deploy. Never put the service_role key, the DB password or the DB
   URL in the code, in chat, or in this public repo.

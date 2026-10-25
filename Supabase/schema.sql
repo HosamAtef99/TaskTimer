@@ -40,10 +40,16 @@ create table if not exists public.tasks (
   updated_at    timestamptz not null default now()
 );
 
--- Admins: manage every account and team from TaskTimer (Admin window). Separate from role,
--- so an admin can also be a leader or member of a team. Set the first admin by hand:
---   update public.profiles set is_admin = true where email = 'you@company.com';
-alter table public.profiles add column if not exists is_admin boolean not null default false;
+-- Roles: member, leader, admin. An admin manages every account and team from TaskTimer
+-- (Admin window) and is never in a team (no tasks of their own, not a leader).
+-- Set the first admin by hand:
+--   update public.profiles set role = 'admin', is_admin = true, team_id = null where email = 'you@company.com';
+alter table public.profiles add column if not exists is_admin boolean not null default false;  -- kept = (role = 'admin')
+alter table public.profiles drop constraint if exists profiles_role_check;
+alter table public.profiles add constraint profiles_role_check check (role in ('member', 'leader', 'admin'));
+-- Admins made with the older is_admin flag become the admin role, out of their team.
+update public.profiles set role = 'admin', team_id = null where is_admin and role <> 'admin';
+update public.profiles set is_admin = (role = 'admin') where is_admin <> (role = 'admin');
 
 -- Name of the owner at the time, so a leader still sees who did old tasks after someone leaves the team.
 alter table public.tasks add column if not exists owner_name text;
@@ -117,7 +123,7 @@ $$;
 
 create or replace function public.is_admin() returns boolean
 language sql stable security definer set search_path = public as $$
-  select coalesce((select is_admin from public.profiles where id = auth.uid()), false)
+  select coalesce((select role = 'admin' from public.profiles where id = auth.uid()), false)
 $$;
 
 create or replace function public.is_leader() returns boolean
@@ -201,7 +207,7 @@ create policy modhesh_own on public.modhesh_tasks for all to authenticated
 -- Tasks
 drop policy if exists tasks_select on public.tasks;
 create policy tasks_select on public.tasks for select to authenticated
-  using (user_id = auth.uid() or (public.is_leader() and team_id = public.my_team()));
+  using (user_id = auth.uid() or (public.is_leader() and team_id = public.my_team()) or public.is_admin());
 
 drop policy if exists tasks_insert on public.tasks;
 create policy tasks_insert on public.tasks for insert to authenticated

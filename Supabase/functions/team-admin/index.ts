@@ -1,7 +1,8 @@
 // TaskTimer — team-admin Edge Function
 // Team leaders: create accounts for their team, add an existing account, reset a member's
 // password, take someone off the team.
-// Admins (profiles.is_admin): see every account and team, create accounts for any team,
+// Admins (role 'admin', never in a team, no tasks of their own): see every account and team,
+// create accounts for any team,
 // move people between teams, change roles, reset passwords, create / rename / delete teams.
 // The service_role key never leaves Supabase.
 //
@@ -17,7 +18,7 @@ function json(body: unknown, status = 200) {
 }
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
-const ROLES = ["member", "leader"];
+const ROLES = ["member", "leader", "admin"];
 
 Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "Use POST." }, 405);
@@ -36,7 +37,7 @@ Deno.serve(async (req) => {
   const { data: me } = await admin
     .from("profiles").select("id, role, team_id, is_admin").eq("id", who.user.id).single();
   if (!me) return json({ error: "Please sign in again." }, 401);
-  const isAdmin = me.is_admin === true;
+  const isAdmin = me.role === "admin";
   const isLeader = me.role === "leader" && !!me.team_id;
 
   let body: Record<string, unknown> = {};
@@ -49,7 +50,7 @@ Deno.serve(async (req) => {
 
   async function byEmail(e: string) {
     const { data } = await admin
-      .from("profiles").select("id, team_id, full_name").eq("email", e).maybeSingle();
+      .from("profiles").select("id, team_id, full_name, role").eq("email", e).maybeSingle();
     return data;
   }
 
@@ -80,16 +81,25 @@ Deno.serve(async (req) => {
         .order("full_name");
       if (error) return json({ error: error.message }, 400);
       const { data: teams } = await admin.from("teams").select("id, name, created_at").order("name");
-      // Last sign-in comes from Auth.
+      // Last sign-in and bans come from Auth.
       const signIns: Record<string, string | null> = {};
+      const banned: Record<string, boolean> = {};
+      const now = Date.now();
       for (let page = 1; page <= 10; page++) {
         const { data } = await admin.auth.admin.listUsers({ page, perPage: 200 });
         const users = data?.users ?? [];
-        for (const u of users) signIns[u.id] = u.last_sign_in_at ?? null;
+        for (const u of users) {
+          signIns[u.id] = u.last_sign_in_at ?? null;
+          // deno-lint-ignore no-explicit-any
+          const until = (u as any).banned_until as string | undefined;
+          banned[u.id] = !!until && Date.parse(until) > now;
+        }
         if (users.length < 200) break;
       }
       return json({
-        profiles: (profiles ?? []).map((p) => ({ ...p, last_sign_in_at: signIns[p.id] ?? null })),
+        profiles: (profiles ?? []).map((p) => ({
+          ...p, last_sign_in_at: signIns[p.id] ?? null, banned: banned[p.id] ?? false,
+        })),
         teams: teams ?? [],
       });
     }
@@ -99,7 +109,8 @@ Deno.serve(async (req) => {
       const name = String(body.name ?? "").trim();
       const password = String(body.password ?? "");
       const role = String(body.role ?? "member");
-      const teamID = body.team_id ? String(body.team_id) : null;
+      // Admins are never in a team.
+      const teamID = role === "admin" ? null : (body.team_id ? String(body.team_id) : null);
       if (!EMAIL.test(e)) return json({ error: "That email isn't valid (it should look like name@company.com)." }, 400);
       if (!name) return json({ error: "Enter the name." }, 400);
       const bad = checkPassword(password); if (bad) return bad;
@@ -107,38 +118,39 @@ Deno.serve(async (req) => {
       if (await byEmail(e)) return json({ error: "There's already an account with this email." }, 409);
       const r = await newAccount(e, password, name, teamID, role);
       if (r.error) return json({ error: r.error }, 400);
-      if (body.is_admin === true) await admin.from("profiles").update({ is_admin: true }).eq("id", r.id);
+      if (role === "admin") await admin.from("profiles").update({ is_admin: true }).eq("id", r.id);
       return json({ ok: true, id: r.id });
     }
 
     if (action === "admin_update_user") {
       const id = String(body.id ?? "");
-      const { data: target } = await admin.from("profiles").select("id, is_admin").eq("id", id).maybeSingle();
+      const { data: target } = await admin.from("profiles").select("id, role").eq("id", id).maybeSingle();
       if (!target) return json({ error: "Account not found." }, 404);
       const patch: Record<string, unknown> = {};
-      if ("team_id" in body) patch.team_id = body.team_id ? String(body.team_id) : null;
+      const role = "role" in body ? String(body.role) : target.role;
+      if (!ROLES.includes(role)) return json({ error: "Unknown role." }, 400);
+      if (target.role === "admin" && role !== "admin") {
+        const { count } = await admin.from("profiles").select("id", { count: "exact", head: true }).eq("role", "admin");
+        if ((count ?? 0) <= 1) return json({ error: "There has to be at least one admin." }, 400);
+      }
       if ("role" in body) {
-        const role = String(body.role);
-        if (!ROLES.includes(role)) return json({ error: "Unknown role." }, 400);
         patch.role = role;
+        patch.is_admin = role === "admin";
+        if (role === "admin") patch.team_id = null;   // admins aren't in a team
+      }
+      if ("team_id" in body) {
+        if (role === "admin" && body.team_id) return json({ error: "Admins aren't in a team. Make them a member or leader first." }, 400);
+        patch.team_id = body.team_id ? String(body.team_id) : null;
       }
       if ("full_name" in body) {
         const n = String(body.full_name ?? "").trim();
         if (!n) return json({ error: "The name can't be empty." }, 400);
         patch.full_name = n;
       }
-      if ("is_admin" in body) {
-        const on = body.is_admin === true;
-        if (!on && target.is_admin) {
-          const { count } = await admin.from("profiles").select("id", { count: "exact", head: true }).eq("is_admin", true);
-          if ((count ?? 0) <= 1) return json({ error: "There has to be at least one admin." }, 400);
-        }
-        patch.is_admin = on;
-      }
       if (!Object.keys(patch).length) return json({ ok: true });
       const { error } = await admin.from("profiles").update(patch).eq("id", id);
       if (error) return json({ error: error.message }, 400);
-      if ("team_id" in patch && patch.team_id) {
+      if (patch.team_id) {
         // Older versions locked removed members out; undo that.
         await admin.auth.admin.updateUserById(id, { ban_duration: "none" });
       }
@@ -149,8 +161,31 @@ Deno.serve(async (req) => {
       const id = String(body.id ?? "");
       const password = String(body.password ?? "");
       const bad = checkPassword(password); if (bad) return bad;
-      const { error } = await admin.auth.admin.updateUserById(id, { password });
+      // A new password also lifts an old ban (older versions banned removed members).
+      const { error } = await admin.auth.admin.updateUserById(id, { password, ban_duration: "none" });
       if (error) return json({ error: error.message }, 400);
+      return json({ ok: true });
+    }
+
+    if (action === "admin_unban") {
+      const { error } = await admin.auth.admin.updateUserById(String(body.id ?? ""), { ban_duration: "none" });
+      if (error) return json({ error: error.message }, 400);
+      return json({ ok: true });
+    }
+
+    // Deletes the account for good: sign-in, profile, all their tasks, Modhesh links, settings.
+    if (action === "admin_delete_user") {
+      const id = String(body.id ?? "");
+      if (id === me.id) return json({ error: "You can't delete your own account." }, 400);
+      const { data: target } = await admin.from("profiles").select("id, role").eq("id", id).maybeSingle();
+      if (target?.role === "admin") {
+        const { count } = await admin.from("profiles").select("id", { count: "exact", head: true }).eq("role", "admin");
+        if ((count ?? 0) <= 1) return json({ error: "There has to be at least one admin." }, 400);
+      }
+      const { error } = await admin.auth.admin.deleteUser(id);
+      if (error) return json({ error: error.message }, 400);
+      // Normally removed by the database (on delete cascade); make sure.
+      await admin.from("profiles").delete().eq("id", id);
       return json({ ok: true });
     }
 
@@ -200,7 +235,8 @@ Deno.serve(async (req) => {
   }
 
   // Someone who already has an account and isn't in a team: put them in the leader's team.
-  async function addExisting(existing: { id: string; team_id: string | null }) {
+  async function addExisting(existing: { id: string; team_id: string | null; role?: string }) {
+    if (existing.role === "admin") return json({ error: "That's an admin account; admins aren't in a team." }, 409);
     if (existing.team_id === me!.team_id) return json({ error: "Already in your team." }, 409);
     if (existing.team_id) {
       return json({ error: "This person is in another team. Their team leader (or an admin) needs to remove them first." }, 409);
