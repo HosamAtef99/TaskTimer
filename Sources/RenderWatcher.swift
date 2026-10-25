@@ -10,7 +10,7 @@ final class RenderWatcher {
     static let shared = RenderWatcher()
 
     private struct FolderState {
-        var sizes: [String: Int64] = [:]
+        var sizes: [String: FileSig] = [:]
         var newFiles: Set<String> = []
         var lastChange: Date?
     }
@@ -18,8 +18,15 @@ final class RenderWatcher {
     private var states: [String: FolderState] = [:]   // key: render folder path
     private var timer: Timer?
 
-    /// Seconds without any change before a render counts as finished.
-    private let quietTime: TimeInterval = 30
+    /// Size + modified date, so a render that overwrites an existing file counts too.
+    private struct FileSig: Equatable {
+        var size: Int64
+        var modified: Date?
+    }
+
+    /// Seconds without any change before a render counts as finished. Heavy comps can take a
+    /// while per frame, so this isn't too short.
+    private let quietTime: TimeInterval = 45
 
     func start() {
         guard timer == nil else { return }
@@ -30,8 +37,14 @@ final class RenderWatcher {
 
     private func scan() {
         guard Pref.bool(Pref.renderNotify) else { states = [:]; return }
-        let tasks = Store.shared.tasks
-            .filter { $0.parentID == nil && $0.status.isInProgress && $0.folderPath != nil }
+        let store = Store.shared
+        // A task is watched while it or one of its amends is in progress (an amend can be
+        // in progress after the task itself was completed).
+        let tasks = store.tasks
+            .filter { t in
+                t.parentID == nil && t.folderPath != nil
+                    && (t.status.isInProgress || store.subtasks(of: t.id).contains { $0.status.isInProgress })
+            }
             .prefix(40)
 
         var seen = Set<String>()
@@ -48,9 +61,10 @@ final class RenderWatcher {
                 continue
             }
             var changed = false
-            for (path, size) in now where st.sizes[path] != size {
+            for (path, sig) in now where st.sizes[path] != sig {
                 changed = true
-                if st.sizes[path] == nil { st.newFiles.insert(path) }
+                // New file, or an existing one rendered again (overwritten).
+                st.newFiles.insert(path)
             }
             st.newFiles = st.newFiles.filter { now[$0] != nil }   // drop temp files that vanished
             if changed { st.lastChange = Date() }
@@ -68,9 +82,9 @@ final class RenderWatcher {
     }
 
     /// Files in the render folder (two levels deep), with their sizes.
-    private static func listing(_ dir: URL) -> [String: Int64] {
-        var out: [String: Int64] = [:]
-        let keys: [URLResourceKey] = [.isRegularFileKey, .fileSizeKey]
+    private static func listing(_ dir: URL) -> [String: FileSig] {
+        var out: [String: FileSig] = [:]
+        let keys: [URLResourceKey] = [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey]
         guard let e = FileManager.default.enumerator(at: dir, includingPropertiesForKeys: keys,
                                                      options: [.skipsHiddenFiles, .skipsPackageDescendants]) else { return out }
         var count = 0
@@ -79,7 +93,7 @@ final class RenderWatcher {
             guard let v = try? u.resourceValues(forKeys: Set(keys)), v.isRegularFile == true else { continue }
             let name = u.lastPathComponent.lowercased()
             if name.hasSuffix(".tmp") || name.hasSuffix(".part") || name.hasSuffix(".crdownload") { continue }
-            out[u.path] = Int64(v.fileSize ?? 0)
+            out[u.path] = FileSig(size: Int64(v.fileSize ?? 0), modified: v.contentModificationDate)
             count += 1
             if count > 5000 { break }
         }

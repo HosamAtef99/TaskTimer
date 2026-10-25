@@ -8,6 +8,7 @@ struct TeamProfile: Identifiable, Hashable {
     var name: String
     var role: String
     var teamID: String?
+    var isAdmin = false
 
     var isLeader: Bool { role == "leader" }
 
@@ -19,6 +20,7 @@ struct TeamProfile: Identifiable, Hashable {
         name = n.isEmpty ? email : n
         role = row["role"] as? String ?? "member"
         teamID = (row["team_id"] as? String)?.lowercased()
+        isAdmin = row["is_admin"] as? Bool ?? false
     }
 }
 
@@ -87,6 +89,7 @@ final class CloudSync: ObservableObject {
     @Published var error: String?
 
     var isLeader: Bool { profile?.isLeader ?? false }
+    var isAdmin: Bool { profile?.isAdmin ?? false }
 
     /// id → fingerprint of the row last sent, so only changed tasks are sent again.
     private var pushed: [String: String] = [:]
@@ -209,10 +212,19 @@ final class CloudSync: ObservableObject {
     func loadProfile() async {
         guard let uid = CloudAuth.shared.session?.userID else { return }
         do {
-            let rows = try await CloudAPI.select("profiles", [
-                URLQueryItem(name: "select", value: "id,email,full_name,role,team_id"),
-                URLQueryItem(name: "id", value: "eq.\(uid)"),
-            ])
+            let rows: [[String: Any]]
+            do {
+                rows = try await CloudAPI.select("profiles", [
+                    URLQueryItem(name: "select", value: "id,email,full_name,role,team_id,is_admin"),
+                    URLQueryItem(name: "id", value: "eq.\(uid)"),
+                ])
+            } catch {
+                // Database without is_admin yet (schema.sql not run again).
+                rows = try await CloudAPI.select("profiles", [
+                    URLQueryItem(name: "select", value: "id,email,full_name,role,team_id"),
+                    URLQueryItem(name: "id", value: "eq.\(uid)"),
+                ])
+            }
             profile = rows.first.flatMap { TeamProfile($0) }
             teamName = nil
             if let team = profile?.teamID {
