@@ -31,8 +31,9 @@ When you make a decision that the other person would need to know, add it here.
   in its Resources.
 
 ## Working together
-- Pull before you start. Work on a branch, open a Pull Request, and have the other person
-  merge it. Don't push straight to `main` unless you both agreed.
+- Pull before you start.
+- **Hosam's sessions commit straight to `main`** (his call). Mousab decides for his own;
+  a branch + Pull Request is still a good idea for big or risky changes.
 - Commit messages: short, say what changed for the user.
 
 ## Code map (Sources/)
