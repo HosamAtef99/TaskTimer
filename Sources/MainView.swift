@@ -33,6 +33,7 @@ struct MainView: View {
     @Local var showClients = false
     @Local var showTeam = false
     @Local var showModhesh = false
+    @Local var showAdmin = false
     @Local var width: CGFloat = 900
     @ObservedObject var cloud = CloudSync.shared
 
@@ -100,6 +101,9 @@ struct MainView: View {
         .sheet(isPresented: $showModhesh) {
             ModheshView().environmentObject(store)
         }
+        .sheet(isPresented: $showAdmin) {
+            AdminView().environmentObject(store)
+        }
         .onChange(of: store.teamReportRequest) { want in
             if want && cloud.isLeader { showTeam = true }
         }
@@ -147,6 +151,11 @@ struct MainView: View {
                         .buttonStyle(GlassButtonStyle(compact: true))
                         .help("Your team's tasks and live timers")
                 }
+            }
+            if cloud.isAdmin {
+                Button { showAdmin = true } label: { Image(systemName: "shield.lefthalf.filled") }
+                    .buttonStyle(CircleIconButtonStyle())
+                    .help("Admin: accounts, teams and roles")
             }
             Button { showClients = true } label: { Image(systemName: "person.2") }
                 .buttonStyle(CircleIconButtonStyle())
@@ -499,8 +508,8 @@ struct TaskRow: View {
     @Local var hovering = false
     @Local var dropping = false
     @Local var confirmDelete = false
-    @Local var importQueue: [FolderService.Moved] = []
-    @Local var askImport = false
+    @Local var dropped: [URL] = []
+    @Local var askDrop = false
 
     var body: some View {
         let subs = store.subtasks(of: task.id)
@@ -525,29 +534,19 @@ struct TaskRow: View {
                  : "This also removes its \(subs.count) amend\(subs.count == 1 ? "" : "s") from TaskTimer. The folder and the sheet rows stay.")
         }
         .dropDestination(for: URL.self) { urls, _ in
-            guard let f = task.folderURL else {
+            guard task.folderURL != nil else {
                 store.flash("This task has no folder to sort files into.")
                 return false
             }
-            let moved = FolderService.sort(urls, into: f)
-            if moved.isEmpty {
-                store.flash("Nothing moved.")
-            } else {
-                let summary = Dictionary(grouping: moved, by: { $0.folder })
-                    .map { "\($0.value.count) → \($0.key)" }
-                    .sorted()
-                    .joined(separator: ",  ")
-                store.flash("Sorted \(moved.count) file\(moved.count == 1 ? "" : "s"): \(summary)")
-                // Offer to bring them into the After Effects project that's open.
-                if AfterEffects.isRunning && AfterEffects.canImport(moved.map(\.url)) {
-                    importQueue = moved
-                    askImport = true
-                }
-            }
+            // Copy or move (and maybe import into After Effects) is asked next.
+            dropped = urls
+            askDrop = true
             return true
         } isTargeted: { dropping = $0 }
-        .sheet(isPresented: $askImport) {
-            ImportToAESheet(files: importQueue).environmentObject(store)
+        .sheet(isPresented: $askDrop) {
+            if let f = task.folderURL {
+                DropFilesSheet(files: dropped, project: f, taskName: task.name).environmentObject(store)
+            }
         }
     }
 
@@ -758,25 +757,32 @@ func doneLabel(_ t: TaskItem) -> String {
     return "Done"
 }
 
-// MARK: - Import into After Effects
+// MARK: - Files dropped on a task
 
-/// Asked after files are dropped on a task while After Effects is open.
-struct ImportToAESheet: View {
+/// Asked when files are dropped on a task: copy or move them into the task's folders, and
+/// (when After Effects is open) whether to import them into the open project.
+struct DropFilesSheet: View {
     @EnvironmentObject var store: Store
     @Environment(\.dismiss) var dismiss
-    let files: [FolderService.Moved]
+    let files: [URL]
+    let project: URL
+    let taskName: String
+
+    @Local var copy = UserDefaults.standard.bool(forKey: "dropCopies")
+    @Local var importAE = UserDefaults.standard.object(forKey: "dropImportsAE") as? Bool ?? true
     @Local var kind: AfterEffects.LayeredKind = AfterEffects.LayeredKind.last
-    @Local var working = false
 
     var body: some View {
-        let layered = AfterEffects.hasLayered(files.map(\.url))
-        SheetFrame(title: "Import into After Effects?", subtitle: "Into the project that's open now", icon: "square.and.arrow.down.on.square") {
+        let aeOpen = AfterEffects.isRunning && AfterEffects.canImport(files)
+        let layered = AfterEffects.hasLayered(files)
+        SheetFrame(title: "Add to “\(taskName)”", subtitle: "\(files.count) item\(files.count == 1 ? "" : "s") into the task folder", icon: "tray.and.arrow.down") {
             VStack(alignment: .leading, spacing: 4) {
-                ForEach(files.prefix(8), id: \.url) { f in
+                ForEach(files.prefix(8), id: \.self) { f in
                     HStack(spacing: 6) {
-                        Image(systemName: "doc").foregroundStyle(.secondary)
-                        Text(f.name).lineLimit(1).truncationMode(.middle)
-                        Text("→ \(f.folder)").foregroundStyle(.secondary).lineLimit(1)
+                        Image(systemName: f.hasDirectoryPath ? "folder" : "doc").foregroundStyle(.secondary)
+                        Text(f.lastPathComponent).lineLimit(1).truncationMode(.middle)
+                        Text("→ \(FolderService.target(for: f, in: project).lastPathComponent)")
+                            .foregroundStyle(.secondary).lineLimit(1)
                     }
                     .font(.system(size: 12))
                 }
@@ -784,46 +790,65 @@ struct ImportToAESheet: View {
                     Text("+ \(files.count - 8) more").font(.system(size: 11)).foregroundStyle(.secondary)
                 }
             }
-            if layered {
-                VStack(alignment: .leading, spacing: 6) {
-                    SectionLabel(text: "PSD / AI import kind")
-                    Text("If After Effects shows its own import window for a PSD, choose there — the files wait for it.")
-                        .font(.system(size: 11)).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Picker("", selection: $kind) {
-                        ForEach(AfterEffects.LayeredKind.allCases) { k in Text(k.title).tag(k) }
+            Picker("", selection: $copy) {
+                Text("Move").tag(false)
+                Text("Copy").tag(true)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(maxWidth: 220)
+            Text(copy ? "The originals stay where they are." : "The files leave where they are now (e.g. Downloads).")
+                .font(.system(size: 11)).foregroundStyle(.secondary)
+
+            if aeOpen {
+                Divider()
+                Toggle("Import into the After Effects project that's open", isOn: $importAE)
+                    .font(.system(size: 12, weight: .medium))
+                if importAE && layered {
+                    VStack(alignment: .leading, spacing: 6) {
+                        SectionLabel(text: "PSD / AI import kind")
+                        Picker("", selection: $kind) {
+                            ForEach(AfterEffects.LayeredKind.allCases) { k in Text(k.title).tag(k) }
+                        }
+                        .labelsHidden()
+                        .frame(maxWidth: 300, alignment: .leading)
+                        Text("If After Effects shows its own import window for a PSD, choose there — the other files wait for it.")
+                            .font(.system(size: 11)).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    .labelsHidden()
-                    .frame(maxWidth: 300, alignment: .leading)
                 }
             }
-            Text("Each file goes into a project folder named after where it was moved, e.g. “\(files.first?.folder ?? "")”.")
-                .font(.system(size: 11)).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
             HStack {
                 Spacer()
-                Button("Not now") { dismiss() }
+                Button("Cancel") { dismiss() }
                     .buttonStyle(GlassButtonStyle())
                     .keyboardShortcut(.cancelAction)
-                Button(working ? "Importing…" : "Import") { run() }
+                Button(copy ? "Copy" : "Move") { run(importing: aeOpen && importAE) }
                     .buttonStyle(GradientButtonStyle())
                     .keyboardShortcut(.defaultAction)
-                    .disabled(working)
             }
         }
-        .frame(width: 460)
+        .frame(width: 480)
     }
 
-    /// One After Effects project folder per task subfolder the files went to.
-    private func run() {
+    private func run(importing: Bool) {
+        UserDefaults.standard.set(copy, forKey: "dropCopies")
+        UserDefaults.standard.set(importAE, forKey: "dropImportsAE")
         AfterEffects.LayeredKind.last = kind
-        working = true
-        let groups = Dictionary(grouping: files, by: { $0.folder })
+        let store = self.store
+        let moved = FolderService.sort(files, into: project, copy: copy)
+        dismiss()
+        guard !moved.isEmpty else { store.flash("Nothing was added."); return }
+        let summary = Dictionary(grouping: moved, by: { $0.folder })
+            .map { "\($0.value.count) → \($0.key)" }
+            .sorted()
+            .joined(separator: ",  ")
+        store.flash("\(copy ? "Copied" : "Moved") \(moved.count): \(summary)")
+        guard importing else { return }
+
+        let groups = Dictionary(grouping: moved, by: { $0.folder })
             .sorted { $0.key < $1.key }
             .map { (bin: $0.key, urls: $0.value.map(\.url)) }
-        let store = self.store
-        // Close this window first: After Effects may show its own PSD import window.
-        dismiss()
         AfterEffects.importFiles(groups, layered: kind) { result in
             switch result {
             case .success(let n):

@@ -2,6 +2,13 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
+## 1.20
+- Admin window (shield button, admins only): every account and team in one place. Add leaders and members to any team, move people between teams, make someone a leader or member or admin, reset passwords, create / rename / delete teams.
+- Leaders: "Add Member" can now add an existing account by email (someone removed from another team), and emails are checked (name@company.com).
+- Dropping files on a task asks: Move or Copy, and (when After Effects is open) whether to import them, in one window.
+- Render notifications also work when a render overwrites an existing file, and while only an amend is in progress.
+- Run the latest schema.sql once, and deploy the new team-admin function.
+
 ## 1.19.3
 - The main window fits again when it's made narrow (filters go on separate rows).
 - After Effects import never changes what's already in the project; a file already imported is skipped.

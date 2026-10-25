@@ -42,13 +42,14 @@ When you make a decision that the other person would need to know, add it here.
 | `Store.swift` | All local state; per-account data file `data-<uid>.json` (the first account on a Mac claims the old `data.json`); `switchAccount`, folders, `complete(...)` |
 | `MainView.swift` | Main window. Responsive: the width comes from a root `GeometryReader` (window width, **not** content width). `compact` < 780, `narrow` < 640. Filters: status, month (creation date), Modhesh (closed / not closed / not linked) |
 | `Sheets.swift` | New Task, Done (hours/min rounded to ½ h, deliverables, stars, challenge) |
-| `FolderService.swift` / `MonthFolder.swift` | Task folders (client folder or months root; the month folder name copies the style of the existing ones). Dropped files are sorted into subfolders by type |
+| `FolderService.swift` / `MonthFolder.swift` | Task folders (client folder or months root; the month folder name copies the style of the existing ones). Dropped files are sorted into subfolders by type, moved or copied (the user picks in `DropFilesSheet`, in `MainView.swift`) |
 | `AfterEffects.swift` | Imports dropped files into the open AE project through AppleScript `DoScript` |
 | `Cloud.swift` / `CloudSync.swift` | Supabase auth + REST, push/pull, team, Modhesh state, weekly report |
-| `TeamView.swift` | Leader window: tasks, summary, add/reset/remove member, assign task, CSV |
+| `TeamView.swift` | Leader window: tasks, summary, add member (new account, or an existing account by email), reset/remove member, assign task, CSV. `isValidEmail` / `EmailHint` live here |
+| `AdminView.swift` | Admin window (`profiles.is_admin`): every account and team; add accounts, move people between teams, set role / admin, reset passwords, create / rename / delete teams |
 | `ModheshView.swift` | Link Modhesh tasks to TaskTimer tasks or amends (manual only) |
 | `ExtensionInstaller.swift` | Copies the bundled extension to `~/Library/Application Support/TaskTimer Dev/…`, opens `chrome://extensions` through AppleScript, detects the installed extension from Chrome's prefs |
-| `RenderWatcher.swift` | "Render finished" notification with Stop/Done |
+| `RenderWatcher.swift` | "Render finished" notification with Stop/Done. Watches a task's Render folder while the task or any amend is in progress; new **or overwritten** files (size + modified date), finished after 45 s with no change |
 | `Settings*.swift` | Tabs: Team, Modhesh, Folders, General |
 | `SheetSync.swift`, `SheetService.swift`, `GoogleSheet/` | Old Google Sheet logging. **Switched off** (`Features.sheet = false`), kept on purpose |
 
@@ -59,12 +60,22 @@ When you make a decision that the other person would need to know, add it here.
   add a column, add it there with `add column if not exists` and tell the other person to run
   the file in SQL Editor → New query. Code that reads new columns must still work when the
   column isn't there yet (see the push fallback in `CloudSync`).
+- Roles: `profiles.role` is `member` or `leader`. **Admin is a separate flag**,
+  `profiles.is_admin`, so an admin can also be a leader or member of a team. Nobody can set
+  it from the app for themselves (only `full_name` is updatable by users); only admins can,
+  through the Edge Function, and there must always be at least one admin. The first admin is
+  set by hand in SQL.
 - Members only see their own data. Leaders see their team's tasks and can insert `incoming`
   tasks for teammates, but can't edit anyone's hours.
 - A task's `team_id` and `owner_name` are fixed at insert by a trigger. Removing someone
   from a team keeps their history with the old team.
-- Edge Function `Supabase/functions/team-admin` (create / reset / remove member) holds the
-  **service_role key server-side**. Never put the service_role key, the DB password or the DB
+- Edge Function `Supabase/functions/team-admin` holds the
+  **service_role key server-side**. Leader actions: `create`, `add_existing`, `reset`,
+  `remove` (own team only). Admin actions start with `admin_` (`admin_list`,
+  `admin_create_user`, `admin_update_user`, `admin_reset`, `admin_create_team`,
+  `admin_rename_team`, `admin_delete_team`). Emails are checked on both sides with the
+  same pattern (`name@domain.tld`). **After changing the function, it has to be deployed
+  again in Supabase**: Edge Functions → team-admin → Code → paste → Deploy. Never put the service_role key, the DB password or the DB
   URL in the code, in chat, or in this public repo.
 - Free tier budget: about 40 users and 1000+ tasks a month have to fit in 5 GB of egress a month.
   Keep polling slow and queries incremental and filtered (select only the needed columns,

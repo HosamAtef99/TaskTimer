@@ -40,6 +40,11 @@ create table if not exists public.tasks (
   updated_at    timestamptz not null default now()
 );
 
+-- Admins: manage every account and team from TaskTimer (Admin window). Separate from role,
+-- so an admin can also be a leader or member of a team. Set the first admin by hand:
+--   update public.profiles set is_admin = true where email = 'you@company.com';
+alter table public.profiles add column if not exists is_admin boolean not null default false;
+
 -- Name of the owner at the time, so a leader still sees who did old tasks after someone leaves the team.
 alter table public.tasks add column if not exists owner_name text;
 
@@ -110,6 +115,11 @@ language sql stable security definer set search_path = public as $$
   select team_id from public.profiles where id = auth.uid()
 $$;
 
+create or replace function public.is_admin() returns boolean
+language sql stable security definer set search_path = public as $$
+  select coalesce((select is_admin from public.profiles where id = auth.uid()), false)
+$$;
+
 create or replace function public.is_leader() returns boolean
 language sql stable security definer set search_path = public as $$
   select coalesce((select role = 'leader' from public.profiles where id = auth.uid()), false)
@@ -162,12 +172,12 @@ alter table public.tasks    enable row level security;
 -- Teams: see your own team.
 drop policy if exists teams_select on public.teams;
 create policy teams_select on public.teams for select to authenticated
-  using (id = public.my_team());
+  using (id = public.my_team() or public.is_admin());
 
 -- Profiles: see yourself and your teammates; change only your own name.
 drop policy if exists profiles_select on public.profiles;
 create policy profiles_select on public.profiles for select to authenticated
-  using (id = auth.uid() or (team_id is not null and team_id = public.my_team()));
+  using (id = auth.uid() or (team_id is not null and team_id = public.my_team()) or public.is_admin());
 
 drop policy if exists profiles_update on public.profiles;
 create policy profiles_update on public.profiles for update to authenticated

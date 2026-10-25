@@ -169,33 +169,31 @@ enum FolderService {
 
     struct Moved { let name: String; let folder: String; let url: URL }
 
-    /// Moves each file into its matching subfolder.
-    static func sort(_ urls: [URL], into project: URL) -> [Moved] {
+    /// The subfolder of `project` a dropped file or folder belongs in (Others if nothing matches).
+    static func target(for src: URL, in project: URL) -> URL {
+        let others = folder(in: project, matching: othersKeywords) ?? project
+        var isDir: ObjCBool = false
+        _ = FileManager.default.fileExists(atPath: src.path, isDirectory: &isDir)
+        let r = (isDir.boolValue && src.pathExtension.isEmpty) ? ruleIndex(forFolder: src) : ruleIndex(for: src)
+        if let r, let f = folder(in: project, matching: rules[r].keywords) { return f }
+        return others
+    }
+
+    /// Moves (or copies) each file into its matching subfolder.
+    static func sort(_ urls: [URL], into project: URL, copy: Bool = false) -> [Moved] {
         let fm = FileManager.default
         var moved: [Moved] = []
-        let others = folder(in: project, matching: othersKeywords) ?? project
 
         for src in urls {
-            var isDir: ObjCBool = false
-            guard fm.fileExists(atPath: src.path, isDirectory: &isDir) else { continue }
+            guard fm.fileExists(atPath: src.path) else { continue }
+            let target = target(for: src, in: project)
 
-            let r: Int?
-            if isDir.boolValue && src.pathExtension.isEmpty {
-                r = ruleIndex(forFolder: src)
-            } else {
-                r = ruleIndex(for: src)
-            }
-            var target = others
-            if let r, let f = folder(in: project, matching: rules[r].keywords) {
-                target = f
-            }
-
-            // Never move a file onto itself or a folder into its own child.
+            // Already in place: nothing to move or copy, but it can still be imported.
             if src.deletingLastPathComponent().standardizedFileURL == target.standardizedFileURL {
-                // Already in place: nothing to move, but it can still be imported.
                 moved.append(Moved(name: src.lastPathComponent, folder: target.lastPathComponent, url: src))
                 continue
             }
+            // Never put a folder into its own child.
             if target.path.hasPrefix(src.path + "/") || target.path == src.path { continue }
 
             var dest = target.appendingPathComponent(src.lastPathComponent)
@@ -207,7 +205,11 @@ enum FolderService {
                 n += 1
             }
             do {
-                try fm.moveItem(at: src, to: dest)
+                if copy {
+                    try fm.copyItem(at: src, to: dest)
+                } else {
+                    try fm.moveItem(at: src, to: dest)
+                }
                 moved.append(Moved(name: dest.lastPathComponent, folder: target.lastPathComponent, url: dest))
             } catch {
                 NSLog("TaskTimer sort failed: \(error.localizedDescription)")

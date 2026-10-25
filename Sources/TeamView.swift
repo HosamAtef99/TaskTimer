@@ -489,11 +489,34 @@ func suggestedPassword() -> String {
     return "\(w.prefix(1).uppercased())\(w.dropFirst())-\(Int.random(in: 1000...9999))"
 }
 
+/// name@company.com — the same check the server does.
+func isValidEmail(_ s: String) -> Bool {
+    let e = s.trimmingCharacters(in: .whitespaces)
+    return e.range(of: #"^[^\s@]+@[^\s@]+\.[^\s@]{2,}$"#, options: .regularExpression) != nil
+}
+
+/// Shows "That email isn't valid" under an email field once something was typed.
+struct EmailHint: View {
+    let email: String
+    var body: some View {
+        if !email.trimmingCharacters(in: .whitespaces).isEmpty && !isValidEmail(email) {
+            Label("That email isn't valid — it should look like name@company.com", systemImage: "exclamationmark.circle")
+                .font(.system(size: 11)).foregroundStyle(Theme.pink)
+        }
+    }
+}
+
 struct AddMemberSheet: View {
     @EnvironmentObject var store: Store
     @Environment(\.dismiss) var dismiss
     let onDone: () async -> Void
 
+    enum Mode: String, CaseIterable, Identifiable {
+        case new = "New account", existing = "Existing account"
+        var id: String { rawValue }
+    }
+
+    @Local var mode: Mode = .new
     @Local var name = ""
     @Local var email = ""
     @Local var password = suggestedPassword()
@@ -501,14 +524,19 @@ struct AddMemberSheet: View {
     @Local var error: String? = nil
     @Local var created: String? = nil
 
+    private var canSend: Bool {
+        guard !sending, isValidEmail(email) else { return false }
+        if mode == .existing { return true }
+        return !name.trimmingCharacters(in: .whitespaces).isEmpty && password.count >= 6
+    }
+
     var body: some View {
-        SheetFrame(title: "Add Member", subtitle: "Creates their TaskTimer account in your team", icon: "person.badge.plus") {
+        SheetFrame(title: "Add Member", subtitle: mode == .new ? "Creates their TaskTimer account in your team"
+                                                               : "Someone who already has a TaskTimer account", icon: "person.badge.plus") {
             if let created {
                 VStack(alignment: .leading, spacing: 8) {
-                    Label("Account created ✓", systemImage: "checkmark.circle.fill")
+                    Label(mode == .new ? "Done ✓" : "Added to your team ✓", systemImage: "checkmark.circle.fill")
                         .font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.green)
-                    Text("Send them this, they sign in from Settings → Team:")
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
                     Text(created)
                         .font(.system(size: 12, design: .monospaced))
                         .textSelection(.enabled)
@@ -534,23 +562,39 @@ struct AddMemberSheet: View {
                     }
                 }
             } else {
-                FieldRow(label: "Name") {
-                    TextField("e.g. Mosab", text: $name).textFieldStyle(.roundedBorder)
+                Picker("", selection: $mode) {
+                    ForEach(Mode.allCases) { m in Text(m.rawValue).tag(m) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .onChange(of: mode) { _ in error = nil }
+
+                if mode == .new {
+                    FieldRow(label: "Name") {
+                        TextField("e.g. Mosab", text: $name).textFieldStyle(.roundedBorder)
+                    }
                 }
                 FieldRow(label: "Email") {
                     TextField("name@company.com", text: $email).textFieldStyle(.roundedBorder)
+                    EmailHint(email: email)
                 }
-                FieldRow(label: "Starting password") {
-                    HStack {
-                        TextField("", text: $password)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(size: 12, design: .monospaced))
-                        Button { password = suggestedPassword() } label: { Image(systemName: "arrow.triangle.2.circlepath") }
-                            .buttonStyle(CircleIconButtonStyle(size: 26))
-                            .help("Another password")
+                if mode == .new {
+                    FieldRow(label: "Starting password") {
+                        HStack {
+                            TextField("", text: $password)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.system(size: 12, design: .monospaced))
+                            Button { password = suggestedPassword() } label: { Image(systemName: "arrow.triangle.2.circlepath") }
+                                .buttonStyle(CircleIconButtonStyle(size: 26))
+                                .help("Another password")
+                        }
+                        Text("They can change it after signing in.")
+                            .font(.system(size: 11)).foregroundStyle(.secondary)
                     }
-                    Text("They can change it after signing in.")
+                } else {
+                    Text("For someone who was removed from another team (or never had one). They keep their password and their past tasks. If they're still in another team, that team's leader has to remove them first.")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 if let error {
                     Label(error, systemImage: "exclamationmark.triangle.fill")
@@ -565,13 +609,12 @@ struct AddMemberSheet: View {
                     Button { send() } label: {
                         HStack(spacing: 6) {
                             if sending { ProgressView().controlSize(.small).tint(.white) }
-                            Text("Create Account")
+                            Text(mode == .new ? "Create Account" : "Add to Team")
                         }
                     }
                     .buttonStyle(GradientButtonStyle())
                     .keyboardShortcut(.defaultAction)
-                    .disabled(sending || name.trimmingCharacters(in: .whitespaces).isEmpty
-                              || !email.contains("@") || password.count < 6)
+                    .disabled(!canSend)
                 }
             }
         }
@@ -584,14 +627,21 @@ struct AddMemberSheet: View {
         let n = name.trimmingCharacters(in: .whitespaces)
         let e = email.trimmingCharacters(in: .whitespaces).lowercased()
         let p = password
+        let m = mode
         Task { @MainActor in
             defer { sending = false }
             do {
-                let r = try await CloudSync.shared.teamAdmin(["action": "create", "name": n, "email": e, "password": p])
-                if (r["existing"] as? Bool) == true {
-                    created = "\(e) already had a TaskTimer account and is now in your team.\nThey sign in with their current password."
+                if m == .existing {
+                    let r = try await CloudSync.shared.teamAdmin(["action": "add_existing", "email": e])
+                    let who = (r["name"] as? String).map { "\($0) (\(e))" } ?? e
+                    created = "\(who) is now in your team.\nThey sign in with their current password."
                 } else {
-                    created = "TaskTimer account\nEmail: \(e)\nPassword: \(p)"
+                    let r = try await CloudSync.shared.teamAdmin(["action": "create", "name": n, "email": e, "password": p])
+                    if (r["existing"] as? Bool) == true {
+                        created = "\(e) already had a TaskTimer account and is now in your team.\nThey sign in with their current password."
+                    } else {
+                        created = "TaskTimer account\nEmail: \(e)\nPassword: \(p)"
+                    }
                 }
                 await onDone()
             } catch {
@@ -605,6 +655,8 @@ struct ResetPasswordSheet: View {
     @EnvironmentObject var store: Store
     @Environment(\.dismiss) var dismiss
     let member: TeamProfile
+    /// Admins reset anyone's password; leaders only their team's.
+    var asAdmin = false
 
     @Local var password = suggestedPassword()
     @Local var sending = false
@@ -651,7 +703,7 @@ struct ResetPasswordSheet: View {
         Task { @MainActor in
             defer { sending = false }
             do {
-                try await CloudSync.shared.teamAdmin(["action": "reset", "id": member.id, "password": p])
+                try await CloudSync.shared.teamAdmin(["action": asAdmin ? "admin_reset" : "reset", "id": member.id, "password": p])
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString("TaskTimer\nEmail: \(member.email)\nNew password: \(p)", forType: .string)
                 store.flash("Password reset — copied to send to \(member.name)")
