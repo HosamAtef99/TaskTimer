@@ -2,6 +2,9 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
+## 1.21
+- After Effects renders go to the task's Render folder: a comp added to the Render Queue in a task's project gets its output set to that task's Render folder (Settings → General, on by default). Changing the output by hand afterwards is kept.
+
 ## 1.20
 - Admin window (shield button, admins only): every account and team in one place. Add leaders and members to any team, move people between teams, make someone a leader or member or admin, reset passwords, create / rename / delete teams.
 - Leaders: "Add Member" can now add an existing account by email (someone removed from another team), and emails are checked (name@company.com).

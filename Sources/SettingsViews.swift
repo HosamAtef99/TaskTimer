@@ -179,6 +179,7 @@ struct SettingsView: View {
     @AppStorage(Pref.pauseOnSleep) var pauseOnSleep = true
     @AppStorage(Pref.menuBarStyle) var menuBarStyle = "time"
     @AppStorage(Pref.renderNotify) var renderNotify = true
+    @AppStorage(Pref.aeRenderToTask) var aeRenderToTask = true
     @AppStorage(Pref.openFinderOnCreate) var openFinder = true
     @AppStorage(Pref.openAEOnCreate) var openAE = false
     @AppStorage(Pref.tabMode) var tabMode = "auto"
@@ -527,6 +528,10 @@ struct SettingsView: View {
                 }
             Toggle("Pause the timer when the Mac goes to sleep", isOn: $pauseOnSleep)
             Toggle("Notify me when a render finishes (watches each task's Render folder)", isOn: $renderNotify)
+            Toggle("After Effects renders to the task's Render folder (Render Queue output)", isOn: $aeRenderToTask)
+                .onChange(of: aeRenderToTask) { on in
+                    if on { AERenderHelper.ensure(force: true) } else { AERenderHelper.stop() }
+                }
             HStack(spacing: 10) {
                 Text("Menu bar").font(.system(size: 12))
                 Picker("", selection: $menuBarStyle) {

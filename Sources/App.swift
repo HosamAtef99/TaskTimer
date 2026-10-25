@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             UpdateManager.shared.start()
             NotificationHandler.shared.install()
             RenderWatcher.shared.start()
+            AERenderHelper.start()
             ExtensionInstaller.refresh()
             _ = ExtensionMonitor.shared
             if Features.sheet { SheetSync.shared.start() }

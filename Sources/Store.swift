@@ -483,6 +483,7 @@ final class Store: ObservableObject {
         if Pref.bool(Pref.openFinderOnCreate) { NSWorkspace.shared.open(folder) }
         if Pref.bool(Pref.openAEOnCreate), let ae = FolderService.aeFile(in: folder) {
             NSWorkspace.shared.open(ae)
+            AERenderHelper.ensure()
         }
     }
 

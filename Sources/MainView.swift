@@ -610,7 +610,7 @@ struct TaskRow: View {
                     Menu {
                         Button("Open Folder") { NSWorkspace.shared.open(f) }
                         if let ae = FolderService.aeFile(in: f) {
-                            Button("Open AE Project") { NSWorkspace.shared.open(ae) }
+                            Button("Open AE Project") { NSWorkspace.shared.open(ae); AERenderHelper.ensure() }
                         }
                         if let r = FolderService.folder(in: f, matching: ["render"]) {
                             Button("Open Render Folder") { NSWorkspace.shared.open(r) }

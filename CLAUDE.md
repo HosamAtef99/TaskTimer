@@ -45,6 +45,7 @@ When you make a decision that the other person would need to know, add it here.
 | `Sheets.swift` | New Task, Done (hours/min rounded to ½ h, deliverables, stars, challenge) |
 | `FolderService.swift` / `MonthFolder.swift` | Task folders (client folder or months root; the month folder name copies the style of the existing ones). Dropped files are sorted into subfolders by type, moved or copied (the user picks in `DropFilesSheet`, in `MainView.swift`) |
 | `AfterEffects.swift` | Imports dropped files into the open AE project through AppleScript `DoScript` |
+| `AERenderHelper.swift` | Puts a small ExtendScript helper into the running AE (`app.scheduleTask`, every 2 s, `$.global.TaskTimerRQ`): Render Queue items added in a task's project get their output set to the task's Render folder. Added once per AE launch (max 2 tries, no `activate`), setting `Pref.aeRenderToTask` |
 | `Cloud.swift` / `CloudSync.swift` | Supabase auth + REST, push/pull, team, Modhesh state, weekly report |
 | `TeamView.swift` | Leader window: tasks, summary, add member (new account, or an existing account by email), reset/remove member, assign task, CSV. `isValidEmail` / `EmailHint` live here |
 | `AdminView.swift` | Admin window (`profiles.is_admin`): every account and team; add accounts, move people between teams, set role / admin, reset passwords, create / rename / delete teams |
@@ -115,6 +116,11 @@ When you make a decision that the other person would need to know, add it here.
 - Only items created by the import are moved into the project folder. Existing items are
   never touched; a name clash gets " (new)" added; a file already in the project is skipped.
 - Layer styles (Editable/Merge) can't be set from scripting.
+- Render Queue output (AERenderHelper): a project counts as a task's when the .aep is in
+  `Task/<AE folder>/` or `Task/` and `Task/` has a Render / Renders / Output subfolder. Only
+  newly added queue items are changed (plus, on first open, queued items pointing outside the
+  task folder). Never poll AE with DoScript from TaskTimer: a DoScript while AE shows a
+  window makes AE show an error; the helper runs inside AE instead.
 
 ## User-facing text
 - UI text is English. Hosam talks in Egyptian Arabic; reply to him in Arabic.
