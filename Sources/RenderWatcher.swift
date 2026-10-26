@@ -41,10 +41,7 @@ final class RenderWatcher {
         // A task is watched while it or one of its amends is in progress (an amend can be
         // in progress after the task itself was completed).
         let tasks = store.tasks
-            .filter { t in
-                t.parentID == nil && t.folderPath != nil
-                    && (t.status.isInProgress || store.subtasks(of: t.id).contains { $0.status.isInProgress })
-            }
+            .filter { t in t.parentID == nil && t.folderPath != nil && Self.watched(t, store: store) }
             .prefix(40)
 
         var seen = Set<String>()
@@ -81,6 +78,16 @@ final class RenderWatcher {
         states = states.filter { seen.contains($0.key) }
     }
 
+    /// A task's Render folder is watched while the task (or an amend) is in progress or
+    /// Incoming, is timing now, or was timed in the last 3 days (a render often finishes after
+    /// the task was marked Done).
+    static func watched(_ t: TaskItem, store: Store) -> Bool {
+        let group = [t] + store.subtasks(of: t.id)
+        if group.contains(where: { $0.status.isInProgress || $0.status == .incoming || $0.isRunning }) { return true }
+        let recent = Date().addingTimeInterval(-3 * 24 * 3600)
+        return group.contains { ($0.sessions.last?.end ?? $0.sessions.last?.start ?? .distantPast) > recent }
+    }
+
     /// Everything that decides whether a render notification / thumbnail can show for a task,
     /// in plain words (task row → "Check Render Folder…").
     func diagnose(_ t: TaskItem) async -> String {
@@ -95,8 +102,8 @@ final class RenderWatcher {
         }
         lines.append("Render notifications setting: " + (Pref.bool(Pref.renderNotify) ? "on" : "OFF (Settings → General)"))
         lines.append("macOS notifications for TaskTimer: " + allowed)
-        let active = t.status.isInProgress || store.subtasks(of: t.id).contains { $0.status.isInProgress }
-        lines.append("Task in progress: " + (active ? "yes" : "NO — only tasks in progress are watched"))
+        let active = Self.watched(t, store: store)
+        lines.append("Task watched: " + (active ? "yes" : "NO — completed and not timed in the last 3 days"))
         guard let f = t.folderURL else {
             lines.append("Task folder: NONE — this task has no folder")
             return lines.joined(separator: "\n")

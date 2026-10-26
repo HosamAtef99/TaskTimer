@@ -2,6 +2,10 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
+## 1.23.2
+- Render notifications also come for tasks you marked Done (timed in the last 3 days) and for Incoming tasks.
+- The last-render picture on the task card shows again.
+
 ## 1.23.1
 - Collect AE Project works with After Effects closed: TaskTimer starts it hidden in the background, collects, and quits it again.
 - Task folder menu → Check Render Folder…: shows why a render notification or the last-render picture doesn't show (folder, Render folder, permissions, notifications).

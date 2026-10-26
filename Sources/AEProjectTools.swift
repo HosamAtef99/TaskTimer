@@ -351,7 +351,9 @@ struct RenderThumb: View {
     private static let exts: Set<String> = ["mov", "mp4", "m4v", "png", "jpg", "jpeg", "tif", "tiff", "gif", "webm", "mxf", "avi"]
 
     var body: some View {
-        Group {
+        // Always something on screen (even before there's a picture), so .task runs.
+        ZStack {
+            Color.clear.frame(width: 0, height: 0)
             if let image, let file {
                 Button { NSWorkspace.shared.open(file) } label: {
                     Image(nsImage: image)

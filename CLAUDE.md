@@ -52,7 +52,7 @@ When you make a decision that the other person would need to know, add it here.
 | `AdminView.swift` | Admin panel — the **main window for admin accounts** (`AdminView(embedded: true)` in `MainView`). Tabs: Hours (every team's and person's hours / done / in progress / working now for a month, per-person task list, CSV), People (move between teams, set role, reset password, unblock, delete account for good), Teams (create / rename / delete empty) |
 | `ModheshView.swift` | Link Modhesh tasks to TaskTimer tasks or amends (manual only) |
 | `ExtensionInstaller.swift` | Copies the bundled extension to `~/Library/Application Support/TaskTimer Dev/…`, opens `chrome://extensions` through AppleScript, detects the installed extension from Chrome's prefs |
-| `RenderWatcher.swift` | "Render finished" notification with Stop/Done. Watches a task's Render folder while the task or any amend is in progress; new **or overwritten** files (size + modified date), finished after 45 s with no change |
+| `RenderWatcher.swift` | "Render finished" notification with Stop/Done. Watches a task's Render folder while the task or an amend is in progress / Incoming / timing, or was timed in the last 3 days (`RenderWatcher.watched`); new **or overwritten** files (size + modified date), finished after 45 s with no change |
 | `Settings*.swift` | Tabs: Team, Modhesh, Folders, General |
 | `SheetSync.swift`, `SheetService.swift`, `GoogleSheet/` | Old Google Sheet logging. **Switched off** (`Features.sheet = false`), kept on purpose |
 
