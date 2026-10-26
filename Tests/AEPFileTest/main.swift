@@ -31,8 +31,21 @@ func alas(_ path: String, folder: Bool) -> [UInt8] {
 let body = Array("Egg!".utf8)
     + chunk("head", [0, 1, 2])
     + list("Fold", [
-        list("Item", [chunk("idta", [9, 9]), list("Pin ", [chunk("sspc", [1]), alas("/Users/me/Task/06 - Images/a b.png", folder: false)])]),
-        list("Item", [list("Pin ", [alas("/Users/me/Task/seq", folder: true)])]),
+        chunk("fdta", [0, 0]),
+        // A folder "Images" holding a subfolder "Stills" holding the footage item.
+        list("Item", [chunk("idta", [0, 1] + [UInt8](repeating: 0, count: 82)), chunk("Utf8", Array("Images".utf8)),
+                      chunk("sfdt", [0, 0, 0, 0]),
+                      list("Sfdr", [
+                        list("Item", [chunk("idta", [0, 1] + [UInt8](repeating: 0, count: 82)), chunk("Utf8", Array("Stills".utf8)),
+                                      list("Sfdr", [
+                                        list("Item", [chunk("idta", [0, 7] + [UInt8](repeating: 0, count: 82)), chunk("Utf8", []),
+                                                      list("Pin ", [chunk("sspc", [1]), alas("/Users/me/Task/06 - Images/a b.png", folder: false)])]),
+                                        chunk("fvdv", [0, 0, 0, 3]),
+                                      ])]),
+                      ])]),
+        // A sequence at the top level.
+        list("Item", [chunk("idta", [0, 7] + [UInt8](repeating: 0, count: 82)), chunk("Utf8", []),
+                      list("Pin ", [alas("/Users/me/Task/seq", folder: true)])]),
     ])
     + list("LRdr", [list("LOm ", [alas("/Users/me/Task/00 - Render", folder: true)])])
 let fake = Array("RIFX".utf8) + [UInt8(body.count >> 24 & 255), UInt8(body.count >> 16 & 255), UInt8(body.count >> 8 & 255), UInt8(body.count & 255)] + body
@@ -43,6 +56,7 @@ if let f = AEPFile(data: Data(fake)) {
     let found = f.footage()
     check(found.items.map(\.path) == ["/Users/me/Task/06 - Images/a b.png", "/Users/me/Task/seq"], "footage found, render output skipped")
     check(found.items.map(\.isFolder) == [false, true], "sequence is a folder")
+    check(found.items.map(\.bins) == [["Images", "Stills"], []], "project-panel folders")
     let project = "/Users/me/Task/Collect/Task 1/01 - AE/Task.aep"
     let map = ["/Users/me/Task/06 - Images/a b.png": "/Users/me/Task/Collect/Task 1/(Footage)/06 - Images/a b.png",
                "/Users/me/Task/seq": "/Users/me/Task/Collect/Task 1/(Footage)/seq"]

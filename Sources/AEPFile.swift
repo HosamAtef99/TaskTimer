@@ -23,6 +23,8 @@ struct AEPFile {
     struct Footage: Hashable {
         let path: String
         let isFolder: Bool
+        /// The project-panel folders the item is in, outermost first ([] = top level).
+        let bins: [String]
     }
 
     private var children: [Node]
@@ -84,30 +86,56 @@ struct AEPFile {
         return obj
     }
 
-    /// Calls `body` with each footage `alas` record (inside a "Pin " list), in file order.
-    private static func eachFootageRecord(_ nodes: [Node], inPin: Bool, _ body: ([UInt8]) -> Void) {
+    /// Calls `body` with each footage `alas` record (inside a "Pin " list) and the project-panel
+    /// folders its item is in. Items are `LIST:Item`: `idta` (type 1 folder, 4 comp, 7 footage),
+    /// then a `Utf8` name; a folder's contents are its `LIST:Sfdr`.
+    private static func eachFootageRecord(_ nodes: [Node], bins: [String], inPin: Bool,
+                                          _ body: ([UInt8], [String]) -> Void) {
         for n in nodes {
             switch n {
             case .leaf(let id, let data):
-                if inPin && id == "alas" { body(data) }
+                if inPin && id == "alas" { body(data, bins) }
             case .list(let type, let kids):
-                eachFootageRecord(kids, inPin: inPin || type == "Pin ", body)
+                if type == "Item", let header = itemHeader(kids), header.kind == 1 {
+                    for case .list("Sfdr", let inner) in kids {
+                        eachFootageRecord(inner, bins: bins + [header.name], inPin: false, body)
+                    }
+                } else {
+                    eachFootageRecord(kids, bins: bins, inPin: inPin || type == "Pin ", body)
+                }
             }
         }
     }
 
-    /// Every footage file / sequence folder the project uses (each once). `unreadable` counts
-    /// records that aren't the JSON kind (very old projects).
+    /// An item's type and name (the first `Utf8` after its `idta`).
+    private static func itemHeader(_ kids: [Node]) -> (kind: Int, name: String)? {
+        guard let i = kids.firstIndex(where: { if case .leaf("idta", _) = $0 { return true }; return false }),
+              case .leaf(_, let idta) = kids[i], idta.count >= 2 else { return nil }
+        let kind = Int(idta[0]) << 8 | Int(idta[1])
+        var name = ""
+        for n in kids[(i + 1)...] {
+            if case .leaf("Utf8", var d) = n {
+                while d.last == 0 { d.removeLast() }
+                name = String(decoding: d, as: UTF8.self)
+                break
+            }
+        }
+        return (kind, name)
+    }
+
+    /// Every footage file / sequence folder the project uses (each once, with the folders of
+    /// the first item that uses it). `unreadable` counts records that aren't the JSON kind
+    /// (very old projects).
     func footage() -> (items: [Footage], unreadable: Int) {
         var items: [Footage] = []
         var seen = Set<String>()
         var unreadable = 0
-        Self.eachFootageRecord(children, inPin: false) { data in
+        Self.eachFootageRecord(children, bins: [], inPin: false) { data, bins in
             guard let r = Self.record(data), let p = r["fullpath"] as? String, !p.isEmpty else {
                 unreadable += 1
                 return
             }
-            let f = Footage(path: p, isFolder: (r["target_is_folder"] as? Bool) ?? false)
+            let f = Footage(path: p, isFolder: (r["target_is_folder"] as? Bool) ?? false, bins: bins)
             if seen.insert(f.path).inserted { items.append(f) }
         }
         return (items, unreadable)

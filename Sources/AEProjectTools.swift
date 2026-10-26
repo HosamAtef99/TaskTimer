@@ -236,35 +236,33 @@ enum AEProjectTools {
         let projectCopy = dest.appendingPathComponent(aep.lastPathComponent)
         try fm.createDirectory(at: footageDir, withIntermediateDirectories: true)
 
-        let task = taskFolder.standardizedFileURL.path
-        let collect = collectRoot.standardizedFileURL.path
         var map: [String: String] = [:]
         var missing: [String] = [], failed: [String] = [], report: [String] = []
         var copied = 0
         var bytes: Int64 = 0
-        var otherDirs: [String: String] = [:]       // outside folder → its name in Other Files
 
         func size(_ u: URL) -> Int64 { Int64((try? u.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) }
 
-        /// Where a file or folder goes: same place under (Footage) as in the task folder.
-        func target(for path: String) -> URL {
-            let p = URL(fileURLWithPath: path).standardizedFileURL.path
-            if p.hasPrefix(task + "/") && !p.hasPrefix(collect + "/") {
-                return footageDir.appendingPathComponent(String(p.dropFirst(task.count + 1)))
+        /// Where a file or sequence folder goes: under (Footage), in the same folders as in
+        /// the After Effects project panel (like After Effects' own Collect Files).
+        var taken: Set<String> = []
+        func target(for item: AEPFile.Footage) -> URL {
+            var dir = footageDir
+            for bin in item.bins {
+                let clean = FolderService.cleanName(bin)
+                dir.appendPathComponent(clean.isEmpty ? "Untitled Folder" : clean, isDirectory: true)
             }
-            let src = URL(fileURLWithPath: p)
-            let parent = src.deletingLastPathComponent().path
-            var name = otherDirs[parent] ?? src.deletingLastPathComponent().lastPathComponent
-            if otherDirs[parent] == nil {
-                let used = Set(otherDirs.values)
-                var n = 2
-                let base = name
-                while used.contains(name) { name = "\(base) \(n)"; n += 1 }
-                otherDirs[parent] = name
+            let src = URL(fileURLWithPath: item.path)
+            var to = dir.appendingPathComponent(src.lastPathComponent)
+            var n = 2
+            while taken.contains(to.path) {
+                let base = src.deletingPathExtension().lastPathComponent
+                let ext = src.pathExtension
+                to = dir.appendingPathComponent(ext.isEmpty ? "\(base) \(n)" : "\(base) \(n).\(ext)")
+                n += 1
             }
-            return footageDir.appendingPathComponent("Other Files", isDirectory: true)
-                .appendingPathComponent(name, isDirectory: true)
-                .appendingPathComponent(src.lastPathComponent)
+            taken.insert(to.path)
+            return to
         }
 
         for item in found.items {
@@ -274,7 +272,7 @@ enum AEProjectTools {
                 missing.append(item.path)
                 continue
             }
-            let to = target(for: item.path)
+            let to = target(for: item)
             do {
                 if item.isFolder || isDir.boolValue {
                     // An image sequence: its files (not subfolders).
