@@ -29,6 +29,39 @@ enum AEProjectTools {
         return false
     }
 
+    /// Runs `then` once After Effects can take scripts. If it isn't open, starts it in the
+    /// background (hidden) first; `then` gets true in that case, so the caller can quit it after.
+    private static func withAE(_ aep: URL, then: @escaping (_ launched: Bool) -> Void) {
+        if AfterEffects.isRunning { then(false); return }
+        guard let appURL = NSWorkspace.shared.urlForApplication(toOpen: aep) else {
+            alert("After Effects not found", "No app on this Mac opens “\(aep.lastPathComponent)”.")
+            return
+        }
+        let cfg = NSWorkspace.OpenConfiguration()
+        cfg.activates = false
+        cfg.hides = true
+        cfg.addsToRecentItems = false
+        NSWorkspace.shared.openApplication(at: appURL, configuration: cfg) { _, _ in }
+        Store.shared.flash("Starting After Effects in the background (about a minute)…")
+        let started = Date()
+        func poll() {
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                if Date().timeIntervalSince(started) > 300 {
+                    alert("After Effects didn't start", "Try again, or open After Effects yourself first.")
+                    return
+                }
+                guard AfterEffects.isRunning else { poll(); return }
+                AfterEffects.doScript("'ready';", timeout: 15) { result in
+                    Task { @MainActor in
+                        if case .success(let t) = result, t == "ready" { then(true) } else { poll() }
+                    }
+                }
+            }
+        }
+        poll()
+    }
+
     /// Opens `aep` in After Effects if another project is open (After Effects asks about
     /// unsaved changes itself), then saves it if it has changes.
     private static func openAndSave(_ aep: URL) -> String {
@@ -122,10 +155,17 @@ enum AEProjectTools {
     /// Like After Effects' Collect Files, into `<Task>/Collect/<Task> <date>/`: a copy of the
     /// project plus every footage file it uses in "(Footage)", relinked to those copies. The
     /// project you're working on isn't changed (it's saved first, then reopened at the end).
+    /// If After Effects isn't open, it's started hidden in the background and quit at the end.
     static func collect(_ aep: URL, taskFolder: URL, taskName: String) {
-        guard needAE(aep) else { return }
+        withAE(aep) { launched in
+            collectList(aep, taskFolder: taskFolder, taskName: taskName, launched: launched)
+        }
+    }
+
+    private static func collectList(_ aep: URL, taskFolder: URL, taskName: String, launched: Bool) {
         let listScript = """
         (function () {
+        \(launched ? "app.beginSuppressDialogs();" : "")
         \(openAndSave(aep))
           var seen = {}, out = [];
           for (var i = 1; i <= app.project.numItems; i++) {
@@ -143,7 +183,7 @@ enum AEProjectTools {
         })();
         """
         Store.shared.flash("Collecting “\(taskName)”…")
-        AfterEffects.doScript(listScript, activate: true) { result in
+        AfterEffects.doScript(listScript, activate: !launched) { result in
             Task { @MainActor in
                 switch result {
                 case .failure(let e):
@@ -164,14 +204,14 @@ enum AEProjectTools {
                         default: files.append((parts[1], false))
                         }
                     }
-                    copyAndRelink(aep: aep, taskFolder: taskFolder, taskName: taskName, files: files, missing: missing)
+                    copyAndRelink(aep: aep, taskFolder: taskFolder, taskName: taskName, files: files, missing: missing, launched: launched)
                 }
             }
         }
     }
 
     private static func copyAndRelink(aep: URL, taskFolder: URL, taskName: String,
-                                      files: [(path: String, sequence: Bool)], missing: [String]) {
+                                      files: [(path: String, sequence: Bool)], missing: [String], launched: Bool) {
         let stamp: String = {
             let f = DateFormatter()
             f.dateFormat = "yyyy-MM-dd HHmm"
@@ -238,14 +278,18 @@ enum AEProjectTools {
             }
             let done = map, bad = failed, total = bytes
             Task { @MainActor in
-                relink(original: aep, copy: projectCopy, dest: dest, map: done, failed: bad, missing: missing, bytes: total)
+                relink(original: aep, copy: projectCopy, dest: dest, map: done, failed: bad, missing: missing, bytes: total, launched: launched)
             }
         }
     }
 
     private static func relink(original: URL, copy: URL, dest: URL, map: [(old: String, new: String, sequence: Bool)],
-                               failed: [String], missing: [String], bytes: Int64) {
+                               failed: [String], missing: [String], bytes: Int64, launched: Bool) {
         let pairs = map.map { "[\(js($0.old)),\(js($0.new)),\($0.sequence)]" }.joined(separator: ",")
+        // Started hidden for this: close the copy and quit After Effects. Otherwise reopen the original.
+        let finish = launched
+            ? "app.project.close(CloseOptions.DO_NOT_SAVE_CHANGES); app.endSuppressDialogs(false); app.scheduleTask('app.quit();', 1500, false);"
+            : "app.open(orig);"
         let script = """
         (function () {
           var orig = new File(\(js(original.path)));
@@ -267,11 +311,11 @@ enum AEProjectTools {
             } catch (e) { }
           }
           app.project.save();
-          app.open(orig);
+          \(finish)
           return "ok " + done + " " + layered;
         })();
         """
-        AfterEffects.doScript(script, activate: true) { result in
+        AfterEffects.doScript(script, activate: !launched) { result in
             Task { @MainActor in
                 switch result {
                 case .failure(let e):

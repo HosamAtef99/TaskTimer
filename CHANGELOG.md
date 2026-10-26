@@ -2,6 +2,10 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
+## 1.23.1
+- Collect AE Project works with After Effects closed: TaskTimer starts it hidden in the background, collects, and quits it again.
+- Task folder menu → Check Render Folder…: shows why a render notification or the last-render picture doesn't show (folder, Render folder, permissions, notifications).
+
 ## 1.23
 - Timer follows After Effects: opening a task's project starts its timer, closing it (or opening another task's project) pauses it. Turn on "Allow Scripts to Write Files and Access Network" in After Effects once (Settings → Scripting & Expressions).
 - Renders are named Task_v01, Task_v02… in the task's Render folder, so a render never overwrites an older one.

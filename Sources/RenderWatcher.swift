@@ -81,6 +81,47 @@ final class RenderWatcher {
         states = states.filter { seen.contains($0.key) }
     }
 
+    /// Everything that decides whether a render notification / thumbnail can show for a task,
+    /// in plain words (task row → "Check Render Folder…").
+    func diagnose(_ t: TaskItem) async -> String {
+        let store = Store.shared
+        var lines: [String] = []
+        let settings = await UNUserNotificationCenter.current().notificationSettings()
+        let allowed: String
+        switch settings.authorizationStatus {
+        case .authorized, .provisional: allowed = "allowed"
+        case .denied: allowed = "NOT allowed — turn on in System Settings → Notifications → TaskTimer Dev"
+        default: allowed = "not asked yet"
+        }
+        lines.append("Render notifications setting: " + (Pref.bool(Pref.renderNotify) ? "on" : "OFF (Settings → General)"))
+        lines.append("macOS notifications for TaskTimer: " + allowed)
+        let active = t.status.isInProgress || store.subtasks(of: t.id).contains { $0.status.isInProgress }
+        lines.append("Task in progress: " + (active ? "yes" : "NO — only tasks in progress are watched"))
+        guard let f = t.folderURL else {
+            lines.append("Task folder: NONE — this task has no folder")
+            return lines.joined(separator: "\n")
+        }
+        lines.append("Task folder: \(f.path)")
+        do {
+            let items = try FileManager.default.contentsOfDirectory(at: f, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles])
+            let dirs = items.filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }.map(\.lastPathComponent).sorted()
+            guard let r = FolderService.folder(in: f, matching: ["render", "renders", "output"]) else {
+                lines.append("Render folder: NOT FOUND (needs a subfolder with Render / Renders / Output in its name). Subfolders: " + dirs.joined(separator: ", "))
+                return lines.joined(separator: "\n")
+            }
+            let now = Self.listing(r)
+            lines.append("Render folder: \(r.lastPathComponent) — \(now.count) file\(now.count == 1 ? "" : "s")")
+            if let newest = now.max(by: { ($0.value.modified ?? .distantPast) < ($1.value.modified ?? .distantPast) }) {
+                let when = newest.value.modified.map { Fmt.relative($0) } ?? "?"
+                lines.append("Newest: \((newest.key as NSString).lastPathComponent) (\(when))")
+            }
+            lines.append("Being watched now: " + (states[r.path] != nil ? "yes" : "no (starts within 10 s while the task is in progress)"))
+        } catch {
+            lines.append("Can't read the task folder: \(error.localizedDescription) — allow TaskTimer Dev in System Settings → Privacy & Security → Files and Folders (or Full Disk Access)")
+        }
+        return lines.joined(separator: "\n")
+    }
+
     /// Files in the render folder (two levels deep), with their sizes.
     private static func listing(_ dir: URL) -> [String: FileSig] {
         var out: [String: FileSig] = [:]

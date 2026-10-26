@@ -618,6 +618,7 @@ struct TaskRow: View {
                         if let r = FolderService.folder(in: f, matching: ["render"]) {
                             Button("Open Render Folder") { NSWorkspace.shared.open(r) }
                         }
+                        Button("Check Render Folder…") { checkRender() }
                         if let ae = FolderService.aeFile(in: f) {
                             Divider()
                             Button("Organize AE Project") { AEProjectTools.organize(ae) }
@@ -662,6 +663,22 @@ struct TaskRow: View {
             }
             Divider()
             Button("Delete Task", role: .destructive) { confirmDelete = true }
+        }
+    }
+
+    private func checkRender() {
+        let t = task
+        Task { @MainActor in
+            let text = await RenderWatcher.shared.diagnose(t)
+            let a = NSAlert()
+            a.messageText = "Render folder check — \(t.name)"
+            a.informativeText = text
+            a.addButton(withTitle: "OK")
+            a.addButton(withTitle: "Copy")
+            if a.runModal() == .alertSecondButtonReturn {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(text, forType: .string)
+            }
         }
     }
 
