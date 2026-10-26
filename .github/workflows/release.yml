@@ -21,6 +21,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Test the .aep reader (Collect)
+        run: |
+          git clone -q --depth 1 https://github.com/boltframe/aftereffects-aep-parser.git /tmp/aepsamples || true
+          xcrun swiftc -O Sources/AEPFile.swift Tests/AEPFileTest/main.swift -o /tmp/aeptest
+          /tmp/aeptest /tmp/aepsamples/data/*.aep
+
       - name: Build TaskTimer.app (Apple Silicon + Intel)
         run: TT_CI=1 bash "Build TaskTimer.command"
 

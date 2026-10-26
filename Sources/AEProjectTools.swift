@@ -152,11 +152,182 @@ enum AEProjectTools {
 
     // MARK: Collect
 
-    /// Like After Effects' Collect Files, into `<Task>/Collect/<Task> <date>/`: a copy of the
-    /// project plus every footage file it uses in "(Footage)", relinked to those copies. The
-    /// project you're working on isn't changed (it's saved first, then reopened at the end).
-    /// If After Effects isn't open, it's started hidden in the background and quit at the end.
+    /// Like After Effects' Collect Files, without After Effects: into
+    /// `<Task>/Collect/<Task> <date>/` go a copy of the project, every footage file it uses in
+    /// "(Footage)" (same subfolders as in the task folder; files from elsewhere in
+    /// "(Footage)/Other Files"), and a report. The copy's footage paths point to those files
+    /// (PSD / AI layers keep their layer), with After Effects' relative paths set too, so the
+    /// folder also opens on another Mac. The project you're working on isn't changed. If it's
+    /// open in After Effects with unsaved changes, it's saved first.
     static func collect(_ aep: URL, taskFolder: URL, taskName: String) {
+        let run = { collectFromFile(aep, taskFolder: taskFolder, taskName: taskName) }
+        guard AfterEffects.isRunning else { run(); return }
+        let save = """
+        (function () {
+          var want = \(js(aep.path));
+          if (app.project && app.project.file && app.project.file.fsName === want && app.project.dirty) app.project.save();
+          return "ok";
+        })();
+        """
+        AfterEffects.doScript(save, timeout: 60) { _ in Task { @MainActor in run() } }
+    }
+
+    private static func collectFromFile(_ aep: URL, taskFolder: URL, taskName: String) {
+        Store.shared.flash("Collecting “\(taskName)”…")
+        let stamp: String = {
+            let f = DateFormatter()
+            f.dateFormat = "yyyy-MM-dd HHmm"
+            return f.string(from: Date())
+        }()
+        let collectRoot = FolderService.folder(in: taskFolder, matching: ["collect"])
+            ?? taskFolder.appendingPathComponent("Collect", isDirectory: true)
+        let dest = collectRoot.appendingPathComponent("\(FolderService.cleanName(taskName)) \(stamp)", isDirectory: true)
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = Result { try collectWork(aep: aep, taskFolder: taskFolder, collectRoot: collectRoot, dest: dest) }
+            Task { @MainActor in
+                switch result {
+                case .failure(let e):
+                    if let e = e as? CollectError, case .unreadable = e {
+                        // An old project format: let After Effects do it.
+                        collectWithAE(aep, taskFolder: taskFolder, taskName: taskName)
+                        return
+                    }
+                    alert("Couldn't collect the project", e.localizedDescription)
+                case .success(let r):
+                    let size = ByteCountFormatter.string(fromByteCount: r.bytes, countStyle: .file)
+                    Store.shared.flash("Collected \(r.copied) file\(r.copied == 1 ? "" : "s") (\(size))")
+                    NSWorkspace.shared.activateFileViewerSelecting([r.project])
+                    var notes: [String] = []
+                    if !r.missing.isEmpty { notes.append("Missing (not on this Mac), not collected:\n" + r.missing.prefix(12).joined(separator: "\n")) }
+                    if !r.failed.isEmpty { notes.append("Couldn't copy:\n" + r.failed.prefix(12).joined(separator: "\n")) }
+                    if !notes.isEmpty { alert("Collected into “\(dest.lastPathComponent)”", notes.joined(separator: "\n\n")) }
+                }
+            }
+        }
+    }
+
+    enum CollectError: LocalizedError {
+        case unreadable, message(String)
+        var errorDescription: String? {
+            switch self {
+            case .unreadable: return "This project file couldn't be read."
+            case .message(let m): return m
+            }
+        }
+    }
+
+    struct CollectResult {
+        let project: URL
+        let copied: Int
+        let bytes: Int64
+        let missing: [String]
+        let failed: [String]
+    }
+
+    /// The file work of Collect (runs off the main thread).
+    nonisolated private static func collectWork(aep: URL, taskFolder: URL, collectRoot: URL, dest: URL) throws -> CollectResult {
+        let fm = FileManager.default
+        guard let data = fm.contents(atPath: aep.path), let project = AEPFile(data: data) else { throw CollectError.unreadable }
+        let found = project.footage()
+        if found.items.isEmpty && found.unreadable > 0 { throw CollectError.unreadable }
+
+        let footageDir = dest.appendingPathComponent("(Footage)", isDirectory: true)
+        let projectCopy = dest.appendingPathComponent(aep.lastPathComponent)
+        try fm.createDirectory(at: footageDir, withIntermediateDirectories: true)
+
+        let task = taskFolder.standardizedFileURL.path
+        let collect = collectRoot.standardizedFileURL.path
+        var map: [String: String] = [:]
+        var missing: [String] = [], failed: [String] = [], report: [String] = []
+        var copied = 0
+        var bytes: Int64 = 0
+        var otherDirs: [String: String] = [:]       // outside folder → its name in Other Files
+
+        func size(_ u: URL) -> Int64 { Int64((try? u.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) }
+
+        /// Where a file or folder goes: same place under (Footage) as in the task folder.
+        func target(for path: String) -> URL {
+            let p = URL(fileURLWithPath: path).standardizedFileURL.path
+            if p.hasPrefix(task + "/") && !p.hasPrefix(collect + "/") {
+                return footageDir.appendingPathComponent(String(p.dropFirst(task.count + 1)))
+            }
+            let src = URL(fileURLWithPath: p)
+            let parent = src.deletingLastPathComponent().path
+            var name = otherDirs[parent] ?? src.deletingLastPathComponent().lastPathComponent
+            if otherDirs[parent] == nil {
+                let used = Set(otherDirs.values)
+                var n = 2
+                let base = name
+                while used.contains(name) { name = "\(base) \(n)"; n += 1 }
+                otherDirs[parent] = name
+            }
+            return footageDir.appendingPathComponent("Other Files", isDirectory: true)
+                .appendingPathComponent(name, isDirectory: true)
+                .appendingPathComponent(src.lastPathComponent)
+        }
+
+        for item in found.items {
+            let src = URL(fileURLWithPath: item.path)
+            var isDir: ObjCBool = false
+            guard fm.fileExists(atPath: src.path, isDirectory: &isDir) else {
+                missing.append(item.path)
+                continue
+            }
+            let to = target(for: item.path)
+            do {
+                if item.isFolder || isDir.boolValue {
+                    // An image sequence: its files (not subfolders).
+                    try fm.createDirectory(at: to, withIntermediateDirectories: true)
+                    let files = (try? fm.contentsOfDirectory(at: src, includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey], options: [.skipsHiddenFiles])) ?? []
+                    var n = 0
+                    for f in files where (try? f.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true {
+                        let t = to.appendingPathComponent(f.lastPathComponent)
+                        if !fm.fileExists(atPath: t.path) { try fm.copyItem(at: f, to: t) }
+                        bytes += size(f)
+                        n += 1
+                    }
+                    copied += n
+                    report.append("\(item.path)/  (\(n) frames)")
+                } else {
+                    try fm.createDirectory(at: to.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    if !fm.fileExists(atPath: to.path) { try fm.copyItem(at: src, to: to) }
+                    bytes += size(src)
+                    copied += 1
+                    report.append(item.path)
+                }
+                map[item.path] = to.path
+            } catch {
+                failed.append("\(src.lastPathComponent): \(error.localizedDescription)")
+            }
+        }
+
+        let (relinked, _) = project.relinked(map, projectPath: projectCopy.path)
+        let out = relinked.data()
+        // Read it back before saving: every collected path must be there.
+        guard let check = AEPFile(data: out) else { throw CollectError.message("The project copy didn't come out right; nothing was changed in your project.") }
+        let paths = Set(check.footage().items.map(\.path))
+        guard map.values.allSatisfy({ paths.contains($0) }) else {
+            throw CollectError.message("The project copy didn't come out right; nothing was changed in your project.")
+        }
+        try out.write(to: projectCopy)
+
+        var lines = ["Collected \(Date())", "Project: \(aep.path)", "",
+                     "Collected (\(copied) files, \(ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file))):"]
+        lines += report.map { "  " + $0 }
+        if !missing.isEmpty { lines += ["", "Missing:"] + missing.map { "  " + $0 } }
+        if !failed.isEmpty { lines += ["", "Couldn't copy:"] + failed.map { "  " + $0 } }
+        lines += ["", "Fonts and effects aren't collected."]
+        let reportURL = dest.appendingPathComponent("\(aep.deletingPathExtension().lastPathComponent) Report.txt")
+        try? lines.joined(separator: "\n").write(to: reportURL, atomically: true, encoding: .utf8)
+
+        return CollectResult(project: projectCopy, copied: copied, bytes: bytes,
+                             missing: missing.map { ($0 as NSString).lastPathComponent }, failed: failed)
+    }
+
+    /// Old way, through After Effects (for project files this can't read).
+    /// If After Effects isn't open, it's started hidden in the background and quit at the end.
+    static func collectWithAE(_ aep: URL, taskFolder: URL, taskName: String) {
         withAE(aep) { launched in
             collectList(aep, taskFolder: taskFolder, taskName: taskName, launched: launched)
         }
@@ -195,7 +366,8 @@ enum AEProjectTools {
                     }
                     var files: [(path: String, sequence: Bool)] = []
                     var missing: [String] = []
-                    for line in text.components(separatedBy: "\n").dropFirst() {
+                    // After Effects may hand lines back with \r instead of \n.
+                    for line in text.components(separatedBy: .newlines).dropFirst() where !line.isEmpty {
                         let parts = line.components(separatedBy: "\t")
                         guard parts.count == 2 else { continue }
                         switch parts[0] {

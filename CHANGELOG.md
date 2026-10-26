@@ -2,6 +2,9 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
+## 1.24
+- Collect AE Project works properly now: it copies every footage file the project uses into Collect/<Task> <date>/(Footage) (same subfolders as in the task folder) and points the collected project to them — PSD and AI layers included. It doesn't need After Effects at all, and the collected folder also opens on another Mac. A report lists what was collected and what's missing.
+
 ## 1.23.2
 - Render notifications also come for tasks you marked Done (timed in the last 3 days) and for Incoming tasks.
 - The last-render picture on the task card shows again.
