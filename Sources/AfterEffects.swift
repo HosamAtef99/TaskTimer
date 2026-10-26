@@ -198,6 +198,45 @@ enum AfterEffects {
         }
     }
 
+    /// Runs ExtendScript in the running After Effects. `done` gets the script's result (a
+    /// string) or an error, on the main thread. Only for things the person just asked for:
+    /// a DoScript while After Effects shows a window of its own makes it show an error.
+    static func doScript(_ js: String, timeout: Int = 600, activate: Bool = false,
+                         done: @escaping (Result<String, Error>) -> Void) {
+        guard let app = running, let id = app.bundleIdentifier else {
+            done(.failure(Err("After Effects isn't open.")))
+            return
+        }
+        let escaped = js
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        let source = """
+        tell application id "\(id)"
+            \(activate ? "activate" : "")
+            with timeout of \(timeout) seconds
+                DoScript "\(escaped)"
+            end timeout
+        end tell
+        """
+        queue.async {
+            var err: NSDictionary?
+            let result = NSAppleScript(source: source)?.executeAndReturnError(&err)
+            let text = result?.stringValue ?? ""
+            let code = err?[NSAppleScript.errorNumber] as? Int
+            let msg = err?[NSAppleScript.errorMessage] as? String
+            DispatchQueue.main.async {
+                if err == nil { done(.success(text)); return }
+                if code == -1743 {
+                    done(.failure(Err("TaskTimer isn't allowed to control After Effects. Turn it on in System Settings → Privacy & Security → Automation → TaskTimer Dev.")))
+                } else if code == -1712 {
+                    done(.failure(Err("After Effects didn't answer in time.")))
+                } else {
+                    done(.failure(Err(msg ?? "After Effects didn't answer.")))
+                }
+            }
+        }
+    }
+
     struct Err: LocalizedError {
         let message: String
         init(_ m: String) { message = m }

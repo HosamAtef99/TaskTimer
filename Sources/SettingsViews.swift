@@ -179,7 +179,6 @@ struct SettingsView: View {
     @AppStorage(Pref.pauseOnSleep) var pauseOnSleep = true
     @AppStorage(Pref.menuBarStyle) var menuBarStyle = "time"
     @AppStorage(Pref.renderNotify) var renderNotify = true
-    @AppStorage(Pref.aeRenderToTask) var aeRenderToTask = true
     @AppStorage(Pref.openFinderOnCreate) var openFinder = true
     @AppStorage(Pref.openAEOnCreate) var openAE = false
     @AppStorage(Pref.tabMode) var tabMode = "auto"
@@ -528,10 +527,7 @@ struct SettingsView: View {
                 }
             Toggle("Pause the timer when the Mac goes to sleep", isOn: $pauseOnSleep)
             Toggle("Notify me when a render finishes (watches each task's Render folder)", isOn: $renderNotify)
-            Toggle("After Effects renders to the task's Render folder (Render Queue output)", isOn: $aeRenderToTask)
-                .onChange(of: aeRenderToTask) { on in
-                    if on { AERenderHelper.ensure(force: true) } else { AERenderHelper.stop() }
-                }
+            AESettingsRows()
             HStack(spacing: 10) {
                 Text("Menu bar").font(.system(size: 12))
                 Picker("", selection: $menuBarStyle) {
@@ -895,5 +891,33 @@ struct UpdatesSection: View {
                 }
             }
         }
+    }
+}
+
+/// Settings → General: what TaskTimer does inside After Effects.
+struct AESettingsRows: View {
+    @AppStorage(Pref.aeRenderToTask) var renderToTask = true
+    @AppStorage(Pref.aeRenderNaming) var naming = true
+    @AppStorage(Pref.aeAutoTimer) var autoTimer = true
+    @Local var canWrite: Bool? = AERenderHelper.canWriteFiles
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Toggle("After Effects renders to the task's Render folder (Render Queue output)", isOn: $renderToTask)
+                .onChange(of: renderToTask) { _ in AERenderHelper.settingsChanged() }
+            Toggle("Name renders Task_v01, Task_v02… (never overwrite an older render)", isOn: $naming)
+                .onChange(of: naming) { _ in AERenderHelper.settingsChanged() }
+                .disabled(!renderToTask)
+                .padding(.leading, 18)
+            Toggle("Start the task's timer when its After Effects project opens, pause it when it closes", isOn: $autoTimer)
+                .onChange(of: autoTimer) { _ in AERenderHelper.settingsChanged() }
+            if autoTimer && canWrite == false {
+                Text("In After Effects, turn on Settings → Scripting & Expressions → “Allow Scripts to Write Files and Access Network”, so TaskTimer can see which project is open.")
+                    .font(.system(size: 11)).foregroundStyle(Theme.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, 18)
+            }
+        }
+        .onAppear { canWrite = AERenderHelper.canWriteFiles }
     }
 }

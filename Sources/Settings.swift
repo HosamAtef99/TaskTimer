@@ -25,6 +25,8 @@ enum Pref {
     static let menuBarStyle = "menuBarStyle"   // "time" (1:05) | "seconds" (01:05:12) | "icon"
     static let renderNotify = "renderNotify"
     static let aeRenderToTask = "aeRenderToTask"   // After Effects renders go to the task's Render folder
+    static let aeRenderNaming = "aeRenderNaming"   // ...named Task_v01, Task_v02…
+    static let aeAutoTimer = "aeAutoTimer"         // timer follows the open After Effects project
     static let defaultDeliverables = "defaultDeliverables"
     static let defaultRating = "defaultRating"
     // Modhesh (Settings → Modhesh; sent to the Chrome extension through the team database)
@@ -94,6 +96,8 @@ enum Pref {
             menuBarStyle: "time",
             renderNotify: true,
             aeRenderToTask: true,
+            aeRenderNaming: true,
+            aeAutoTimer: true,
             defaultDeliverables: 1,
             defaultRating: 5,
             defaultChallenge: 1,

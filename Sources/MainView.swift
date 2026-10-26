@@ -592,6 +592,8 @@ struct TaskRow: View {
 
             Spacer(minLength: 8)
 
+            if let f = task.folderURL { RenderThumb(folder: f) }
+
             VStack(alignment: .trailing, spacing: 2) {
                 Text(task.status == .complete ? "\(Fmt.hours(task.totalSeconds(at: store.now))) h" : Fmt.clock(task.totalSeconds(at: store.now)))
                     .font(.system(size: 15, weight: .medium, design: .rounded).monospacedDigit())
@@ -615,6 +617,13 @@ struct TaskRow: View {
                         }
                         if let r = FolderService.folder(in: f, matching: ["render"]) {
                             Button("Open Render Folder") { NSWorkspace.shared.open(r) }
+                        }
+                        if let ae = FolderService.aeFile(in: f) {
+                            Divider()
+                            Button("Organize AE Project") { AEProjectTools.organize(ae) }
+                            Button("Collect AE Project") {
+                                AEProjectTools.collect(ae, taskFolder: f, taskName: task.name)
+                            }
                         }
                     } label: {
                         Image(systemName: "folder")

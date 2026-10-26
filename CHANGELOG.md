@@ -2,6 +2,13 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
+## 1.23
+- Timer follows After Effects: opening a task's project starts its timer, closing it (or opening another task's project) pauses it. Turn on "Allow Scripts to Write Files and Access Network" in After Effects once (Settings → Scripting & Expressions).
+- Renders are named Task_v01, Task_v02… in the task's Render folder, so a render never overwrites an older one.
+- Task folder menu → Organize AE Project: sorts the project panel into Comps, Precomps, Footage, Images, PSD & AI, Audio, Solids.
+- Task folder menu → Collect AE Project: copies the project and all its footage into the task's Collect folder.
+- The task card shows a small picture of the last render; click it to open it.
+
 ## 1.22
 - Admin is its own role now: an admin isn't in a team and doesn't time tasks. Signing in as an admin opens the Admin panel as the main window.
 - Admin → Hours: every team's hours for a month, each person's hours, tasks done and in progress, who's working now (and on what), each person's task list, CSV export.
