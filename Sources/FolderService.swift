@@ -111,15 +111,33 @@ enum FolderService {
         return nil
     }
 
+    /// The task's After Effects project: the most recently saved .aep / .aepx anywhere in the
+    /// task folder (three levels deep), not counting After Effects' Auto-Save copies, collected
+    /// copies (the Collect folder) or the Render folder.
     static func aeFile(in project: URL) -> URL? {
-        let dir = folder(in: project, matching: ["ae"]) ?? project
-        let files = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
-        return files.filter { ["aep", "aepx"].contains($0.pathExtension.lowercased()) }
-            .sorted {
-                let a = (try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
-                let b = (try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
-                return a > b
-            }.first
+        let keys: [URLResourceKey] = [.isRegularFileKey, .isDirectoryKey, .contentModificationDateKey]
+        guard let e = FileManager.default.enumerator(at: project, includingPropertiesForKeys: keys,
+                                                     options: [.skipsHiddenFiles, .skipsPackageDescendants]) else { return nil }
+        var best: (URL, Date)?
+        var count = 0
+        for case let u as URL in e {
+            count += 1
+            if count > 20000 { break }
+            let v = try? u.resourceValues(forKeys: Set(keys))
+            if v?.isDirectory == true {
+                let words = u.lastPathComponent.lowercased()
+                    .components(separatedBy: CharacterSet.alphanumerics.inverted).filter { !$0.isEmpty }
+                if e.level >= 3 || words.contains("collect") || words.contains("render") || words.contains("renders")
+                    || u.lastPathComponent.localizedCaseInsensitiveContains("auto-save") {
+                    e.skipDescendants()
+                }
+                continue
+            }
+            guard v?.isRegularFile == true, ["aep", "aepx"].contains(u.pathExtension.lowercased()) else { continue }
+            let d = v?.contentModificationDate ?? .distantPast
+            if best == nil || d > best!.1 { best = (u, d) }
+        }
+        return best?.0
     }
 
     // MARK: - Sorting downloaded files

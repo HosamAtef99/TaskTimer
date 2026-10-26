@@ -2,6 +2,9 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
+## 1.24.2
+- When a task folder has several After Effects projects, Collect, Organize and Open AE Project use the most recently saved one (After Effects' Auto-Save copies and collected copies don't count).
+
 ## 1.24.1
 - Collect puts the footage in the same folders as in the After Effects project panel (like After Effects' own Collect Files), not by where the files were on the Mac.
 
