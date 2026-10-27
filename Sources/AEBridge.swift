@@ -13,10 +13,10 @@ import AppKit
 ///
 /// It talks to TaskTimer through files in `~/Library/Application Support/TaskTimer Dev/AE/`:
 ///   • `alive`        — written every second while the extension runs
-///   • `state.txt`    — the open project's path + time (the timer follows it)
 ///   • `config.json`  — TaskTimer's settings (render folder / names)
 ///   • `requests/<id>.jsx` → `<id>.result` — scripts TaskTimer wants run (imports, collect…)
-/// Every 2 s it also runs `TaskTimerTick` (render queue outputs → the task's Render folder).
+/// Every 5 s, while the Render-folder setting is on, it runs `TaskTimerTick` (render queue
+/// outputs → the task's Render folder).
 /// After Effects loads new extensions when it starts, so it has to be restarted once after
 /// the helper is installed. The helper's files are in `AEHelper/` in the repo; CI signs them
 /// with a self-signed certificate (ZXPSignCmd) before the build, so no After Effects security
@@ -30,7 +30,6 @@ enum AEBridge {
         try? FileManager.default.createDirectory(at: u.appendingPathComponent("requests"), withIntermediateDirectories: true)
         return u
     }
-    static var stateURL: URL { base.appendingPathComponent("state.txt") }
     static var configURL: URL { base.appendingPathComponent("config.json") }
     private static var aliveURL: URL { base.appendingPathComponent("alive") }
     private static var requests: URL { base.appendingPathComponent("requests", isDirectory: true) }

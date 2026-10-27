@@ -26,7 +26,6 @@ enum Pref {
     static let renderNotify = "renderNotify"
     static let aeRenderToTask = "aeRenderToTask"   // After Effects renders go to the task's Render folder
     static let aeRenderNaming = "aeRenderNaming"   // ...named Task_v01, Task_v02…
-    static let aeAutoTimer = "aeAutoTimer"         // timer follows the open After Effects project
     static let autoImportDownloads = "autoImportDownloads"  // new downloads → running task + After Effects
     static let defaultDeliverables = "defaultDeliverables"
     static let defaultRating = "defaultRating"
@@ -98,7 +97,6 @@ enum Pref {
             renderNotify: true,
             aeRenderToTask: true,
             aeRenderNaming: true,
-            aeAutoTimer: true,
             defaultDeliverables: 1,
             defaultRating: 5,
             defaultChallenge: 1,

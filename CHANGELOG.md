@@ -2,6 +2,10 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
+## 1.27
+- Removed: the timer no longer switches tasks by itself when you open another task's After Effects project.
+- TaskTimer's helper in After Effects now only looks at the Render Queue (every 5 s), and only while "renders to the task's Render folder" is on.
+
 ## 1.26.1
 - If TaskTimer's helper doesn't start by itself in After Effects, open Window → Extensions → TaskTimer Helper once and dock the small panel anywhere; it shows whether it's connected.
 

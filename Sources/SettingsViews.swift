@@ -900,7 +900,6 @@ struct UpdatesSection: View {
 struct AESettingsRows: View {
     @AppStorage(Pref.aeRenderToTask) var renderToTask = true
     @AppStorage(Pref.aeRenderNaming) var naming = true
-    @AppStorage(Pref.aeAutoTimer) var autoTimer = true
     @ObservedObject var downloads = DownloadsWatcher.shared
     @ObservedObject var aeStatus = AETimerWatcher.Status.shared
 
@@ -912,11 +911,9 @@ struct AESettingsRows: View {
                 .onChange(of: naming) { _ in AERenderHelper.settingsChanged() }
                 .disabled(!renderToTask)
                 .padding(.leading, 18)
-            Toggle("Start the task's timer when its After Effects project opens, pause it when it closes", isOn: $autoTimer)
-                .onChange(of: autoTimer) { _ in AERenderHelper.settingsChanged() }
             Toggle("Auto-import downloads: new files in Downloads go to the running task's folder and into After Effects",
                    isOn: Binding(get: { downloads.isOn }, set: { downloads.set($0) }))
-            if autoTimer || renderToTask {
+            if renderToTask || downloads.isOn {
                 HStack(alignment: .top, spacing: 8) {
                     Text(aeStatus.text.isEmpty ? "Checking…" : aeStatus.text)
                         .font(.system(size: 11))
@@ -927,6 +924,6 @@ struct AESettingsRows: View {
                 .padding(.leading, 18)
             }
         }
-        .onAppear { AERenderHelper.ensure() }
+        .onAppear { AERenderHelper.ensure(); AETimerWatcher.update() }
     }
 }
