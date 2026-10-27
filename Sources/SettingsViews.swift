@@ -784,10 +784,12 @@ struct AccountSection: View {
         VStack(alignment: .leading, spacing: 12) {
             FieldRow(label: "Email") {
                 TextField("you@company.com", text: $email).textFieldStyle(.roundedBorder)
+                    .font(.system(size: 15)).controlSize(.large)
             }
             FieldRow(label: "Password") {
                 SecureField("Password", text: $password)
                     .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 15)).controlSize(.large)
                     .onSubmit(go)
             }
             HStack(spacing: 10) {

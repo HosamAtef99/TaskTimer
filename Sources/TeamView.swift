@@ -576,6 +576,7 @@ struct AddMemberSheet: View {
                 }
                 FieldRow(label: "Email") {
                     TextField("name@company.com", text: $email).textFieldStyle(.roundedBorder)
+                        .font(.system(size: 15)).controlSize(.large)
                     EmailHint(email: email)
                 }
                 if mode == .new {

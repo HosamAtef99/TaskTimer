@@ -526,10 +526,11 @@ struct RenderThumb: View {
             Color.clear.frame(width: 0, height: 0)
             if let image, let file {
                 Button { NSWorkspace.shared.open(file) } label: {
+                    // Fit to height: the whole picture shows, its width follows the render's shape.
                     Image(nsImage: image)
                         .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(width: 64, height: 36)
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxWidth: 96, maxHeight: 40)
                         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                         .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(Color.primary.opacity(0.12)))
                 }
@@ -570,7 +571,7 @@ struct RenderThumb: View {
         let (url, date) = found
         let k = url.path + "\(date.timeIntervalSince1970)"
         if k == key && image != nil { return }
-        let req = QLThumbnailGenerator.Request(fileAt: url, size: CGSize(width: 128, height: 72), scale: 2,
+        let req = QLThumbnailGenerator.Request(fileAt: url, size: CGSize(width: 192, height: 80), scale: 2,
                                                representationTypes: .thumbnail)
         if let rep = try? await QLThumbnailGenerator.shared.generateBestRepresentation(for: req) {
             image = rep.nsImage

@@ -2,6 +2,10 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
+## 1.24.3
+- The last-render picture on the task card fits its height, so the whole frame shows (vertical renders too).
+- Bigger text in the email and password fields.
+
 ## 1.24.2
 - When a task folder has several After Effects projects, Collect, Organize and Open AE Project use the most recently saved one (After Effects' Auto-Save copies and collected copies don't count).
 
