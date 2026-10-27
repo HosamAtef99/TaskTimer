@@ -1,254 +1,50 @@
 import Foundation
 import AppKit
 
-/// The small helper TaskTimer puts into the running After Effects (one DoScript, then it runs
-/// inside After Effects with `app.scheduleTask` every 2 seconds, as `$.global.TaskTimerRQ`).
-///
-/// It does three things, each switched on in Settings → General:
+/// What TaskTimer does inside After Effects, through its helper extension (`AEBridge`):
 ///   • Render folder (`Pref.aeRenderToTask`): in a task's project (the .aep in `Task/<AE folder>/`
 ///     or `Task/`, with a Render / Renders / Output folder in `Task/`), a comp newly added to the
-///     Render Queue gets its output set to the task's Render folder. When the project is first
+///     Render Queue gets its output set to the task's Render folder; when the project is first
 ///     opened, queued items pointing outside the task folder are moved there too.
-///   • Names (`Pref.aeRenderNaming`): those outputs are named `<Task>_v01`, `_v02`… (next free
-///     number in the Render folder and the queue), so a render never overwrites an older one.
-///   • Open project (`Pref.aeAutoTimer`): writes the open project's path to `stateURL`
-///     (when it changes, and every 30 s); `AETimerWatcher` starts and pauses timers from it.
-///     Writing a file needs After Effects' "Allow Scripts to Write Files and Access Network".
+///   • Names (`Pref.aeRenderNaming`): those outputs are named `<Task>_v01`, `_v02`…
+///   • Open project (`Pref.aeAutoTimer`): `AETimerWatcher` starts and pauses timers from the
+///     open project's path the helper writes.
 /// Changing an output by hand afterwards is kept. Nothing else in the project is touched.
-/// The helper lives until After Effects quits; TaskTimer adds it again on the next launch.
+/// (Older versions put a script into After Effects with DoScript + `app.scheduleTask`; that
+/// made After Effects show "Cannot run a script while a modal dialog is waiting" whenever one
+/// of its windows was open. The extension doesn't.)
 @MainActor
 enum AERenderHelper {
-    private static var installedPID: pid_t?
-    private static var attempts: [pid_t: Int] = [:]
     private static var observer: NSObjectProtocol?
 
-    /// After Effects' "Allow Scripts to Write Files and Access Network": nil = not known yet.
-    static var canWriteFiles: Bool?
+    static var stateURL: URL { AEBridge.stateURL }
 
-    /// The helper is in the After Effects that's running now.
-    static var connected: Bool {
-        guard let pid = AfterEffects.running?.processIdentifier else { return false }
-        return installedPID == pid
-    }
+    /// The helper is running inside After Effects now.
+    static var connected: Bool { AEBridge.isAlive }
 
-    static var enabled: Bool {
-        Pref.bool(Pref.aeRenderToTask) || Pref.bool(Pref.aeAutoTimer)
-    }
-
-    static var stateURL: URL {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("TaskTimer Dev", isDirectory: true)
-        try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
-        return base.appendingPathComponent("ae-open-project.txt")
-    }
-
-    private static var config: String {
-        func js(_ s: String) -> String {
-            let data = try? JSONSerialization.data(withJSONObject: [s], options: [])
-            let arr = data.flatMap { String(data: $0, encoding: .utf8) } ?? "[\"\"]"
-            return String(arr.dropFirst().dropLast())
-        }
-        let render = Pref.bool(Pref.aeRenderToTask)
-        let naming = render && Pref.bool(Pref.aeRenderNaming)
-        let state = Pref.bool(Pref.aeAutoTimer) ? js(stateURL.path) : "\"\""
-        return "{render: \(render), naming: \(naming), state: \(state)}"
-    }
-
-    /// Called once at app start.
     static func start() {
+        ensure()
         guard observer == nil else { return }
         observer = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didLaunchApplicationNotification, object: nil, queue: .main
         ) { note in
             guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
                   (app.bundleIdentifier ?? "").hasPrefix("com.adobe.AfterEffects") else { return }
-            // Give After Effects time to finish starting (plugins, home screen).
-            Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 40_000_000_000)
-                ensure()
-            }
-        }
-        // After Effects already open when TaskTimer starts.
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 8_000_000_000)
-            ensure()
+            Task { @MainActor in ensure() }
         }
     }
 
-    /// Puts the helper into the running After Effects (once per launch of After Effects), or
-    /// updates its settings when `force` is set.
+    /// Installs / updates the helper extension and its settings. No script is sent to
+    /// After Effects.
     static func ensure(force: Bool = false) {
-        guard let app = AfterEffects.running else { return }
-        let pid = app.processIdentifier
-        if !enabled {
-            if installedPID == pid { send("if ($.global.TaskTimerRQ) { $.global.TaskTimerRQ.off = true; } 'ok';") }
-            installedPID = nil
-            return
-        }
-        if installedPID == pid && !force { return }
-        // At most 2 tries per launch on its own: a try while After Effects shows a window of
-        // its own makes it show an error.
-        let n = attempts[pid, default: 0]
-        guard n < 2 || force else { return }
-        attempts[pid] = n + 1
-
-        AfterEffects.doScript(script.replacingOccurrences(of: "__CFG__", with: config), timeout: 20) { result in
-            Task { @MainActor in
-                switch result {
-                case .success(let text):
-                    installedPID = pid
-                    // "ok added 1" / "ok already 0": the last number is the write-files setting.
-                    if let last = text.split(separator: " ").last, let v = Int(last), v >= 0 {
-                        canWriteFiles = v == 1
-                    }
-                case .failure(let e):
-                    NSLog("TaskTimer: After Effects helper not added: \(e.localizedDescription)")
-                    if (attempts[pid] ?? 0) < 2 {
-                        try? await Task.sleep(nanoseconds: 60_000_000_000)
-                        ensure()
-                    }
-                }
-            }
-        }
+        AEBridge.install()
+        settingsChanged()
     }
 
-    /// Settings changed: tell the helper (or switch it off).
-    static func settingsChanged() { ensure(force: true) }
-
-    private static func send(_ js: String) {
-        AfterEffects.doScript(js, timeout: 20) { _ in }
+    static func settingsChanged() {
+        let render = Pref.bool(Pref.aeRenderToTask)
+        AEBridge.writeConfig(render: render, naming: render && Pref.bool(Pref.aeRenderNaming))
     }
-
-    // ExtendScript that runs inside After Effects. __CFG__ is replaced with the settings.
-    private static let script = #"""
-    (function () {
-      var V = 2;
-      var CFG = __CFG__;
-      function canWrite() {
-        try { return app.preferences.getPrefAsLong("Main Pref Section", "Pref_SCRIPTING_FILE_NETWORK_SECURITY"); }
-        catch (e) { return -1; }
-      }
-      var old = $.global.TaskTimerRQ;
-      if (old && old.version >= V) { old.cfg = CFG; old.off = false; old.lastState = null; return "ok already " + canWrite(); }
-      var T = { version: V, off: false, cfg: CFG, proj: null, count: 0, lastState: null, lastWrite: 0 };
-
-      function words(n) { return decodeURI(n).toLowerCase().split(/[^a-z0-9]+/); }
-      function has(n, list) {
-        var w = words(n);
-        for (var i = 0; i < w.length; i++) for (var j = 0; j < list.length; j++) if (w[i] === list[j]) return true;
-        return false;
-      }
-      // The task folder and its Render folder for the open project, or null.
-      function taskFolders() {
-        var f = app.project ? app.project.file : null;
-        if (!f) return null;
-        var root = f.parent;
-        if (has(root.name, ["ae"]) && root.parent) root = root.parent;
-        var subs = root.getFiles(function (x) { return x instanceof Folder; });
-        var keys = ["render", "renders", "output"];
-        for (var k = 0; k < keys.length; k++)
-          for (var s = 0; s < subs.length; s++)
-            if (has(subs[s].name, [keys[k]])) return { root: root, render: subs[s] };
-        return null;
-      }
-      function inside(file, folder) {
-        return file && file.fsName.indexOf(folder.fsName + "/") === 0;
-      }
-      function safe(s) { return s.replace(/[\/\\:*?"<>|]/g, "-"); }
-
-      // Next free _vNN for this task: in the Render folder and in the queue.
-      function nextVersion(info, base) {
-        var max = 0;
-        function look(name) {
-          if (name.indexOf(base) !== 0) return;
-          var m = name.substr(base.length).match(/^(\d+)/);
-          if (m) max = Math.max(max, parseInt(m[1], 10));
-        }
-        var files = info.render.getFiles();
-        for (var i = 0; i < files.length; i++) look(decodeURI(files[i].name));
-        var rq = app.project.renderQueue;
-        for (var r = 1; r <= rq.numItems; r++) {
-          var it = rq.item(r);
-          for (var m = 1; m <= it.numOutputModules; m++) {
-            var f = it.outputModule(m).file;
-            if (f) look(decodeURI(f.name));
-          }
-        }
-        var n = max + 1;
-        return (n < 10 ? "0" : "") + n;
-      }
-
-      function place(om, cur, info) {
-        var name = decodeURI(cur.name);
-        if (T.cfg.naming) {
-          var base = safe(decodeURI(info.root.name)) + "_v";
-          if (name.indexOf(base) !== 0) {
-            var dot = name.lastIndexOf(".");
-            var ext = dot > 0 ? name.substr(dot) : "";
-            var seq = name.match(/_?\[#+\]/);
-            name = base + nextVersion(info, base) + (seq ? "_" + seq[0].replace(/^_/, "") : "") + ext;
-          }
-        }
-        om.file = new File(info.render.fsName + "/" + name);
-      }
-
-      T.render = function () {
-        var info = taskFolders();
-        if (!info) { T.proj = null; T.count = 0; return; }
-        var rq = app.project.renderQueue;
-        var n = rq.numItems;
-        var fresh = T.proj !== info.root.fsName;
-        if (fresh) { T.proj = info.root.fsName; T.count = 0; }
-        for (var i = 1; i <= n; i++) {
-          var isNew = !fresh && i > T.count;
-          if (!fresh && !isNew) continue;
-          var it = rq.item(i);
-          if (it.status !== RQItemStatus.QUEUED && it.status !== RQItemStatus.UNQUEUED) continue;
-          for (var m = 1; m <= it.numOutputModules; m++) {
-            var om = it.outputModule(m);
-            var cur = om.file;
-            if (!cur) continue;
-            if (fresh) {
-              // At first look, only fix outputs that point outside the task folder.
-              if (inside(cur, info.root)) continue;
-              place(om, cur, info);
-            } else if (!inside(cur, info.render) || T.cfg.naming) {
-              place(om, cur, info);
-            }
-          }
-        }
-        T.count = n;
-      };
-
-      T.writeState = function () {
-        if (!T.cfg.state) return;
-        var f = app.project ? app.project.file : null;
-        var s = f ? f.fsName : "";
-        var now = new Date().getTime();
-        if (s === T.lastState && now - T.lastWrite < 30000) return;
-        var out = new File(T.cfg.state);
-        out.encoding = "UTF-8";
-        if (out.open("w")) {
-          out.write(s + "\n" + now);
-          out.close();
-          T.lastState = s;
-          T.lastWrite = now;
-        }
-      };
-
-      T.tick = function () {
-        if (T.off) return;
-        try { T.writeState(); } catch (e) { }
-        if (!T.cfg.render) return;
-        try { T.render(); } catch (e) { }
-      };
-
-      $.global.TaskTimerRQ = T;
-      // An older helper already ticks this name every 2 s; only schedule once.
-      if (!old) app.scheduleTask("if ($.global.TaskTimerRQ) $.global.TaskTimerRQ.tick();", 2000, true);
-      return "ok added " + canWrite();
-    })();
-    """#
 }
 
 /// Starts the task's timer when its After Effects project is opened, and pauses it when the
@@ -288,25 +84,25 @@ enum AETimerWatcher {
             say("After Effects isn't open.")
             return ""
         }
-        if !AERenderHelper.connected {
-            say("TaskTimer isn't connected to After Effects yet (it connects about 40 s after After Effects opens) — press Connect now.", problem: true)
+        if !AERenderHelper.connected && AEBridge.bundled != nil && !AEBridge.installedIsSigned {
+            say("This copy of TaskTimer has an unsigned After Effects helper (built without signing), so After Effects won't load it. Use a TaskTimer from GitHub Releases.", problem: true)
             return nil
         }
-        if AERenderHelper.canWriteFiles == false {
-            say("After Effects doesn't let scripts write files. Turn on Settings → Scripting & Expressions → “Allow Scripts to Write Files and Access Network” in After Effects, then press Connect now.", problem: true)
+        if !AERenderHelper.connected {
+            let launched = AfterEffects.running?.launchDate ?? .distantPast
+            if let installed = AEBridge.installedAt, launched < installed {
+                say("Quit and reopen After Effects once, so TaskTimer's helper loads inside it.", problem: true)
+            } else {
+                say("TaskTimer's helper isn't running in After Effects. Quit and reopen After Effects; if it stays like this, send this to Hosam.", problem: true)
+            }
             return nil
         }
         guard let text = try? String(contentsOf: AERenderHelper.stateURL, encoding: .utf8) else {
-            say("No word from After Effects yet. Check “Allow Scripts to Write Files and Access Network” is on in After Effects (Settings → Scripting & Expressions), then press Connect now.", problem: true)
+            say("Connected to After Effects — waiting for its first answer…")
             return nil
         }
         let lines = text.components(separatedBy: .newlines)
-        guard lines.count >= 2, let ms = Double(lines[1].trimmingCharacters(in: .whitespaces)) else { return nil }
-        // The helper writes at least every 30 s; older means it isn't running.
-        if Date().timeIntervalSince1970 - ms / 1000 > 90 {
-            say("After Effects stopped answering TaskTimer — press Connect now.", problem: true)
-            return nil
-        }
+        guard lines.count >= 2 else { return nil }
         return lines[0]
     }
 

@@ -84,7 +84,7 @@ enum AfterEffects {
                             done: @escaping (Result<Int, Error>) -> Void) {
         let all = groups.flatMap { g in items(from: g.urls).map { (g.bin, $0) } }
         let list = all.filter { !$0.1.layered } + all.filter { $0.1.layered }
-        guard let app = running, let id = app.bundleIdentifier else {
+        guard running != nil else {
             done(.failure(Err("After Effects isn't open.")))
             return
         }
@@ -160,35 +160,11 @@ enum AfterEffects {
         """
         // A PSD / AI may open After Effects' own import window, which has to be seen.
         let bringFront = activate || list.contains { $0.1.layered }
-        let escaped = script
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-        let source = """
-        tell application id "\(id)"
-            \(bringFront ? "activate" : "")
-            with timeout of 3600 seconds
-                DoScript "\(escaped)"
-            end timeout
-        end tell
-        """
-
-        queue.async {
-            var err: NSDictionary?
-            let result = NSAppleScript(source: source)?.executeAndReturnError(&err)
-            DispatchQueue.main.async {
-                if let err {
-                    let code = err[NSAppleScript.errorNumber] as? Int
-                    if code == -1743 {
-                        done(.failure(Err("TaskTimer isn't allowed to control After Effects. Turn it on in System Settings → Privacy & Security → Automation → TaskTimer Dev.")))
-                    } else if code == -1712 {
-                        done(.failure(Err("After Effects didn't answer in time.")))
-                    } else {
-                        let msg = err[NSAppleScript.errorMessage] as? String ?? "After Effects didn't answer."
-                        done(.failure(Err(msg)))
-                    }
-                    return
-                }
-                let text = result?.stringValue ?? ""
+        doScript(script, timeout: 3600, activate: bringFront) { result in
+            switch result {
+            case .failure(let e):
+                done(.failure(e))
+            case .success(let text):
                 let parts = text.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false)
                 let n = Int(parts.first ?? "") ?? list.count
                 if parts.count > 1, !parts[1].isEmpty {
@@ -202,12 +178,21 @@ enum AfterEffects {
     }
 
     /// Runs ExtendScript in the running After Effects. `done` gets the script's result (a
-    /// string) or an error, on the main thread. Only for things the person just asked for:
-    /// a DoScript while After Effects shows a window of its own makes it show an error.
+    /// string) or an error, on the main thread. Goes through `AEBridge` when the helper inside
+    /// After Effects is running; otherwise AppleScript DoScript, which makes After Effects
+    /// show an error if one of its own windows is open — so only for things just asked for.
     static func doScript(_ js: String, timeout: Int = 600, activate: Bool = false,
                          done: @escaping (Result<String, Error>) -> Void) {
         guard let app = running, let id = app.bundleIdentifier else {
             done(.failure(Err("After Effects isn't open.")))
+            return
+        }
+        // Through TaskTimer's helper inside After Effects when it's running: a script sent that
+        // way waits for After Effects' own windows to close instead of making it show
+        // "Cannot run a script while a modal dialog is waiting for response".
+        if AEBridge.isAlive {
+            if activate { app.activate(options: []) }
+            AEBridge.run(js, timeout: TimeInterval(timeout), done: done)
             return
         }
         let escaped = js

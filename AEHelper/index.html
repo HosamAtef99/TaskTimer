@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>TaskTimer Helper</title></head>
+<body>
+<script>
+var fs = require('fs'), path = require('path'), os = require('os');
+var base = path.join(os.homedir(), 'Library', 'Application Support', 'TaskTimer Dev', 'AE');
+var req = path.join(base, 'requests');
+try { fs.mkdirSync(req, { recursive: true }); } catch (e) {}
+
+function evalScript(s, cb) { window.__adobe_cep__.evalScript(s, cb); }
+function busyAnswer(r) { return r === undefined || r === null || r === 'EvalScript error.'; }
+
+// Heartbeat: TaskTimer only sends scripts this way while this file is fresh.
+setInterval(function () {
+  try { fs.writeFileSync(path.join(base, 'alive'), String(Date.now())); } catch (e) {}
+}, 1000);
+
+// Scripts TaskTimer asked for, one at a time, oldest first.
+var running = false;
+function nextRequest() {
+  if (running) return;
+  var files;
+  try { files = fs.readdirSync(req).filter(function (f) { return /\.jsx$/.test(f); }); } catch (e) { return; }
+  if (!files.length) return;
+  files.sort(function (a, b) {
+    try { return fs.statSync(path.join(req, a)).mtimeMs - fs.statSync(path.join(req, b)).mtimeMs; } catch (e) { return 0; }
+  });
+  var id = files[0].replace(/\.jsx$/, '');
+  var src = path.join(req, id + '.jsx'), work = path.join(req, id + '.run');
+  try { fs.renameSync(src, work); } catch (e) { return; }
+  var code;
+  try { code = fs.readFileSync(work, 'utf8'); } catch (e) { return; }
+  var literal = JSON.stringify(code).replace(/ /g, '\\u2028').replace(/ /g, '\\u2029');
+  var wrapped = '(function(){try{var r=eval(' + literal + ');return (r===undefined||r===null)?"":String(r);}' +
+                'catch(e){return "TT_ERROR:"+e.toString()+(e.line?" (line "+e.line+")":"");}})()';
+  running = true;
+  evalScript(wrapped, function (res) {
+    running = false;
+    if (busyAnswer(res)) {
+      // After Effects couldn't run it now (one of its windows is open): try again shortly.
+      try { fs.renameSync(work, src); } catch (e) {}
+      return;
+    }
+    try { fs.writeFileSync(path.join(req, id + '.result'), res); } catch (e) {}
+    try { fs.unlinkSync(work); } catch (e) {}
+    nextRequest();
+  });
+}
+setInterval(nextRequest, 400);
+
+// Every 2 s: render outputs + which project is open.
+var ticking = false;
+setInterval(function () {
+  if (ticking || running) return;
+  var cfg = { render: true, naming: true };
+  try { cfg = JSON.parse(fs.readFileSync(path.join(base, 'config.json'), 'utf8')); } catch (e) {}
+  ticking = true;
+  evalScript('TaskTimerTick({render:' + !!cfg.render + ',naming:' + !!cfg.naming + '})', function (res) {
+    ticking = false;
+    if (busyAnswer(res)) return;
+    try { fs.writeFileSync(path.join(base, 'state.txt'), res + '\n' + Date.now()); } catch (e) {}
+  });
+}, 2000);
+</script>
+</body></html>

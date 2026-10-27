@@ -90,6 +90,8 @@ cp Resources/Info.plist "$OUT/Contents/Info.plist"
 iconutil -c icns Resources/AppIcon.iconset -o "$OUT/Contents/Resources/AppIcon.icns"
 # The Chrome extension ships inside the app; TaskTimer copies it into place on launch.
 cp -R ChromeExtension "$OUT/Contents/Resources/ChromeExtension"
+# After Effects helper (signed in CI before this step; a local build ships it unsigned)
+cp -R AEHelper "$OUT/Contents/Resources/AEHelper"
 codesign --force --deep --sign - "$OUT" >/dev/null 2>&1 || true
 
 if [ -n "$TT_CI" ]; then
