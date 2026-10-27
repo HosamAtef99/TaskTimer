@@ -74,6 +74,87 @@ enum AEProjectTools {
         """
     }
 
+    // MARK: Render outputs
+
+    /// When you press it (no background checking): every queued item in the Render Queue of the
+    /// task's open project gets its output in the task's Render folder, named
+    /// `<Task>_v01`, `_v02`… (next free number in the folder and the queue). Items already
+    /// named that way in the Render folder are left alone.
+    static func renderToTask(_ aep: URL, taskFolder: URL) {
+        guard let render = FolderService.folder(in: taskFolder, matching: ["render", "renders", "output"]) else {
+            alert("No Render folder", "Make a folder with “Render” in its name inside the task folder first.")
+            return
+        }
+        guard needAE(aep) else { return }
+        let base = FolderService.cleanName(taskFolder.lastPathComponent)
+            .replacingOccurrences(of: "\\", with: "-") + "_v"
+        let script = """
+        (function () {
+          var task = \(js(taskFolder.standardizedFileURL.path));
+          var render = new Folder(\(js(render.path)));
+          var base = \(js(base));
+          if (!app.project || !app.project.file || app.project.file.fsName.indexOf(task + "/") !== 0) return "notopen";
+          var rq = app.project.renderQueue;
+          var max = 0;
+          function look(name) {
+            if (name.indexOf(base) !== 0) return;
+            var m = name.substr(base.length).match(/^(\\d+)/);
+            if (m) max = Math.max(max, parseInt(m[1], 10));
+          }
+          var files = render.getFiles();
+          for (var i = 0; i < files.length; i++) look(decodeURI(files[i].name));
+          for (var r = 1; r <= rq.numItems; r++)
+            for (var m = 1; m <= rq.item(r).numOutputModules; m++) {
+              var f = rq.item(r).outputModule(m).file;
+              if (f) look(decodeURI(f.name));
+            }
+          var changed = 0, queued = 0;
+          for (var r = 1; r <= rq.numItems; r++) {
+            var it = rq.item(r);
+            if (it.status !== RQItemStatus.QUEUED && it.status !== RQItemStatus.UNQUEUED) continue;
+            queued++;
+            for (var m = 1; m <= it.numOutputModules; m++) {
+              var om = it.outputModule(m), cur = om.file;
+              if (!cur) continue;
+              var name = decodeURI(cur.name);
+              if (cur.parent.fsName === render.fsName && name.indexOf(base) === 0) continue;
+              var dot = name.lastIndexOf(".");
+              var ext = dot > 0 ? name.substr(dot) : "";
+              var seq = name.match(/_?\\[#+\\]/);
+              max++;
+              var n = (max < 10 ? "0" : "") + max;
+              om.file = new File(render.fsName + "/" + base + n + (seq ? "_" + seq[0].replace(/^_/, "") : "") + ext);
+              changed++;
+            }
+          }
+          return "ok " + changed + " " + queued;
+        })();
+        """
+        AfterEffects.doScript(script, activate: false) { result in
+            Task { @MainActor in
+                switch result {
+                case .failure(let e):
+                    alert("Couldn't set the render outputs", e.localizedDescription)
+                case .success(let text):
+                    if text == "notopen" {
+                        alert("Open this task's project first", "The project open in After Effects isn't in “\(taskFolder.lastPathComponent)”. Open “\(aep.lastPathComponent)” and try again.")
+                        return
+                    }
+                    let parts = text.split(separator: " ")
+                    let changed = parts.count > 1 ? Int(parts[1]) ?? 0 : 0
+                    let queued = parts.count > 2 ? Int(parts[2]) ?? 0 : 0
+                    if queued == 0 {
+                        Store.shared.flash("Nothing queued in the Render Queue")
+                    } else if changed == 0 {
+                        Store.shared.flash("Render outputs were already set to \(render.lastPathComponent)")
+                    } else {
+                        Store.shared.flash("\(changed) render output\(changed == 1 ? "" : "s") → \(render.lastPathComponent), named \(base)…")
+                    }
+                }
+            }
+        }
+    }
+
     // MARK: Organize
 
     /// Sorts the loose items at the top of the project panel into numbered folders:

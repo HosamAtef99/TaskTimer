@@ -622,6 +622,9 @@ struct TaskRow: View {
                         Button("Check Render Folder…") { checkRender() }
                         if let ae = FolderService.aeFile(in: f) {
                             Divider()
+                            Button("Set Render Outputs (Render folder, \(FolderService.cleanName(f.lastPathComponent))_v01…)") {
+                                AEProjectTools.renderToTask(ae, taskFolder: f)
+                            }
                             Button("Organize AE Project") { AEProjectTools.organize(ae) }
                             Button("Collect AE Project") {
                                 AEProjectTools.collect(ae, taskFolder: f, taskName: task.name)

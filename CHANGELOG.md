@@ -2,6 +2,9 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
+## 1.29
+- Task folder menu → Set Render Outputs: puts everything queued in the Render Queue into the task's Render folder, named Task_v01, Task_v02… (never overwriting an older render). It runs only when you press it — nothing checks After Effects in the background.
+
 ## 1.28
 - Removed TaskTimer's helper from After Effects: renders are no longer redirected to the task's Render folder or renamed, and nothing checks After Effects in the background any more. The helper is taken off your Mac automatically. Render-finished notifications and the last-render picture still work (they only look at the task's Render folder).
 
