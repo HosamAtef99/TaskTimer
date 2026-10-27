@@ -2,6 +2,9 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
+## 1.26.1
+- If TaskTimer's helper doesn't start by itself in After Effects, open Window → Extensions → TaskTimer Helper once and dock the small panel anywhere; it shows whether it's connected.
+
 ## 1.26
 - No more "Cannot run a script while a modal dialog is waiting for response" in After Effects: TaskTimer now works through a small signed helper inside After Effects that waits for After Effects' own windows to close. **Quit and reopen After Effects once** after updating so it loads.
 - The timer following the open project no longer needs After Effects' "Allow Scripts to Write Files" setting.

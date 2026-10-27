@@ -1,7 +1,20 @@
 <!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>TaskTimer Helper</title></head>
+<html><head><meta charset="utf-8"><title>TaskTimer Helper</title>
+<style>
+  html, body { margin: 0; background: #232323; color: #bbb; font: 12px -apple-system, BlinkMacSystemFont, sans-serif; }
+  #status { padding: 8px 10px; }
+  .bad { color: #ff9f0a; }
+</style></head>
 <body>
+<div id="status">TaskTimer Helper starting…</div>
 <script>
+// TaskTimer Helper: see AEBridge.swift in TaskTimer.
+function show(text, bad) {
+  var el = document.getElementById('status');
+  if (el) { el.textContent = text; el.className = bad ? 'bad' : ''; }
+}
+window.onerror = function (msg) { show('TaskTimer Helper error: ' + msg, true); };
+try {
 var fs = require('fs'), path = require('path'), os = require('os');
 var base = path.join(os.homedir(), 'Library', 'Application Support', 'TaskTimer Dev', 'AE');
 var req = path.join(base, 'requests');
@@ -10,15 +23,33 @@ try { fs.mkdirSync(req, { recursive: true }); } catch (e) {}
 function evalScript(s, cb) { window.__adobe_cep__.evalScript(s, cb); }
 function busyAnswer(r) { return r === undefined || r === null || r === 'EvalScript error.'; }
 
+// Two copies can run (the hidden background one and the panel in Window → Extensions);
+// only one of them, the leader, does the work.
+var me = Math.random().toString(36).slice(2);
+var lockFile = path.join(base, 'leader');
+function isLeader() {
+  var now = Date.now();
+  try {
+    var parts = fs.readFileSync(lockFile, 'utf8').split(' ');
+    if (parts[0] !== me && now - Number(parts[1]) < 3500) return false;
+  } catch (e) {}
+  try { fs.writeFileSync(lockFile, me + ' ' + now); } catch (e) {}
+  return true;
+}
+var leader = false;
+
 // Heartbeat: TaskTimer only sends scripts this way while this file is fresh.
 setInterval(function () {
+  leader = isLeader();
+  show(leader ? 'Connected to TaskTimer ✓' : 'Connected to TaskTimer ✓ (through the other copy)');
+  if (!leader) return;
   try { fs.writeFileSync(path.join(base, 'alive'), String(Date.now())); } catch (e) {}
 }, 1000);
 
 // Scripts TaskTimer asked for, one at a time, oldest first.
 var running = false;
 function nextRequest() {
-  if (running) return;
+  if (running || !leader) return;
   var files;
   try { files = fs.readdirSync(req).filter(function (f) { return /\.jsx$/.test(f); }); } catch (e) { return; }
   if (!files.length) return;
@@ -51,7 +82,7 @@ setInterval(nextRequest, 400);
 // Every 2 s: render outputs + which project is open.
 var ticking = false;
 setInterval(function () {
-  if (ticking || running) return;
+  if (ticking || running || !leader) return;
   var cfg = { render: true, naming: true };
   try { cfg = JSON.parse(fs.readFileSync(path.join(base, 'config.json'), 'utf8')); } catch (e) {}
   ticking = true;
@@ -61,5 +92,8 @@ setInterval(function () {
     try { fs.writeFileSync(path.join(base, 'state.txt'), res + '\n' + Date.now()); } catch (e) {}
   });
 }, 2000);
+} catch (e) {
+  show('TaskTimer Helper could not start: ' + e, true);
+}
 </script>
 </body></html>

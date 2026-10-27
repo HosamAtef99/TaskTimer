@@ -93,7 +93,7 @@ enum AETimerWatcher {
             if let installed = AEBridge.installedAt, launched < installed {
                 say("Quit and reopen After Effects once, so TaskTimer's helper loads inside it.", problem: true)
             } else {
-                say("TaskTimer's helper isn't running in After Effects. Quit and reopen After Effects; if it stays like this, send this to Hosam.", problem: true)
+                say("TaskTimer's helper didn't start by itself. In After Effects open Window → Extensions → TaskTimer Helper once and dock that small panel anywhere (After Effects reopens it next time). If “TaskTimer Helper” isn't in that menu, or the panel shows an error, send a screenshot.", problem: true)
             }
             return nil
         }
