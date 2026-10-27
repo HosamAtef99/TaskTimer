@@ -155,6 +155,7 @@ struct MainView: View {
                             .help("Your team's tasks and live timers")
                     }
                 }
+                DownloadsToggleButton()
                 Button { showClients = true } label: { Image(systemName: "person.2") }
                     .buttonStyle(CircleIconButtonStyle())
                     .help("Clients")

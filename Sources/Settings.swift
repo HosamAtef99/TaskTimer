@@ -27,6 +27,7 @@ enum Pref {
     static let aeRenderToTask = "aeRenderToTask"   // After Effects renders go to the task's Render folder
     static let aeRenderNaming = "aeRenderNaming"   // ...named Task_v01, Task_v02…
     static let aeAutoTimer = "aeAutoTimer"         // timer follows the open After Effects project
+    static let autoImportDownloads = "autoImportDownloads"  // new downloads → running task + After Effects
     static let defaultDeliverables = "defaultDeliverables"
     static let defaultRating = "defaultRating"
     // Modhesh (Settings → Modhesh; sent to the Chrome extension through the team database)

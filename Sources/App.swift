@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             RenderWatcher.shared.start()
             AERenderHelper.start()
             AETimerWatcher.start()
+            DownloadsWatcher.shared.start()
             ExtensionInstaller.refresh()
             _ = ExtensionMonitor.shared
             if Features.sheet { SheetSync.shared.start() }

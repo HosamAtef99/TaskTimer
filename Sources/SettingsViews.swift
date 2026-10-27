@@ -902,6 +902,7 @@ struct AESettingsRows: View {
     @AppStorage(Pref.aeRenderNaming) var naming = true
     @AppStorage(Pref.aeAutoTimer) var autoTimer = true
     @Local var canWrite: Bool? = AERenderHelper.canWriteFiles
+    @ObservedObject var downloads = DownloadsWatcher.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -913,6 +914,8 @@ struct AESettingsRows: View {
                 .padding(.leading, 18)
             Toggle("Start the task's timer when its After Effects project opens, pause it when it closes", isOn: $autoTimer)
                 .onChange(of: autoTimer) { _ in AERenderHelper.settingsChanged() }
+            Toggle("Auto-import downloads: new files in Downloads go to the running task's folder and into After Effects",
+                   isOn: Binding(get: { downloads.isOn }, set: { downloads.set($0) }))
             if autoTimer && canWrite == false {
                 Text("In After Effects, turn on Settings → Scripting & Expressions → “Allow Scripts to Write Files and Access Network”, so TaskTimer can see which project is open.")
                     .font(.system(size: 11)).foregroundStyle(Theme.orange)

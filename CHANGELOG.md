@@ -2,6 +2,9 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
+## 1.25
+- Auto-import downloads (the ⬇︎ button in the header, or Settings → General): while it's on, anything that finishes downloading goes straight into the running task's folder (Images, Videos, Sound…) and into the project open in After Effects. Turn it off with the same button.
+
 ## 1.24.3
 - The last-render picture on the task card fits its height, so the whole frame shows (vertical renders too).
 - Bigger text in the email and password fields.

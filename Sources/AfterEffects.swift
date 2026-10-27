@@ -80,6 +80,7 @@ enum AfterEffects {
     /// (its PSD import window) just pauses the script instead of blocking the next one.
     /// Plain files first, PSD / AI last. Each group goes into a project folder named `bin`.
     static func importFiles(_ groups: [(bin: String, urls: [URL])], layered kind: LayeredKind = .retainSizes,
+                            activate: Bool = true,
                             done: @escaping (Result<Int, Error>) -> Void) {
         let all = groups.flatMap { g in items(from: g.urls).map { (g.bin, $0) } }
         let list = all.filter { !$0.1.layered } + all.filter { $0.1.layered }
@@ -157,12 +158,14 @@ enum AfterEffects {
           return n + "|" + errs.join("\\n");
         })();
         """
+        // A PSD / AI may open After Effects' own import window, which has to be seen.
+        let bringFront = activate || list.contains { $0.1.layered }
         let escaped = script
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
         let source = """
         tell application id "\(id)"
-            activate
+            \(bringFront ? "activate" : "")
             with timeout of 3600 seconds
                 DoScript "\(escaped)"
             end timeout
