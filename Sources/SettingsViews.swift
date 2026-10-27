@@ -896,34 +896,12 @@ struct UpdatesSection: View {
     }
 }
 
-/// Settings → General: what TaskTimer does inside After Effects.
+/// Settings → General: After Effects options.
 struct AESettingsRows: View {
-    @AppStorage(Pref.aeRenderToTask) var renderToTask = true
-    @AppStorage(Pref.aeRenderNaming) var naming = true
     @ObservedObject var downloads = DownloadsWatcher.shared
-    @ObservedObject var aeStatus = AETimerWatcher.Status.shared
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Toggle("After Effects renders to the task's Render folder (Render Queue output)", isOn: $renderToTask)
-                .onChange(of: renderToTask) { _ in AERenderHelper.settingsChanged() }
-            Toggle("Name renders Task_v01, Task_v02… (never overwrite an older render)", isOn: $naming)
-                .onChange(of: naming) { _ in AERenderHelper.settingsChanged() }
-                .disabled(!renderToTask)
-                .padding(.leading, 18)
-            Toggle("Auto-import downloads: new files in Downloads go to the running task's folder and into After Effects",
-                   isOn: Binding(get: { downloads.isOn }, set: { downloads.set($0) }))
-            if renderToTask || downloads.isOn {
-                HStack(alignment: .top, spacing: 8) {
-                    Text(aeStatus.text.isEmpty ? "Checking…" : aeStatus.text)
-                        .font(.system(size: 11))
-                        .foregroundStyle(aeStatus.problem ? AnyShapeStyle(Theme.orange) : AnyShapeStyle(HierarchicalShapeStyle.secondary))
-                        .fixedSize(horizontal: false, vertical: true)
-                    Spacer(minLength: 4)
-                }
-                .padding(.leading, 18)
-            }
-        }
-        .onAppear { AERenderHelper.ensure(); AETimerWatcher.update() }
+        Toggle("Auto-import downloads: new files in Downloads go to the running task's folder and into After Effects",
+               isOn: Binding(get: { downloads.isOn }, set: { downloads.set($0) }))
     }
 }

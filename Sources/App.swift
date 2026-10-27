@@ -10,8 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             UpdateManager.shared.start()
             NotificationHandler.shared.install()
             RenderWatcher.shared.start()
-            AERenderHelper.start()
-            AETimerWatcher.start()
+            AEHelperRemoval.run()
             DownloadsWatcher.shared.start()
             ExtensionInstaller.refresh()
             _ = ExtensionMonitor.shared

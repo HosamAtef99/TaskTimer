@@ -2,6 +2,9 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
+## 1.28
+- Removed TaskTimer's helper from After Effects: renders are no longer redirected to the task's Render folder or renamed, and nothing checks After Effects in the background any more. The helper is taken off your Mac automatically. Render-finished notifications and the last-render picture still work (they only look at the task's Render folder).
+
 ## 1.27
 - Removed: the timer no longer switches tasks by itself when you open another task's After Effects project.
 - TaskTimer's helper in After Effects now only looks at the Render Queue (every 5 s), and only while "renders to the task's Render folder" is on.

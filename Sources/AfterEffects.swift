@@ -178,21 +178,12 @@ enum AfterEffects {
     }
 
     /// Runs ExtendScript in the running After Effects. `done` gets the script's result (a
-    /// string) or an error, on the main thread. Goes through `AEBridge` when the helper inside
-    /// After Effects is running; otherwise AppleScript DoScript, which makes After Effects
-    /// show an error if one of its own windows is open — so only for things just asked for.
+    /// string) or an error, on the main thread. AppleScript DoScript makes After Effects show an
+    /// error if one of its own windows is open — so only for things the person just asked for.
     static func doScript(_ js: String, timeout: Int = 600, activate: Bool = false,
                          done: @escaping (Result<String, Error>) -> Void) {
         guard let app = running, let id = app.bundleIdentifier else {
             done(.failure(Err("After Effects isn't open.")))
-            return
-        }
-        // Through TaskTimer's helper inside After Effects when it's running: a script sent that
-        // way waits for After Effects' own windows to close instead of making it show
-        // "Cannot run a script while a modal dialog is waiting for response".
-        if AEBridge.isAlive {
-            if activate { app.activate(options: []) }
-            AEBridge.run(js, timeout: TimeInterval(timeout), done: done)
             return
         }
         let escaped = js

@@ -24,7 +24,6 @@ enum AEProjectTools {
     private static func needAE(_ aep: URL) -> Bool {
         if AfterEffects.isRunning { return true }
         NSWorkspace.shared.open(aep)
-        AERenderHelper.ensure()
         Store.shared.flash("Opening After Effects — try again once the project is open")
         return false
     }

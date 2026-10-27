@@ -24,8 +24,6 @@ enum Pref {
     static let pauseOnSleep = "pauseOnSleep"
     static let menuBarStyle = "menuBarStyle"   // "time" (1:05) | "seconds" (01:05:12) | "icon"
     static let renderNotify = "renderNotify"
-    static let aeRenderToTask = "aeRenderToTask"   // After Effects renders go to the task's Render folder
-    static let aeRenderNaming = "aeRenderNaming"   // ...named Task_v01, Task_v02…
     static let autoImportDownloads = "autoImportDownloads"  // new downloads → running task + After Effects
     static let defaultDeliverables = "defaultDeliverables"
     static let defaultRating = "defaultRating"
@@ -95,8 +93,6 @@ enum Pref {
             pauseOnSleep: true,
             menuBarStyle: "time",
             renderNotify: true,
-            aeRenderToTask: true,
-            aeRenderNaming: true,
             defaultDeliverables: 1,
             defaultRating: 5,
             defaultChallenge: 1,
