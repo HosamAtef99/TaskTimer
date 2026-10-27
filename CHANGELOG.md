@@ -2,6 +2,10 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
+## 1.25.1
+- Opening another task's After Effects project now pauses the timer that's running (even one you started by hand) and starts the new task's timer.
+- Settings → General shows what TaskTimer sees in After Effects (connected or not, which project is open, which task it belongs to), with a Connect now button.
+
 ## 1.25
 - Auto-import downloads (the ⬇︎ button in the header, or Settings → General): while it's on, anything that finishes downloading goes straight into the running task's folder (Images, Videos, Sound…) and into the project open in After Effects. Turn it off with the same button.
 

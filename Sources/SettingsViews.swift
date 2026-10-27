@@ -903,6 +903,7 @@ struct AESettingsRows: View {
     @AppStorage(Pref.aeAutoTimer) var autoTimer = true
     @Local var canWrite: Bool? = AERenderHelper.canWriteFiles
     @ObservedObject var downloads = DownloadsWatcher.shared
+    @ObservedObject var aeStatus = AETimerWatcher.Status.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -916,11 +917,18 @@ struct AESettingsRows: View {
                 .onChange(of: autoTimer) { _ in AERenderHelper.settingsChanged() }
             Toggle("Auto-import downloads: new files in Downloads go to the running task's folder and into After Effects",
                    isOn: Binding(get: { downloads.isOn }, set: { downloads.set($0) }))
-            if autoTimer && canWrite == false {
-                Text("In After Effects, turn on Settings → Scripting & Expressions → “Allow Scripts to Write Files and Access Network”, so TaskTimer can see which project is open.")
-                    .font(.system(size: 11)).foregroundStyle(Theme.orange)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.leading, 18)
+            if autoTimer {
+                HStack(alignment: .top, spacing: 8) {
+                    Text(aeStatus.text.isEmpty ? "Checking…" : aeStatus.text)
+                        .font(.system(size: 11))
+                        .foregroundStyle(aeStatus.problem ? AnyShapeStyle(Theme.orange) : AnyShapeStyle(HierarchicalShapeStyle.secondary))
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 4)
+                    Button("Connect now") { AERenderHelper.ensure(force: true) }
+                        .buttonStyle(GlassButtonStyle(compact: true))
+                        .disabled(!AfterEffects.isRunning)
+                }
+                .padding(.leading, 18)
             }
         }
         .onAppear { canWrite = AERenderHelper.canWriteFiles }

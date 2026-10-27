@@ -25,6 +25,12 @@ enum AERenderHelper {
     /// After Effects' "Allow Scripts to Write Files and Access Network": nil = not known yet.
     static var canWriteFiles: Bool?
 
+    /// The helper is in the After Effects that's running now.
+    static var connected: Bool {
+        guard let pid = AfterEffects.running?.processIdentifier else { return false }
+        return installedPID == pid
+    }
+
     static var enabled: Bool {
         Pref.bool(Pref.aeRenderToTask) || Pref.bool(Pref.aeAutoTimer)
     }
@@ -256,6 +262,19 @@ enum AETimerWatcher {
     private static var acted: String?         // path last acted on
     private static var autoStarted: UUID?     // the task this started
 
+    /// What the watcher sees right now, in words (Settings → General).
+    final class Status: ObservableObject {
+        static let shared = Status()
+        @Published var text = ""
+        @Published var problem = false
+    }
+
+    private static func say(_ text: String, problem: Bool = false) {
+        let s = Status.shared
+        if s.text != text { s.text = text }
+        if s.problem != problem { s.problem = problem }
+    }
+
     static func start() {
         guard timer == nil else { return }
         timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { _ in
@@ -265,30 +284,64 @@ enum AETimerWatcher {
 
     /// The open project's path ("" = none / After Effects closed), or nil when unknown.
     private static func openProject() -> String? {
-        guard AfterEffects.isRunning else { return "" }
-        guard let text = try? String(contentsOf: AERenderHelper.stateURL, encoding: .utf8) else { return nil }
-        let lines = text.components(separatedBy: "\n")
+        guard AfterEffects.isRunning else {
+            say("After Effects isn't open.")
+            return ""
+        }
+        if !AERenderHelper.connected {
+            say("TaskTimer isn't connected to After Effects yet (it connects about 40 s after After Effects opens) — press Connect now.", problem: true)
+            return nil
+        }
+        if AERenderHelper.canWriteFiles == false {
+            say("After Effects doesn't let scripts write files. Turn on Settings → Scripting & Expressions → “Allow Scripts to Write Files and Access Network” in After Effects, then press Connect now.", problem: true)
+            return nil
+        }
+        guard let text = try? String(contentsOf: AERenderHelper.stateURL, encoding: .utf8) else {
+            say("No word from After Effects yet. Check “Allow Scripts to Write Files and Access Network” is on in After Effects (Settings → Scripting & Expressions), then press Connect now.", problem: true)
+            return nil
+        }
+        let lines = text.components(separatedBy: .newlines)
         guard lines.count >= 2, let ms = Double(lines[1].trimmingCharacters(in: .whitespaces)) else { return nil }
         // The helper writes at least every 30 s; older means it isn't running.
-        if Date().timeIntervalSince1970 - ms / 1000 > 90 { return nil }
+        if Date().timeIntervalSince1970 - ms / 1000 > 90 {
+            say("After Effects stopped answering TaskTimer — press Connect now.", problem: true)
+            return nil
+        }
         return lines[0]
     }
 
+    /// Same folder whatever the spelling: symlinks resolved, Unicode normalized, case ignored.
+    private static func normalized(_ path: String) -> String {
+        URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL.path
+            .precomposedStringWithCanonicalMapping.lowercased()
+    }
+
     private static func check() {
-        guard Pref.bool(Pref.aeAutoTimer), let path = openProject() else { lastSeen = nil; return }
+        guard Pref.bool(Pref.aeAutoTimer) else { say("Off."); lastSeen = nil; return }
+        guard let path = openProject() else { lastSeen = nil; return }
+        let task = taskFor(path)
+        if path.isEmpty {
+            if AfterEffects.isRunning { say("No project open in After Effects.") }
+        } else if let task {
+            say("Open in After Effects: \((path as NSString).lastPathComponent) → “\(task.name)”")
+        } else {
+            say("Open in After Effects: \((path as NSString).lastPathComponent) — not in any task's folder.")
+        }
+
         // Same value twice in a row (5 s apart), so a Save As doesn't flicker the timer.
         defer { lastSeen = path }
         guard path == lastSeen, path != acted else { return }
         acted = path
         let store = Store.shared
 
-        let task = taskFor(path)
-        // Leaving the project of a task this started: pause it.
-        if let auto = autoStarted, let t = store.task(auto), t.isRunning {
-            let autoTop = t.parentID ?? t.id
-            if task?.id != autoTop {
-                store.pause(auto)
-                store.flash("Paused “\(store.displayName(t))” — its After Effects project was closed")
+        // Leaving a task's project: pause that task's timer (whoever started it), unless the
+        // project now open is the same task's.
+        let leaving = autoStarted ?? store.running?.id
+        if let id = leaving, let t = store.task(id), t.isRunning {
+            let top = t.parentID ?? t.id
+            if task?.id != top {
+                store.pause(id)
+                store.flash("Paused “\(store.displayName(t))” — its After Effects project isn't open any more")
             }
         }
         autoStarted = nil
@@ -316,10 +369,13 @@ enum AETimerWatcher {
     /// The top-level task whose folder holds this project file.
     private static func taskFor(_ path: String) -> TaskItem? {
         guard !path.isEmpty else { return nil }
+        let p = normalized(path)
         return Store.shared.tasks
             .filter { $0.parentID == nil }
             .compactMap { t -> (TaskItem, Int)? in
-                guard let f = t.folderURL?.standardizedFileURL.path, path.hasPrefix(f + "/") else { return nil }
+                guard let raw = t.folderPath else { return nil }
+                let f = normalized(raw)
+                guard p.hasPrefix(f + "/") else { return nil }
                 return (t, f.count)
             }
             .max { $0.1 < $1.1 }?.0
