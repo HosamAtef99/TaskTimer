@@ -37,6 +37,14 @@ jobs:
           V="$(tr -d ' \n\r' < Resources/VERSION)"
           if gh release view "v$V" >/dev/null 2>&1; then
             echo "v$V is already released. Bump Resources/VERSION to ship an update."
+            # Hosam's call: every other build goes to the "dev-build" pre-release, to test on a Mac
+            # (Settings → General → Install from File…). The in-app updater only reads the latest
+            # real release, so nobody is offered it.
+            gh release view dev-build >/dev/null 2>&1 || \
+              gh release create dev-build --prerelease --latest=false --title "Test build (not an update)" \
+                --notes "Latest build of main, for testing. Not offered as an update."
+            (cd ChromeExtension && zip -qr ../build/TaskTimer-Chrome.zip .)
+            gh release upload dev-build build/TaskTimer.app.zip build/TaskTimer-Chrome.zip --clobber
             exit 0
           fi
           # Notes = the newest section of CHANGELOG.md

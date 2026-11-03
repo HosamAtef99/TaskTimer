@@ -29,6 +29,8 @@ When you make a decision that the other person would need to know, add it here.
   top of `CHANGELOG.md`: its top section becomes the release notes.
 - The release also ships `TaskTimer-Chrome.zip`, and the app bundles `ChromeExtension/`
   in its Resources.
+- Pushes that don't change VERSION upload the build to the **`dev-build` pre-release** (Hosam's
+  call), for testing with Settings → General → Install from File…. The updater never offers it.
 
 ## Working together
 - Pull before you start.
@@ -50,7 +52,7 @@ When you make a decision that the other person would need to know, add it here.
 | `Cloud.swift` / `CloudSync.swift` | Supabase auth + REST, push/pull, team, Modhesh state, weekly report |
 | `TeamView.swift` | Leader window: tasks, summary, add member (new account, or an existing account by email), reset/remove member, assign task, CSV. `isValidEmail` / `EmailHint` live here |
 | `AdminView.swift` | Admin panel — the **main window for admin accounts** (`AdminView(embedded: true)` in `MainView`). Tabs: Hours (every team's and person's hours / done / in progress / working now for a month, per-person task list, CSV), People (move between teams, set role, reset password, unblock, delete account for good), Teams (create / rename / delete empty) |
-| `ModheshView.swift` | Link Modhesh tasks to TaskTimer tasks or amends (manual only). Linking a task that's already Completed sets its day to Modhesh's Start Date |
+| `ModheshView.swift` | Link Modhesh tasks to TaskTimer tasks or amends (manual only) |
 | Clients (`Store.applyCloudClients`, `CloudSync.loadClients`, `ClientPicker` in `Sheets.swift`, Admin → Clients) | **Only admins add clients and pitches** (table `clients`: name, team, kind `client`/`pitch`, active). Everyone reads the list; the app merges it into the local `clients` (a local client with the same name becomes the cloud one and keeps its folder; old names stay for old tasks, never pickable). New Task / Done: my team's clients, then my team's open pitches; the **Support** toggle searches every other team's clients instead (`TaskItem.support`). Pitches have no life cycle (Hosam's call): added to a team, shown under Pitches, deleted by the admin when done. Admin → Clients shows hours per client / pitch per month and old names not in the list |
 | Approver (`DoneSheet`, `CloudSync.leaders` / `defaultApprover`) | Done has "Approver on Modhesh": all leaders from the SQL function `leaders()`; default = leader of the client's team (so support goes to the other team's leader), else my leader. Saved on the task (`approver_id`, `approver_name`); the extension picks that name in Log Time, or the team leader when empty |
 | `ExtensionInstaller.swift` | Copies the bundled extension to `~/Library/Application Support/TaskTimer Dev/…`, opens `chrome://extensions` through AppleScript, detects the installed extension from Chrome's prefs |
@@ -102,7 +104,7 @@ When you make a decision that the other person would need to know, add it here.
 ## Chrome extension (ChromeExtension/, MV3)
 - `background.js` is the **only** place that reads Modhesh (`readModhesh`): one path, with the
   owner check. Don't add page-side uploads again (that once fought with the owner check and
-  dropped every task). `content.js` runs the logging jobs and saves Start Dates; `readNow` comes
+  dropped every task). `content.js` runs the logging jobs (and sets the Start Date); `readNow` comes
   only from the popup's Check now.
 - **Modhesh is read only when the person presses "Check now"** in the extension popup (Hosam's call):
   no 5-minute alarm, no read when a Modhesh page opens. The 2-minute `tick` stays: it reads only
