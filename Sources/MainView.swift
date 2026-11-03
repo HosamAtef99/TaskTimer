@@ -551,6 +551,11 @@ struct TaskRow: View {
         }
     }
 
+    /// The .aep file's own icon (After Effects' document icon), for the Open AE Project button.
+    private func aeIcon(_ ae: URL) -> NSImage {
+        NSWorkspace.shared.icon(forFile: ae.path)
+    }
+
     private func mainRow(hasSubs: Bool) -> some View {
         HStack(spacing: 14) {
             Button { store.toggle(task.id) } label: {
@@ -611,17 +616,9 @@ struct TaskRow: View {
             HStack(spacing: 6) {
                 if let f = task.folderURL {
                     Menu {
-                        Button("Open Folder") { NSWorkspace.shared.open(f) }
-                        if let ae = FolderService.aeFile(in: f) {
-                            Button("Open AE Project") { NSWorkspace.shared.open(ae) }
-                        }
+                        Button("Open Project Folder") { NSWorkspace.shared.open(f) }
                         if let r = FolderService.folder(in: f, matching: ["render"]) {
                             Button("Open Render Folder") { NSWorkspace.shared.open(r) }
-                        }
-                        Button("Check Render Folder…") { checkRender() }
-                        if let ae = FolderService.aeFile(in: f) {
-                            Divider()
-                            Button("Organize AE Project") { AEProjectTools.organize(ae) }
                         }
                     } label: {
                         Image(systemName: "folder")
@@ -629,14 +626,26 @@ struct TaskRow: View {
                     .menuStyle(.borderlessButton)
                     .menuIndicator(.hidden)
                     .fixedSize()
-                    .help("Task folder")
+                    .help("Open the task's folder or its Render folder")
                     if let ae = FolderService.aeFile(in: f) {
+                        Button { NSWorkspace.shared.open(ae) } label: {
+                            Image(nsImage: aeIcon(ae)).resizable().frame(width: 18, height: 18)
+                        }
+                        .buttonStyle(.borderless)
+                        .fixedSize()
+                        .help("Open AE Project: \(ae.lastPathComponent)")
                         Button { AEProjectTools.renderToTask(ae, taskFolder: f) } label: {
                             Image(systemName: "film.stack")
                         }
                         .buttonStyle(.borderless)
                         .fixedSize()
                         .help("Set Render Outputs: the queued items in After Effects' Render Queue go to this task's Render folder, named \(FolderService.cleanName(f.lastPathComponent))_v01, _v02…")
+                        Button { AEProjectTools.organize(ae) } label: {
+                            Image(systemName: "rectangle.3.group")
+                        }
+                        .buttonStyle(.borderless)
+                        .fixedSize()
+                        .help("Organize AE Project: loose items in the project panel go into numbered folders (⌘Z in After Effects undoes it)")
                         Button { AEProjectTools.collect(ae, taskFolder: f, taskName: task.name) } label: {
                             Image(systemName: "shippingbox")
                         }
@@ -658,6 +667,9 @@ struct TaskRow: View {
         .contextMenu {
             Button(task.isRunning ? "Pause" : "Start") { store.toggle(task.id) }
             Button(Features.sheet ? "Done / Log to Sheet…" : "Done…") { store.requestDone(task.id) }
+            if task.folderURL != nil {
+                Button("Check Render Folder…") { checkRender() }
+            }
             Button("Add Amend") { addAmend() }
             Divider()
             Button("Copy Task Name") {
