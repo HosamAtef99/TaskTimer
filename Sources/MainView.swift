@@ -71,7 +71,8 @@ struct MainView: View {
                 }
             }
             .padding(.horizontal, narrow ? 12 : (compact ? 16 : 22))
-            .padding(.top, 6)
+            .padding(.top, 3)
+            .ignoresSafeArea(.container, edges: .top)   // the bar sits next to the window buttons
             .padding(.bottom, 12)
             .frame(maxWidth: .infinity)
 
@@ -156,7 +157,7 @@ struct MainView: View {
                 Button { showClients = true } label: { Image(systemName: "person.2") }
                     .buttonStyle(CircleIconButtonStyle())
                     .help("Clients")
-                if !narrow {
+                if !compact {
                     Button {
                         if let url = FolderService.chooseExistingFolder() {
                             _ = store.importFolder(url)
@@ -290,11 +291,11 @@ struct MainView: View {
     @ViewBuilder
     private var listControls: some View {
         let hasCloud = cloud.profile != nil
-        if width < 760 {
+        if width < 1000 {
             VStack(spacing: 8) {
                 filterPicker.frame(maxWidth: .infinity, alignment: .leading)
                 HStack(spacing: 8) {
-                    searchField.frame(maxWidth: .infinity)
+                    searchField.frame(minWidth: 80, maxWidth: .infinity)
                     monthPicker
                     if hasCloud && !narrow { modheshPicker }
                 }
