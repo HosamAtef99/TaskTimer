@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NotificationHandler.shared.install()
             RenderWatcher.shared.start()
             AEHelperRemoval.run()
+            AutoRenderOutputs.shared.start()
             ExtensionInstaller.refresh()
             _ = ExtensionMonitor.shared
             if Features.sheet { SheetSync.shared.start() }

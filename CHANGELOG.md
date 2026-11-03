@@ -3,6 +3,7 @@
 Newest first. The top section becomes the release notes shown in the app.
 
 ## 1.30
+- Render Queue items go to the task's Render folder by themselves again, named “Task_v01”, “Task_v02”…: a minute after you open a task's After Effects project, anything you add to the Render Queue is set within about 10 seconds. TaskTimer waits while After Effects is in the background or has a dialog or menu open. Turn it off in Settings → Folders.
 - Clients come from the admin only: Admin → Clients adds each team's clients and pitches, so everyone uses the same name and the admin sees the hours of every client and pitch. You pick from your team's list; there's no "add client" any more.
 - Support: in New Task (and Done), tick Support to search every other team's clients when you're helping another team.
 - Pitches: the admin adds a pitch to the team that handles it; it shows under Pitches in New Task.

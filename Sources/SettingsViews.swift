@@ -150,6 +150,7 @@ struct SettingsView: View {
     @AppStorage(Pref.renderNotify) var renderNotify = true
     @AppStorage(Pref.openFinderOnCreate) var openFinder = true
     @AppStorage(Pref.openAEOnCreate) var openAE = false
+    @AppStorage(Pref.autoRenderOutputs) var autoRender = true
     @AppStorage(Pref.tabMode) var tabMode = "auto"
     @AppStorage(Pref.tabName) var tabName = ""
     @AppStorage(Pref.statusComplete) var statusComplete = ""
@@ -449,6 +450,11 @@ struct SettingsView: View {
                 .fixedSize(horizontal: false, vertical: true)
             Toggle("Open the folder in Finder after creating", isOn: $openFinder)
             Toggle("Open the AE project after creating", isOn: $openAE)
+            Toggle("Send Render Queue items to the task's Render folder automatically", isOn: $autoRender)
+            Text("A minute after you open a task's After Effects project, anything you add to the Render Queue gets the task's Render folder and the name “Task_v01”, “Task_v02”… TaskTimer checks every 10 s, only while After Effects is in front and none of its dialogs or menus is open. Turn it off if it gets in the way of your scripts; Set Render Outputs in the task's folder menu still does it when you press it.")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.trailing, 6)
         }
