@@ -222,10 +222,6 @@ struct NewTaskSheet: View {
                             .font(.system(size: 11))
                             .foregroundStyle(Theme.orange)
                     }
-                    Text(Pref.subfolderList.joined(separator: "  ·  "))
-                        .font(.system(size: 10))
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(2)
                 }
             }
             .padding(14)
