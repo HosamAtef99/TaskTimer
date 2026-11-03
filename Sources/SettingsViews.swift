@@ -431,16 +431,6 @@ struct SettingsView: View {
                 }
             }
             Divider()
-            FieldRow(label: "Every task folder") {
-                Text(Pref.subfolderList.joined(separator: "  ·  "))
-                    .font(.system(size: 12, design: .monospaced))
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
-                Text("The same folders for everyone, with an empty After Effects project named after the task in “01 - AE”.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
             FieldRow(label: "After Effects version of the new project") {
                 Picker("", selection: $aeVersion) {
                     ForEach(FolderService.aeVersions, id: \.self) { v in Text("After Effects 20\(v)").tag(v) }
@@ -448,7 +438,7 @@ struct SettingsView: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .frame(maxWidth: 420)
-                Text("Pick the version you open projects with. A project saved in a newer version doesn't open in an older one.")
+                Text("Every new task gets an empty After Effects project in “01 - AE”. Pick the version you open projects with: a project saved in a newer version doesn't open in an older one.")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
