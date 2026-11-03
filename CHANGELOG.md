@@ -3,6 +3,7 @@
 Newest first. The top section becomes the release notes shown in the app.
 
 ## 1.30
+- **TaskTimer is now Mongez**: new name, new logo and a new look — teal and coral frosted glass, in light or dark (Settings → General → Appearance). The running task sits in its own card with its amends (press one to switch the timer), its After Effects tools and Done; drop files on the card to add them to the task. Status tabs, search and month are together above the list, and task names show in full.
 - Collect AE Project organizes the project first (loose items into folders) when it's open in After Effects, so the collected project and its (Footage) folders come out tidy. Turn it off in Settings → Folders.
 - The task's folder button now only opens the project folder or the Render folder. Open AE Project, Set Render Outputs, Organize and Collect are their own buttons next to it. Check Render Folder… moved to the task's right-click menu.
 - Settings → General → Open Test Copy 2 / 3: another TaskTimer with its own sign-in, to be signed in as admin, leader and member at the same time (for testing).
