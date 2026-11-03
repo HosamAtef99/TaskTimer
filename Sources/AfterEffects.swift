@@ -186,7 +186,22 @@ enum AfterEffects {
             done(.failure(Err("After Effects isn't open.")))
             return
         }
-        let escaped = js
+        // After Effects 2026 doesn't always hand the script's result back through AppleScript, so
+        // the script also writes it to a file that's read afterwards.
+        let resultFile = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("tasktimer-ae-\(UUID().uuidString).txt")
+        let wrapped = """
+        (function () {
+          var __r = eval(\(jsString(js)));
+          try {
+            var __f = new File(\(jsString(resultFile.path)));
+            __f.encoding = "UTF-8";
+            if (__f.open("w")) { __f.write(__r === undefined || __r === null ? "" : String(__r)); __f.close(); }
+          } catch (__e) {}
+          return __r;
+        })();
+        """
+        let escaped = wrapped
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
         let source = """
@@ -200,7 +215,11 @@ enum AfterEffects {
         queue.async {
             var err: NSDictionary?
             let result = NSAppleScript(source: source)?.executeAndReturnError(&err)
-            let text = result?.stringValue ?? ""
+            var text = result?.stringValue ?? ""
+            if let fromFile = try? String(contentsOf: resultFile, encoding: .utf8) { text = fromFile }
+            try? FileManager.default.removeItem(at: resultFile)
+            text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if text.count >= 2, text.hasPrefix("\""), text.hasSuffix("\"") { text = String(text.dropFirst().dropLast()) }
             let code = err?[NSAppleScript.errorNumber] as? Int
             let msg = err?[NSAppleScript.errorMessage] as? String
             DispatchQueue.main.async {
@@ -214,6 +233,13 @@ enum AfterEffects {
                 }
             }
         }
+    }
+
+    /// A JavaScript string literal for `s`.
+    static func jsString(_ s: String) -> String {
+        let data = try? JSONSerialization.data(withJSONObject: [s], options: [])
+        let arr = data.flatMap { String(data: $0, encoding: .utf8) } ?? "[\"\"]"
+        return String(arr.dropFirst().dropLast())
     }
 
     struct Err: LocalizedError {
