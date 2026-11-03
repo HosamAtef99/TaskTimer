@@ -104,14 +104,14 @@ struct ClientPicker: View {
                         Button { selection = c.id } label: {
                             HStack(spacing: 8) {
                                 Image(systemName: selection == c.id ? "checkmark.circle.fill" : "circle")
-                                    .foregroundStyle(selection == c.id ? AnyShapeStyle(Theme.purple) : AnyShapeStyle(HierarchicalShapeStyle.tertiary))
+                                    .foregroundStyle(selection == c.id ? AnyShapeStyle(Theme.teal) : AnyShapeStyle(HierarchicalShapeStyle.tertiary))
                                 Text(c.name).font(.system(size: 12, weight: .medium)).lineLimit(1)
-                                if c.isPitch { ClientTag(text: "Pitch", color: Theme.purple) }
+                                if c.isPitch { ClientTag(text: "Pitch", color: Theme.pitch) }
                                 Spacer()
                                 Text(c.teamName ?? "No team").font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
                             }
                             .padding(.horizontal, 6).padding(.vertical, 4)
-                            .background(selection == c.id ? Theme.purple.opacity(0.12) : Color.clear,
+                            .background(selection == c.id ? Theme.teal.opacity(0.12) : Color.clear,
                                         in: RoundedRectangle(cornerRadius: 6))
                             .contentShape(Rectangle())
                         }
@@ -155,7 +155,7 @@ struct SheetFrame<Content: View>: View {
                         .foregroundStyle(.white)
                         .frame(width: 40, height: 40)
                         .background(Theme.diagonal, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-                        .shadow(color: Theme.purple.opacity(0.35), radius: 8, y: 3)
+                        .shadow(color: Theme.teal.opacity(0.35), radius: 8, y: 3)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(title).font(.system(size: 18, weight: .bold, design: .rounded))
                         Text(subtitle).font(.system(size: 12)).foregroundStyle(.secondary)

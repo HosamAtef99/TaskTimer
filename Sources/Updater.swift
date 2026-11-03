@@ -135,7 +135,7 @@ final class UpdateManager: ObservableObject {
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
         panel.allowedContentTypes = [.zip]
-        panel.message = "Choose a TaskTimer zip to install"
+        panel.message = "Choose a Mongez zip to install"
         panel.prompt = "Install"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         let listing = Self.run("/usr/bin/unzip", ["-Z1", url.path]) ?? ""
@@ -145,7 +145,7 @@ final class UpdateManager: ObservableObject {
                     .trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty {
             install(Candidate(version: v, notes: "", kind: .sourceZip(url)))
         } else {
-            lastMessage = "That zip doesn't look like TaskTimer."
+            lastMessage = "That zip doesn't look like Mongez."
         }
     }
 
@@ -217,27 +217,31 @@ final class UpdateManager: ObservableObject {
 
         let dest = Bundle.main.bundleURL
         let parent = dest.deletingLastPathComponent()
+        // The app is called Mongez now: "TaskTimer Dev.app" is replaced by "Mongez.app".
+        let final = dest.lastPathComponent == "TaskTimer Dev.app" ? parent.appendingPathComponent("Mongez.app") : dest
         guard fm.isWritableFile(atPath: parent.path) else {
-            throw UpdateError("Can't write to \(parent.path). Move TaskTimer to Applications and try again.")
+            throw UpdateError("Can't write to \(parent.path). Move Mongez to Applications and try again.")
         }
 
         // Swap only after this copy has quit; keep the old app if anything fails.
         let helper = Self.workDir().appendingPathComponent("swap.sh")
         let script = """
         #!/bin/bash
-        PID="$1"; SRC="$2"; DEST="$3"
+        PID="$1"; SRC="$2"; DEST="$3"; FINAL="${4:-$3}"
         for i in $(seq 1 100); do kill -0 "$PID" 2>/dev/null || break; sleep 0.2; done
-        rm -rf "$DEST.new" "$DEST.old"
-        if ditto "$SRC" "$DEST.new" && mv "$DEST" "$DEST.old" && mv "$DEST.new" "$DEST"; then
+        rm -rf "$FINAL.new" "$DEST.old"
+        [ "$FINAL" != "$DEST" ] && rm -rf "$FINAL"
+        if ditto "$SRC" "$FINAL.new" && mv "$DEST" "$DEST.old" && mv "$FINAL.new" "$FINAL"; then
           rm -rf "$DEST.old"
-          xattr -dr com.apple.quarantine "$DEST" 2>/dev/null || true
+          xattr -dr com.apple.quarantine "$FINAL" 2>/dev/null || true
           echo "TT_SWAP_OK"
+          open "$FINAL"
         else
           [ -d "$DEST" ] || mv "$DEST.old" "$DEST" 2>/dev/null
-          rm -rf "$DEST.new"
+          rm -rf "$FINAL.new"
           echo "TT_SWAP_FAILED"
+          open "$DEST"
         fi
-        open "$DEST"
         """
         try script.write(to: helper, atomically: true, encoding: .utf8)
 
@@ -247,9 +251,9 @@ final class UpdateManager: ObservableObject {
 
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/bin/bash")
-        p.arguments = ["-c", "nohup /bin/bash \"$0\" \"$1\" \"$2\" \"$3\" > \"$4\" 2>&1 &",
+        p.arguments = ["-c", "nohup /bin/bash \"$0\" \"$1\" \"$2\" \"$3\" \"$4\" > \"$5\" 2>&1 &",
                        helper.path, String(ProcessInfo.processInfo.processIdentifier),
-                       newApp.path, dest.path, Self.logURL.path]
+                       newApp.path, dest.path, final.path, Self.logURL.path]
         try p.run()
         p.waitUntilExit()
         try? await Task.sleep(nanoseconds: 300_000_000)
@@ -265,7 +269,7 @@ final class UpdateManager: ObservableObject {
 
     /// Old path for source zips: rebuild with the bundled build script (needs Command Line Tools).
     private func buildFromSource(_ zip: URL) throws {
-        progressText = "Building… TaskTimer will reopen by itself in about a minute."
+        progressText = "Building… Mongez will reopen by itself in about a minute."
         let unpack = Self.workDir().appendingPathComponent("source", isDirectory: true)
         try? FileManager.default.removeItem(at: unpack)
         try FileManager.default.createDirectory(at: unpack, withIntermediateDirectories: true)
@@ -337,7 +341,7 @@ final class UpdateManager: ObservableObject {
         d.removeObject(forKey: "updatedFromVersion")
         if from != Self.currentVersion {
             Store.shared.flash("Updated to version \(Self.currentVersion) ✓")
-            Store.shared.notify(title: "TaskTimer updated", body: "Now on version \(Self.currentVersion).")
+            Store.shared.notify(title: "Mongez updated", body: "Now on version \(Self.currentVersion).")
         } else if let log = try? String(contentsOf: Self.logURL, encoding: .utf8), log.contains("TT_SWAP_FAILED") {
             Store.shared.flash("Update couldn't be installed — still on \(Self.currentVersion)")
         }

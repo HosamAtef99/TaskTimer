@@ -7,6 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.setActivationPolicy(.accessory)
         }
         MainActor.assumeIsolated {
+            Appearance.apply()
             if !TestCopies.isCopy { UpdateManager.shared.start() }
             NotificationHandler.shared.install()
             RenderWatcher.shared.start()
@@ -112,14 +113,34 @@ struct MenuBarLabel: View {
         if let r = store.running, style != "icon" {
             let secs = r.totalSeconds(at: store.now)
             HStack(spacing: 3) {
-                Image(systemName: "timer")
+                Image(nsImage: MenuBarIcon.image)
                 Text(style == "seconds" ? Fmt.clock(secs) : Fmt.menuClock(secs))
                     .monospacedDigit()
             }
         } else {
-            Image(systemName: store.running == nil ? "timer" : "timer.circle.fill")
+            Image(nsImage: MenuBarIcon.image)
         }
     }
+}
+
+/// The Mongez logo as a menu bar (template) image.
+enum MenuBarIcon {
+    static let image: NSImage = {
+        let size = NSSize(width: 18, height: 18)
+        let img = NSImage(size: size, flipped: true) { rect in
+            guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
+            let path = MongezLogoShape().path(in: rect.insetBy(dx: 0.5, dy: 0.5))
+            ctx.addPath(path.cgPath)
+            ctx.setStrokeColor(NSColor.black.cgColor)
+            ctx.setLineWidth(1.7)
+            ctx.setLineCap(.round)
+            ctx.setLineJoin(.round)
+            ctx.strokePath()
+            return true
+        }
+        img.isTemplate = true
+        return img
+    }()
 }
 
 struct MenuBarPanel: View {
@@ -209,7 +230,7 @@ struct MenuBarPanel: View {
                     Spacer()
                     Button { NSApp.terminate(nil) } label: { Image(systemName: "power") }
                         .buttonStyle(.borderless)
-                        .help("Quit TaskTimer")
+                        .help("Quit Mongez")
                 }
             }
             .padding(14)

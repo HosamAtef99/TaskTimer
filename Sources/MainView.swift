@@ -57,20 +57,21 @@ struct MainView: View {
         ZStack(alignment: .bottom) {
             GlowBackground()
 
-            VStack(spacing: narrow ? 12 : 16) {
+            VStack(spacing: narrow ? 10 : 14) {
                 header
                 UpdateBanner()
                 if cloud.isAdmin {
                     // Admins don't time tasks: their main window is the Admin panel.
                     AdminView(embedded: true)
                 } else {
-                    HeroCard(compact: compact)
+                    StatsRow(narrow: narrow)
+                    NowCard(compact: compact)
                     listControls
                     taskList
                 }
             }
             .padding(.horizontal, narrow ? 12 : (compact ? 16 : 22))
-            .padding(.top, 30)
+            .padding(.top, 6)
             .padding(.bottom, 12)
             .frame(maxWidth: .infinity)
 
@@ -113,56 +114,48 @@ struct MainView: View {
 
     // MARK: Header
 
+    /// One bar with the window's own buttons (no separate title bar): the logo sits right after
+    /// the red / yellow / green buttons.
     private var header: some View {
-        HStack(alignment: .center, spacing: compact ? 6 : 10) {
-            VStack(alignment: .leading, spacing: 2) {
+        HStack(alignment: .center, spacing: compact ? 6 : 8) {
+            HStack(spacing: 8) {
+                MongezLogo(lineWidth: 2.4)
+                    .frame(width: 24, height: 24)
                 Text(TestCopies.appTitle)
-                    .font(.system(size: narrow ? 20 : (compact ? 22 : 26), weight: .bold, design: .rounded))
-                    .gradientText()
+                    .font(.system(size: narrow ? 17 : 19, weight: .bold, design: .rounded))
+                    .foregroundStyle(Theme.ink)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.6)
-                Text(cloud.isAdmin ? "Admin" : "Today · \(Fmt.short(store.todaySeconds()))")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                if cloud.isAdmin {
+                    Text("Admin")
+                        .font(.system(size: 10, weight: .semibold))
+                        .padding(.horizontal, 7).padding(.vertical, 2)
+                        .foregroundStyle(Theme.coral)
+                        .background(Theme.coral.opacity(0.14), in: Capsule())
+                }
             }
+            .padding(.leading, 70)   // room for the window buttons
             .layoutPriority(1)
             Spacer(minLength: 4)
             if Features.sheet && store.pendingCount > 0 {
                 Button {
                     Task { await store.retryPending(silent: false) }
                 } label: {
-                    if compact {
-                        Image(systemName: "arrow.clockwise").foregroundStyle(Theme.pink)
-                    } else {
-                        Label("\(store.pendingCount) not sent · Retry", systemImage: "arrow.clockwise")
-                            .foregroundStyle(Theme.pink)
-                    }
+                    Image(systemName: "arrow.clockwise").foregroundStyle(Theme.pink)
                 }
-                .buttonStyle(GlassButtonStyle(compact: true))
-                .help("These logs failed to reach the sheet. Click to try again.")
+                .buttonStyle(CircleIconButtonStyle())
+                .help("\(store.pendingCount) logs didn't reach the sheet. Click to try again.")
             }
             if !cloud.isAdmin {
                 if cloud.profile != nil { modheshButton }
                 if cloud.isLeader {
-                    if compact {
-                        Button { showTeam = true } label: { Image(systemName: "person.3.fill") }
-                            .buttonStyle(CircleIconButtonStyle())
-                            .help("Your team's tasks and live timers")
-                    } else {
-                        Button { showTeam = true } label: { Label("Team", systemImage: "person.3.fill") }
-                            .buttonStyle(GlassButtonStyle(compact: true))
-                            .help("Your team's tasks and live timers")
-                    }
+                    Button { showTeam = true } label: { Image(systemName: "person.3") }
+                        .buttonStyle(CircleIconButtonStyle())
+                        .help("Your team's tasks and live timers")
                 }
                 Button { showClients = true } label: { Image(systemName: "person.2") }
                     .buttonStyle(CircleIconButtonStyle())
                     .help("Clients")
-            }
-            Button { store.showSettings = true } label: { Image(systemName: "gearshape") }
-                .buttonStyle(CircleIconButtonStyle())
-                .help("Settings")
-            if !cloud.isAdmin {
                 if !narrow {
                     Button {
                         if let url = FolderService.chooseExistingFolder() {
@@ -173,18 +166,25 @@ struct MainView: View {
                         .buttonStyle(CircleIconButtonStyle())
                         .help("Import an existing task folder")
                 }
+            }
+            Button { store.showSettings = true } label: { Image(systemName: "gearshape") }
+                .buttonStyle(CircleIconButtonStyle())
+                .help("Settings")
+            if !cloud.isAdmin {
                 if compact {
                     Button { store.showNewTask = true } label: { Image(systemName: "plus") }
-                        .buttonStyle(CircleIconButtonStyle(filled: true))
+                        .buttonStyle(GradientButtonStyle())
                         .help("New Task (⌘N)")
                 } else {
                     Button { store.showNewTask = true } label: {
                         Label("New Task", systemImage: "plus")
                     }
                     .buttonStyle(GradientButtonStyle())
+                    .help("New Task (⌘N)")
                 }
             }
         }
+        .frame(minHeight: 34)
     }
 
     @ViewBuilder
@@ -218,20 +218,34 @@ struct MainView: View {
                 Label(open > 0 ? "Modhesh (\(open))" : "Modhesh", systemImage: "link")
             }
             .buttonStyle(GlassButtonStyle(compact: true))
-            .help("Link Modhesh tasks to your TaskTimer tasks")
+            .help("Link Modhesh tasks to your Mongez tasks")
         }
     }
 
     // MARK: List
 
+    private func count(_ f: TaskFilter) -> Int {
+        store.tasks.filter { $0.parentID == nil }.filter { t in
+            ([t] + store.subtasks(of: t.id)).contains { s in
+                switch f {
+                case .incoming: return s.status == .incoming
+                case .inProgress: return s.status.isInProgress
+                case .complete: return s.status == .complete
+                case .all: return true
+                }
+            }
+        }.count
+    }
+
     private var filterPicker: some View {
         Picker("", selection: $filter) {
             ForEach(TaskFilter.allCases) { f in
-                Text(f == .incoming && incomingCount > 0 ? "Incoming (\(incomingCount))" : f.rawValue).tag(f)
+                Text(f == .all ? f.rawValue : "\(f.rawValue)  \(count(f))").tag(f)
             }
         }
         .pickerStyle(.segmented)
         .labelsHidden()
+        .fixedSize()
     }
 
     private var monthPicker: some View {
@@ -242,7 +256,7 @@ struct MainView: View {
             }
         }
         .labelsHidden()
-        .frame(minWidth: 90, maxWidth: 150)
+        .frame(minWidth: 90, maxWidth: 140)
         .help("Show tasks created in this month")
     }
 
@@ -253,48 +267,44 @@ struct MainView: View {
             }
         }
         .labelsHidden()
-        .frame(minWidth: 90, maxWidth: 160)
+        .frame(minWidth: 90, maxWidth: 150)
         .help("Closed on Modhesh = time sent there. Not closed yet = linked, waiting for Done.")
     }
 
     private var searchField: some View {
         HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+            Image(systemName: "magnifyingglass").foregroundStyle(Theme.teal)
             TextField("Search tasks or clients", text: $search)
                 .textFieldStyle(.plain)
+            if !search.isEmpty {
+                Button { search = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
+                    .buttonStyle(.plain)
+            }
         }
-        .padding(.horizontal, 10).padding(.vertical, 6)
-        .background(.thinMaterial, in: Capsule())
+        .font(.system(size: 12))
+        .padding(.horizontal, 12).padding(.vertical, 7)
+        .glassChip()
     }
 
+    /// Status tabs, search, month and Modhesh filters, in one bar above the list.
     @ViewBuilder
     private var listControls: some View {
         let hasCloud = cloud.profile != nil
-        if width < 640 {
+        if width < 760 {
             VStack(spacing: 8) {
-                filterPicker
+                filterPicker.frame(maxWidth: .infinity, alignment: .leading)
                 HStack(spacing: 8) {
-                    monthPicker.frame(maxWidth: .infinity)
-                    if hasCloud { modheshPicker.frame(maxWidth: .infinity) }
-                }
-                searchField
-            }
-        } else if width < 900 {
-            VStack(spacing: 8) {
-                filterPicker
-                HStack(spacing: 8) {
-                    monthPicker
-                    if hasCloud { modheshPicker }
                     searchField.frame(maxWidth: .infinity)
+                    monthPicker
+                    if hasCloud && !narrow { modheshPicker }
                 }
             }
         } else {
-            HStack(spacing: 10) {
-                filterPicker.frame(maxWidth: 400)
+            HStack(spacing: 8) {
+                filterPicker
+                searchField.frame(minWidth: 140, maxWidth: .infinity)
                 monthPicker
                 if hasCloud { modheshPicker }
-                Spacer(minLength: 8)
-                searchField.frame(minWidth: 140, maxWidth: 220)
             }
         }
     }
@@ -343,16 +353,16 @@ struct MainView: View {
         Group {
             if filtered.isEmpty {
                 VStack(spacing: 10) {
-                    Image(systemName: "tray")
-                        .font(.system(size: 30, weight: .light))
-                        .foregroundStyle(Theme.cool)
+                    MongezLogo(lineWidth: 2)
+                        .frame(width: 34, height: 34)
+                        .opacity(0.6)
                     Text(store.tasks.isEmpty ? "No tasks yet — press New Task to start." : "Nothing here.")
                         .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
-                    LazyVStack(spacing: 10) {
+                    LazyVStack(spacing: 8) {
                         ForEach(filtered) { t in
                             TaskRow(task: t)
                         }
@@ -364,66 +374,260 @@ struct MainView: View {
     }
 }
 
-// MARK: - Hero (running task)
+// MARK: - Now (running task)
 
-struct HeroCard: View {
+/// The task that's timing, with its amends as chips, its tools as icons and a big Done.
+/// Files dropped on it go into the task's folders.
+struct NowCard: View {
     @EnvironmentObject var store: Store
     var compact = false
+    @Local var dropping = false
+    @Local var dropped: [URL] = []
+    @Local var askDrop = false
 
     var body: some View {
-        let running = store.running
-        HStack(spacing: compact ? 14 : 22) {
-            let secs = running?.totalSeconds(at: store.now) ?? 0
-            ZStack {
-                TimerRing(running: running != nil,
-                          progress: running == nil ? 0 : (secs.truncatingRemainder(dividingBy: 3600)) / 3600,
-                          size: compact ? 76 : 112)
-                Image(systemName: running == nil ? "moon.zzz" : "bolt.fill")
-                    .font(.system(size: compact ? 20 : 26, weight: .semibold))
-                    .foregroundStyle(Theme.cool)
+        Group {
+            if let r = store.running {
+                running(r, parent: store.parent(of: r) ?? r)
+            } else {
+                idle
             }
+        }
+        .animation(.spring(response: 0.4, dampingFraction: 0.85), value: store.running?.id)
+    }
 
-            VStack(alignment: .leading, spacing: 6) {
-                if let t = running {
-                    SectionLabel(text: "Now working on")
-                    Text(store.displayName(t))
-                        .font(.system(size: compact ? 16 : 20, weight: .semibold))
-                        .lineLimit(2)
-                    if !store.clientName(t.clientID).isEmpty {
-                        Text(store.clientName(t.clientID))
-                            .font(.system(size: 12, weight: .medium))
+    private var idle: some View {
+        HStack(spacing: 14) {
+            Image(systemName: "play.fill")
+                .font(.system(size: 16, weight: .bold))
+                .foregroundStyle(Theme.teal)
+                .frame(width: 44, height: 44)
+                .background(Circle().fill(Theme.teal.opacity(0.12)))
+            VStack(alignment: .leading, spacing: 3) {
+                Text("No timer running")
+                    .font(.system(size: 15, weight: .semibold))
+                Text("Press ▶ on a task below, or New Task.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .padding(14)
+        .glassCard(radius: 22)
+    }
+
+    private func running(_ r: TaskItem, parent p: TaskItem) -> some View {
+        let subs = store.subtasks(of: p.id)
+        let secs = r.totalSeconds(at: store.now)
+        return HStack(alignment: .center, spacing: compact ? 12 : 16) {
+            Button { store.pause(r.id) } label: { Image(systemName: "pause.fill") }
+                .buttonStyle(CircleIconButtonStyle(filled: true, size: compact ? 46 : 56))
+                .help("Pause (⌘⇧P)")
+
+            VStack(alignment: .leading, spacing: 7) {
+                Text(p.name)
+                    .font(.system(size: compact ? 15 : 17, weight: .bold))
+                    .lineLimit(2)
+                HStack(spacing: 6) {
+                    StatusPill(status: r.status)
+                    KindTag(task: p)
+                    if !store.clientName(p.clientID).isEmpty {
+                        Text(store.clientName(p.clientID))
+                            .font(.system(size: 11.5))
                             .foregroundStyle(.secondary)
+                            .lineLimit(1)
                     }
-                    Text(Fmt.clock(secs))
-                        .font(.system(size: compact ? 26 : 34, weight: .semibold, design: .rounded).monospacedDigit())
-                        .gradientText()
-                        .lineLimit(1)
-                    HStack(spacing: 10) {
-                        Button { store.pause(t.id) } label: { Image(systemName: "pause.fill") }
-                            .buttonStyle(CircleIconButtonStyle(size: compact ? 34 : 40))
-                            .help("Pause (⌘⇧P)")
-                        Button { store.requestDone(t.id) } label: { Image(systemName: "checkmark") }
-                            .buttonStyle(CircleIconButtonStyle(filled: true, size: compact ? 34 : 40))
-                            .keyboardShortcut(.return, modifiers: .command)
-                            .help("Done (⌘↩)")
+                    ModheshBadge(taskID: r.id)
+                }
+                // Main task and its amends: press one to time it.
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 5) {
+                        amendChip(p, title: "Main", running: r.id == p.id)
+                        ForEach(subs) { s in amendChip(s, title: s.name, running: r.id == s.id) }
+                        Button {
+                            if let id = store.addAmend(to: p.id), let s = store.task(id) {
+                                store.flash("“\(store.displayName(s))” — timer running")
+                            }
+                        } label: {
+                            Text("+ Amend").font(.system(size: 11, weight: .medium))
+                                .padding(.horizontal, 9).padding(.vertical, 4)
+                                .glassChip()
+                        }
+                        .buttonStyle(.plain)
+                        .help("Add an amend. It gets its own timer and can be linked to its own Modhesh task.")
                     }
-                } else {
-                    SectionLabel(text: "Idle")
-                    Text("No timer running")
-                        .font(.system(size: compact ? 17 : 20, weight: .semibold))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                    Text("Start a task below, or create a new one.")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
+                }
+                if p.folderURL != nil {
+                    TaskTools(task: p, size: 28)
                 }
             }
-            Spacer(minLength: 8)
-            MonthStats(compact: compact)
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            VStack(alignment: .trailing, spacing: 10) {
+                Text(Fmt.clock(secs))
+                    .font(.system(size: compact ? 26 : 34, weight: .light, design: .rounded).monospacedDigit())
+                    .foregroundStyle(Theme.linear)
+                    .lineLimit(1)
+                    .fixedSize()
+                Button { store.requestDone(r.id) } label: {
+                    Label("Done", systemImage: "checkmark")
+                }
+                .buttonStyle(GradientButtonStyle())
+                .keyboardShortcut(.return, modifiers: .command)
+                .help("Done (⌘↩)")
+            }
         }
-        .padding(compact ? 14 : 20)
-        .glassCard(radius: 24, highlight: running != nil)
-        .animation(.spring(response: 0.4, dampingFraction: 0.85), value: running?.id)
+        .padding(compact ? 14 : 18)
+        .glassCard(radius: 24, highlight: dropping)
+        .overlay(alignment: .topTrailing) {
+            if p.folderURL != nil {
+                Label(dropping ? "Drop to add" : "Drop files here", systemImage: "arrow.down.to.line")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 9).padding(.vertical, 3)
+                    .background(Theme.coral, in: Capsule())
+                    .offset(x: -18, y: -9)
+                    .opacity(dropping ? 1 : 0.85)
+            }
+        }
+        .dropDestination(for: URL.self) { urls, _ in
+            guard p.folderURL != nil else { return false }
+            dropped = urls
+            askDrop = true
+            return true
+        } isTargeted: { dropping = $0 }
+        .sheet(isPresented: $askDrop) {
+            if let f = p.folderURL {
+                DropFilesSheet(files: dropped, project: f, taskName: p.name).environmentObject(store)
+            }
+        }
+    }
+
+    private func amendChip(_ t: TaskItem, title: String, running: Bool) -> some View {
+        Button { if !running { store.start(t.id) } } label: {
+            HStack(spacing: 4) {
+                if running { Circle().fill(Theme.coral).frame(width: 6, height: 6) }
+                Text(title).fontWeight(running ? .semibold : .regular)
+                Text("· \(Fmt.short(t.totalSeconds(at: store.now)))").foregroundStyle(.secondary)
+            }
+            .font(.system(size: 11))
+            .padding(.horizontal, 9).padding(.vertical, 4)
+            .background(Capsule().fill(running ? Theme.coral.opacity(0.16) : Color.clear))
+            .glassChip()
+        }
+        .buttonStyle(.plain)
+        .help(running ? "Timing now" : "Switch the timer to \(title)")
+    }
+}
+
+// MARK: - Task tools (After Effects + folders)
+
+/// Open AE, Set Render Outputs, Organize, Collect and the folders, as small round icons.
+/// Hover one to see what it does.
+struct TaskTools: View {
+    var task: TaskItem
+    var size: CGFloat = 27
+
+    var body: some View {
+        if let f = task.folderURL {
+            HStack(spacing: 4) {
+                if let ae = FolderService.aeFile(in: f) {
+                    tool(help: "Open AE Project: \(ae.lastPathComponent)") { NSWorkspace.shared.open(ae) } label: {
+                        Text("Ae").font(.system(size: size * 0.36, weight: .heavy, design: .rounded))
+                    }
+                    tool(help: "Set Render Outputs: the queued Render Queue items go to this task's Render folder, named \(FolderService.cleanName(f.lastPathComponent))_v01, _v02…") {
+                        AEProjectTools.renderToTask(ae, taskFolder: f)
+                    } label: { Image(systemName: "film.stack") }
+                    tool(help: "Organize AE Project: loose items go into numbered folders (⌘Z in After Effects undoes it)") {
+                        AEProjectTools.organize(ae)
+                    } label: { Image(systemName: "square.grid.2x2") }
+                    tool(help: "Collect AE Project: the project and every file it uses, into the task's Collect folder") {
+                        AEProjectTools.collect(ae, taskFolder: f, taskName: task.name)
+                    } label: { Image(systemName: "shippingbox") }
+                }
+                Menu {
+                    Button("Open Project Folder") { NSWorkspace.shared.open(f) }
+                    if let r = FolderService.folder(in: f, matching: ["render"]) {
+                        Button("Open Render Folder") { NSWorkspace.shared.open(r) }
+                    }
+                } label: {
+                    Image(systemName: "folder")
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .frame(width: size, height: size)
+                .glassChip()
+                .help("Open the task's folder or its Render folder")
+            }
+        }
+    }
+
+    private func tool<L: View>(help: String, action: @escaping () -> Void, @ViewBuilder label: () -> L) -> some View {
+        Button(action: action) {
+            label()
+                .font(.system(size: size * 0.45, weight: .semibold))
+                .foregroundStyle(Theme.teal)
+                .frame(width: size, height: size)
+                .glassChip()
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
+    }
+}
+
+// MARK: - Support / Pitch tag
+
+struct KindTag: View {
+    @EnvironmentObject var store: Store
+    var task: TaskItem
+    var body: some View {
+        if task.support == true {
+            tag("Support", Theme.support)
+        } else if store.client(task.clientID)?.isPitch == true {
+            tag("Pitch", Theme.pitch)
+        }
+    }
+    private func tag(_ text: String, _ c: Color) -> some View {
+        Text(text)
+            .font(.system(size: 10, weight: .semibold))
+            .padding(.horizontal, 8).padding(.vertical, 3)
+            .foregroundStyle(c)
+            .background(c.opacity(0.14), in: Capsule())
+            .fixedSize()
+    }
+}
+
+// MARK: - Logo
+
+/// Mongez's logo: a stopwatch whose hand is a check mark, drawn as one stroke.
+struct MongezLogoShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let k = min(rect.width, rect.height) / 64
+        let o = CGPoint(x: rect.midX - 32 * k, y: rect.midY - 32 * k)
+        func pt(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: o.x + x * k, y: o.y + y * k) }
+        var p = Path()
+        p.move(to: pt(26, 6)); p.addLine(to: pt(38, 6))          // button
+        p.move(to: pt(32, 6)); p.addLine(to: pt(32, 12))
+        p.move(to: pt(49, 15)); p.addLine(to: pt(52.5, 11.5))    // side button
+        // Dial: from 3 o'clock round the bottom to the top right, leaving a gap for the tick.
+        let end = 294.7
+        for i in 0...72 {
+            let a = (Double(i) / 72 * end) * .pi / 180
+            let q = pt(32 + 21.5 * CGFloat(cos(a)), 37 + 21.5 * CGFloat(sin(a)))
+            if i == 0 { p.move(to: q) } else { p.addLine(to: q) }
+        }
+        p.move(to: pt(22, 37.5)); p.addLine(to: pt(29, 44.5)); p.addLine(to: pt(45, 27.5))   // tick
+        return p
+    }
+}
+
+struct MongezLogo: View {
+    var lineWidth: CGFloat = 2.5
+    var body: some View {
+        MongezLogoShape()
+            .stroke(LinearGradient(colors: [Theme.teal, Theme.coral], startPoint: .topLeading, endPoint: .bottomTrailing),
+                    style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round))
     }
 }
 
@@ -453,13 +657,11 @@ struct ModheshBadge: View {
     }
 }
 
-// MARK: - This month (completed)
+// MARK: - Today / this week / done this month
 
-/// Completed tasks and hours this month. It only changes when a task is completed
-/// (or edited), not with the running timer.
-struct MonthStats: View {
+struct StatsRow: View {
     @EnvironmentObject var store: Store
-    var compact = false
+    var narrow = false
 
     var body: some View {
         let cal = Calendar.current
@@ -467,37 +669,31 @@ struct MonthStats: View {
         let done = store.tasks.filter { t in
             t.status == .complete && cal.isDate(t.workDate ?? t.createdAt, equalTo: now, toGranularity: .month)
         }
-        let seconds = done.reduce(0) { $0 + $1.totalSeconds(at: $1.sessions.last?.end ?? $1.createdAt) }
         let month = DateFormatter()
-        month.dateFormat = "MMMM"
-        return VStack(alignment: .leading, spacing: compact ? 6 : 10) {
-            SectionLabel(text: month.string(from: now))
-            stat(value: "\(done.count)", label: done.count == 1 ? "task done" : "tasks done", icon: "checkmark.circle.fill")
-            stat(value: Fmt.hours(seconds), label: "hours", icon: "clock.fill")
+        month.dateFormat = "MMM"
+        return HStack(spacing: 8) {
+            tile("Today", Fmt.short(store.todaySeconds()))
+            tile("This week", Fmt.short(store.weekSeconds()))
+            tile("Done · \(month.string(from: now))", "\(done.count)")
+                .help("Tasks completed this month (by the day you finished them)")
         }
-        .padding(compact ? 10 : 14)
-        .frame(minWidth: compact ? 96 : 130, alignment: .leading)
-        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Color.primary.opacity(0.08)))
-        .help("Completed this month (by the day you finished them)")
     }
 
-    private func stat(value: String, label: String, icon: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Image(systemName: icon)
-                .font(.system(size: compact ? 11 : 13))
-                .foregroundStyle(Theme.cool)
-            Text(value)
-                .font(.system(size: compact ? 20 : 26, weight: .semibold, design: .rounded).monospacedDigit())
-                .gradientText()
-                .lineLimit(1)
-                .fixedSize()
-            Text(label)
-                .font(.system(size: 11, weight: .medium))
+    private func tile(_ label: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label.uppercased())
+                .font(.system(size: 10, weight: .semibold))
+                .tracking(0.8)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
-                .fixedSize()
+            Text(value)
+                .font(.system(size: narrow ? 16 : 18, weight: .semibold, design: .rounded).monospacedDigit())
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 13).padding(.vertical, 9)
+        .glassCard(radius: 16)
     }
 }
 
@@ -522,8 +718,8 @@ struct TaskRow: View {
                 }
             }
         }
-        .padding(.horizontal, 14).padding(.vertical, 12)
-        .glassCard(radius: 16, highlight: task.isRunning || subs.contains(where: { $0.isRunning }) || dropping)
+        .padding(.horizontal, 12).padding(.vertical, 10)
+        .glassCard(radius: 18, highlight: task.isRunning || subs.contains(where: { $0.isRunning }) || dropping)
         .scaleEffect(hovering ? 1.005 : 1)
         .onHover { hovering = $0 }
         .animation(.easeOut(duration: 0.15), value: hovering)
@@ -531,8 +727,8 @@ struct TaskRow: View {
             Button("Delete", role: .destructive) { store.delete(task.id) }
         } message: {
             Text(subs.isEmpty
-                 ? "This only removes it from TaskTimer. The folder and the sheet row stay."
-                 : "This also removes its \(subs.count) amend\(subs.count == 1 ? "" : "s") from TaskTimer. The folder and the sheet rows stay.")
+                 ? "This only removes it from Mongez. The folder and the sheet row stay."
+                 : "This also removes its \(subs.count) amend\(subs.count == 1 ? "" : "s") from Mongez. The folder and the sheet rows stay.")
         }
         .dropDestination(for: URL.self) { urls, _ in
             guard task.folderURL != nil else {
@@ -551,57 +747,47 @@ struct TaskRow: View {
         }
     }
 
-    /// The .aep file's own icon (After Effects' document icon), for the Open AE Project button.
-    private func aeIcon(_ ae: URL) -> NSImage {
-        NSWorkspace.shared.icon(forFile: ae.path)
-    }
-
     private func mainRow(hasSubs: Bool) -> some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 12) {
             Button { store.toggle(task.id) } label: {
                 Image(systemName: task.isRunning ? "pause.fill" : "play.fill")
             }
-            .buttonStyle(CircleIconButtonStyle(filled: task.isRunning, size: 36))
+            .buttonStyle(CircleIconButtonStyle(filled: task.isRunning, size: 34))
             .help(task.isRunning ? "Pause" : "Start")
 
             VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 8) {
-                    Text(task.name)
-                        .font(.system(size: 14, weight: .semibold))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
+                // The whole name, on two lines if it needs them, so tasks are easy to find.
+                Text(task.name)
+                    .font(.system(size: 14, weight: .semibold))
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 6) {
                     StatusPill(status: task.status).fixedSize()
+                    KindTag(task: task)
+                    clientMenu
                     ModheshBadge(taskID: task.id)
                     if task.pendingLog != nil {
                         Image(systemName: "exclamationmark.icloud")
                             .foregroundStyle(Theme.pink)
                             .help(task.pendingLog?.error ?? "Waiting to be sent")
                     }
-                }
-                // Drops the date (then the row number) when there's no room, instead of wrapping.
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 6) {
-                        clientMenu
-                        Text("·").foregroundStyle(.tertiary)
-                        Text(Fmt.nice.string(from: task.createdAt)).fixedSize()
-                        if let r = task.sheetRow {
-                            Text("·").foregroundStyle(.tertiary)
-                            Text("Row \(r)").fixedSize()
-                        }
+                    ViewThatFits(in: .horizontal) {
+                        Text("· " + Fmt.nice.string(from: task.createdAt)).fixedSize()
+                        EmptyView()
                     }
-                    clientMenu
                 }
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
             }
+            .layoutPriority(1)
 
-            Spacer(minLength: 8)
+            Spacer(minLength: 6)
 
-            if let f = task.folderURL { RenderThumb(folder: f) }
+            TaskTools(task: task, size: 27)
 
             VStack(alignment: .trailing, spacing: 2) {
                 Text(task.status == .complete ? "\(Fmt.hours(task.totalSeconds(at: store.now))) h" : Fmt.clock(task.totalSeconds(at: store.now)))
-                    .font(.system(size: 15, weight: .medium, design: .rounded).monospacedDigit())
+                    .font(.system(size: 13.5, weight: .medium, design: .rounded).monospacedDigit())
                     .lineLimit(1)
                     .fixedSize()
                     .foregroundStyle(task.isRunning ? AnyShapeStyle(Theme.linear) : AnyShapeStyle(HierarchicalShapeStyle.secondary))
@@ -613,55 +799,13 @@ struct TaskRow: View {
                 }
             }
 
-            HStack(spacing: 6) {
-                if let f = task.folderURL {
-                    Menu {
-                        Button("Open Project Folder") { NSWorkspace.shared.open(f) }
-                        if let r = FolderService.folder(in: f, matching: ["render"]) {
-                            Button("Open Render Folder") { NSWorkspace.shared.open(r) }
-                        }
-                    } label: {
-                        Image(systemName: "folder")
-                    }
-                    .menuStyle(.borderlessButton)
-                    .menuIndicator(.hidden)
-                    .fixedSize()
-                    .help("Open the task's folder or its Render folder")
-                    if let ae = FolderService.aeFile(in: f) {
-                        Button { NSWorkspace.shared.open(ae) } label: {
-                            Image(nsImage: aeIcon(ae)).resizable().frame(width: 18, height: 18)
-                        }
-                        .buttonStyle(.borderless)
-                        .fixedSize()
-                        .help("Open AE Project: \(ae.lastPathComponent)")
-                        Button { AEProjectTools.renderToTask(ae, taskFolder: f) } label: {
-                            Image(systemName: "film.stack")
-                        }
-                        .buttonStyle(.borderless)
-                        .fixedSize()
-                        .help("Set Render Outputs: the queued items in After Effects' Render Queue go to this task's Render folder, named \(FolderService.cleanName(f.lastPathComponent))_v01, _v02…")
-                        Button { AEProjectTools.organize(ae) } label: {
-                            Image(systemName: "rectangle.3.group")
-                        }
-                        .buttonStyle(.borderless)
-                        .fixedSize()
-                        .help("Organize AE Project: loose items in the project panel go into numbered folders (⌘Z in After Effects undoes it)")
-                        Button { AEProjectTools.collect(ae, taskFolder: f, taskName: task.name) } label: {
-                            Image(systemName: "shippingbox")
-                        }
-                        .buttonStyle(.borderless)
-                        .fixedSize()
-                        .help("Collect AE Project: copies the project and every file it uses into the task's Collect folder")
-                    }
-                }
-                Button { addAmend() } label: { Image(systemName: "plus.square.on.square") }
-                    .buttonStyle(CircleIconButtonStyle(size: 28))
-                    .help("Add an amend (subtask). It gets its own timer and its own row in the sheet.")
-                Button { store.requestDone(task.id) } label: {
-                    Text(doneLabel(task)).lineLimit(1).fixedSize()
-                }
-                .buttonStyle(GradientButtonStyle(compact: true))
+            Button { addAmend() } label: { Image(systemName: "plus") }
+                .buttonStyle(CircleIconButtonStyle(size: 27))
+                .help("Add an amend. It gets its own timer and can be linked to its own Modhesh task.")
+            Button { store.requestDone(task.id) } label: {
+                Text(doneLabel(task)).lineLimit(1).fixedSize().foregroundStyle(Theme.coral).fontWeight(.semibold)
             }
+            .buttonStyle(GlassButtonStyle(compact: true))
         }
         .contentShape(Rectangle())
         .contextMenu {
@@ -778,12 +922,12 @@ struct SubtaskRow: View {
                 .fixedSize()
                 .foregroundStyle(task.isRunning ? AnyShapeStyle(Theme.linear) : AnyShapeStyle(HierarchicalShapeStyle.secondary))
             Button { store.requestDone(task.id) } label: {
-                Text(doneLabel(task)).lineLimit(1).fixedSize()
+                Text(doneLabel(task)).lineLimit(1).fixedSize().foregroundStyle(Theme.coral).fontWeight(.semibold)
             }
-            .buttonStyle(GradientButtonStyle(compact: true))
+            .buttonStyle(GlassButtonStyle(compact: true))
         }
         .padding(.vertical, 6).padding(.trailing, 6)
-        .background(Color.primary.opacity(task.isRunning ? 0.08 : 0.04), in: RoundedRectangle(cornerRadius: 10))
+        .background(task.isRunning ? Theme.coral.opacity(0.10) : Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .contentShape(Rectangle())
         .contextMenu {
             Button(task.isRunning ? "Pause" : "Start") { store.toggle(task.id) }
@@ -804,7 +948,7 @@ struct SubtaskRow: View {
         .confirmationDialog("Delete “\(store.displayName(task))”?", isPresented: $confirmDelete) {
             Button("Delete", role: .destructive) { store.delete(task.id) }
         } message: {
-            Text("This only removes it from TaskTimer. Its sheet row stays.")
+            Text("This only removes it from Mongez. Its sheet row stays.")
         }
     }
 }

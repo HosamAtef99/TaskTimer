@@ -551,7 +551,7 @@ struct AdminView: View {
             } else {
                 Text(c.name).font(.system(size: 12, weight: .medium)).lineLimit(1)
             }
-            if isPitch { tag("Pitch", Theme.purple) }
+            if isPitch { tag("Pitch", Theme.pitch) }
             if !c.active { tag("Removed", Theme.orange) }
             Spacer(minLength: 8)
             Text("\(h.count) tasks").font(.system(size: 11)).foregroundStyle(.secondary)
@@ -684,7 +684,7 @@ struct AdminView: View {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(p.name).font(.system(size: 13, weight: .semibold)).lineLimit(1)
-                    if p.isAdmin { tag("Admin", Theme.purple) }
+                    if p.isAdmin { tag("Admin", Theme.coral) }
                     if p.banned { tag("Blocked", Theme.pink) }
                     if isMe { tag("You", Theme.blue) }
                     if !isValidEmail(p.email) { tag("Bad email", Theme.orange) }
@@ -805,7 +805,7 @@ struct AdminView: View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 3) {
                 Text("Start Fresh").font(.system(size: 13, weight: .semibold))
-                Text("Deletes every task and Modhesh link of every team. Accounts, teams and clients stay. Each person's TaskTimer drops its old tasks within 2 minutes and keeps a copy of them in its data folder.")
+                Text("Deletes every task and Modhesh link of every team. Accounts, teams and clients stay. Each person's Mongez drops its old tasks within 2 minutes and keeps a copy of them in its data folder.")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -1067,7 +1067,7 @@ struct AdminAddAccountSheet: View {
             defer { sending = false }
             do {
                 try await CloudSync.shared.teamAdmin(body)
-                created = "TaskTimer account\nEmail: \(e)\nPassword: \(p)"
+                created = "Mongez account\nEmail: \(e)\nPassword: \(p)"
                 await onDone()
             } catch {
                 self.error = error.localizedDescription

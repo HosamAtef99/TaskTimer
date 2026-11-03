@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleName</key>
-	<string>TaskTimer Dev</string>
+	<string>Mongez</string>
 	<key>CFBundleDisplayName</key>
-	<string>TaskTimer Dev</string>
+	<string>Mongez</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.hosam.tasktimer.dev</string>
 	<key>CFBundleExecutable</key>
@@ -25,7 +25,7 @@
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSAppleEventsUsageDescription</key>
-	<string>TaskTimer opens Chrome's extensions page so you can add the TaskTimer extension.</string>
+	<string>Mongez opens Chrome's extensions page so you can add its extension, and talks to After Effects when you press its buttons.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 </dict>

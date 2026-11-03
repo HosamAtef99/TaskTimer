@@ -261,8 +261,16 @@ final class Store: ObservableObject {
     var pendingCount: Int { tasks.filter { $0.pendingLog != nil }.count }
 
     func todaySeconds() -> TimeInterval {
-        let cal = Calendar.current
-        let start = cal.startOfDay(for: now)
+        seconds(since: Calendar.current.startOfDay(for: now))
+    }
+
+    /// Time worked this week (the week as this Mac's calendar starts it).
+    func weekSeconds() -> TimeInterval {
+        let start = Calendar.current.dateInterval(of: .weekOfYear, for: now)?.start ?? Calendar.current.startOfDay(for: now)
+        return seconds(since: start)
+    }
+
+    func seconds(since start: Date) -> TimeInterval {
         var sum: TimeInterval = 0
         for t in tasks {
             for s in t.sessions {

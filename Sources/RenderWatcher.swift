@@ -97,11 +97,11 @@ final class RenderWatcher {
         let allowed: String
         switch settings.authorizationStatus {
         case .authorized, .provisional: allowed = "allowed"
-        case .denied: allowed = "NOT allowed — turn on in System Settings → Notifications → TaskTimer Dev"
+        case .denied: allowed = "NOT allowed — turn on in System Settings → Notifications → Mongez"
         default: allowed = "not asked yet"
         }
         lines.append("Render notifications setting: " + (Pref.bool(Pref.renderNotify) ? "on" : "OFF (Settings → General)"))
-        lines.append("macOS notifications for TaskTimer: " + allowed)
+        lines.append("macOS notifications for Mongez: " + allowed)
         let active = Self.watched(t, store: store)
         lines.append("Task watched: " + (active ? "yes" : "NO — completed and not timed in the last 3 days"))
         guard let f = t.folderURL else {
@@ -124,7 +124,7 @@ final class RenderWatcher {
             }
             lines.append("Being watched now: " + (states[r.path] != nil ? "yes" : "no (starts within 10 s while the task is in progress)"))
         } catch {
-            lines.append("Can't read the task folder: \(error.localizedDescription) — allow TaskTimer Dev in System Settings → Privacy & Security → Files and Folders (or Full Disk Access)")
+            lines.append("Can't read the task folder: \(error.localizedDescription) — allow Mongez in System Settings → Privacy & Security → Files and Folders (or Full Disk Access)")
         }
         return lines.joined(separator: "\n")
     }

@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 extension Color {
     init(hex: UInt32, alpha: Double = 1) {
@@ -10,72 +11,114 @@ extension Color {
     }
 }
 
-/// Apple-style multicolour glow: blue → indigo → purple → pink → orange.
+extension Color {
+    /// A colour that follows light / dark mode.
+    static func dynamic(_ light: UInt32, _ dark: UInt32, alpha: Double = 1) -> Color {
+        Color(NSColor(name: nil) { appearance in
+            let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            let hex = isDark ? dark : light
+            return NSColor(srgbRed: CGFloat((hex >> 16) & 0xFF) / 255,
+                           green: CGFloat((hex >> 8) & 0xFF) / 255,
+                           blue: CGFloat(hex & 0xFF) / 255,
+                           alpha: CGFloat(alpha))
+        })
+    }
+}
+
+/// Mongez: teal glass with a coral accent (Hosam's pick, 1.30), in light and dark.
+/// The old names (blue, purple, pink…) are kept so every screen picks up the new colours.
 enum Theme {
-    static let blue = Color(hex: 0x0A84FF)
-    static let indigo = Color(hex: 0x5E5CE6)
-    static let purple = Color(hex: 0xBF5AF2)
-    static let pink = Color(hex: 0xFF375F)
-    static let orange = Color(hex: 0xFF9F0A)
-    static let green = Color(hex: 0x30D158)
+    // Main colours
+    static let teal = Color.dynamic(0x1E9E92, 0x2BB3A3)
+    static let tealLight = Color.dynamic(0x7FE0D4, 0x8FECDF)
+    static let tealDeep = Color.dynamic(0x13796F, 0x1E9E92)
+    static let coral = Color.dynamic(0xF27A69, 0xFF9585)
+    static let ink = Color.dynamic(0x0E2E2E, 0xE8F7F5)
 
-    static let colors: [Color] = [blue, indigo, purple, pink, orange]
+    // Tags
+    static let pitch = Color.dynamic(0xB06600, 0xFFC97A)
+    static let support = Color.dynamic(0x6A4FD8, 0xC2B5FF)
+    static let slate = Color.dynamic(0x55697F, 0xAEB6C6)
 
+    // Old names, mapped onto the new palette
+    static let blue = teal
+    static let indigo = tealDeep
+    static let purple = support
+    static let pink = Color.dynamic(0xE5484D, 0xFF7A80)     // errors
+    static let orange = Color.dynamic(0xD98A1C, 0xF5B54A)   // warnings
+    static let green = Color.dynamic(0x22A866, 0x3FCF85)    // done / OK
+
+    static let colors: [Color] = [tealLight, teal, coral]
+
+    /// Teal → coral (the running clock, highlights).
     static var linear: LinearGradient {
-        LinearGradient(colors: colors, startPoint: .leading, endPoint: .trailing)
+        LinearGradient(colors: [teal, coral], startPoint: .leading, endPoint: .trailing)
     }
     static var diagonal: LinearGradient {
-        LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
+        LinearGradient(colors: [teal, coral], startPoint: .topLeading, endPoint: .bottomTrailing)
     }
+    /// Teal only (icons, the play button).
     static var cool: LinearGradient {
-        LinearGradient(colors: [blue, indigo, purple], startPoint: .topLeading, endPoint: .bottomTrailing)
+        LinearGradient(colors: [tealLight, teal], startPoint: .topLeading, endPoint: .bottomTrailing)
     }
     static func angular(_ rotation: Double = 0) -> AngularGradient {
-        AngularGradient(colors: colors + [blue], center: .center, angle: .degrees(rotation))
+        AngularGradient(colors: [tealLight, teal, coral, tealLight], center: .center, angle: .degrees(rotation))
     }
 
     static func statusColor(_ s: TaskStatus) -> Color {
         switch s {
-        case .incoming: return purple
-        case .active, .inProcess: return blue
+        case .incoming: return slate
+        case .active, .inProcess: return teal
         case .complete: return green
+        }
+    }
+}
+
+// MARK: - Appearance
+
+/// Settings → General → Appearance: System, Light or Dark for every Mongez window.
+enum Appearance {
+    static func apply() {
+        switch UserDefaults.standard.string(forKey: Pref.appearance) ?? "system" {
+        case "light": NSApp.appearance = NSAppearance(named: .aqua)
+        case "dark": NSApp.appearance = NSAppearance(named: .darkAqua)
+        default: NSApp.appearance = nil
         }
     }
 }
 
 // MARK: - Background
 
-/// Soft blurred colour blobs behind a material, like the Apple Intelligence glow.
+/// Soft teal and coral light behind frosted glass.
 struct GlowBackground: View {
     @Environment(\.colorScheme) var scheme
     var animate = true
     @Local var phase = false
 
     var body: some View {
+        let dark = scheme == .dark
         ZStack {
-            (scheme == .dark ? Color(hex: 0x0B0B12) : Color(hex: 0xF5F5FA))
+            (dark ? Color(hex: 0x081416) : Color(hex: 0xEDF8F6))
             GeometryReader { geo in
                 let w = geo.size.width, h = geo.size.height
                 ZStack {
-                    blob(Theme.blue, size: w * 0.7)
-                        .offset(x: phase ? -w * 0.25 : -w * 0.32, y: phase ? -h * 0.32 : -h * 0.22)
-                    blob(Theme.purple, size: w * 0.6)
-                        .offset(x: phase ? w * 0.30 : w * 0.22, y: phase ? -h * 0.18 : -h * 0.30)
-                    blob(Theme.pink, size: w * 0.55)
-                        .offset(x: phase ? w * 0.20 : w * 0.32, y: phase ? h * 0.36 : h * 0.26)
-                    blob(Theme.orange, size: w * 0.45)
-                        .offset(x: phase ? -w * 0.22 : -w * 0.12, y: phase ? h * 0.40 : h * 0.32)
+                    blob(Color(hex: dark ? 0x12504A : 0x9BE6DC), size: w * 0.75)
+                        .offset(x: phase ? -w * 0.28 : -w * 0.34, y: phase ? -h * 0.30 : -h * 0.22)
+                    blob(Color(hex: dark ? 0x173E52 : 0xBCE3F0), size: w * 0.55)
+                        .offset(x: phase ? w * 0.32 : w * 0.24, y: phase ? -h * 0.20 : -h * 0.30)
+                    blob(Color(hex: dark ? 0x5A2E2A : 0xFFD3CB), size: w * 0.6)
+                        .offset(x: phase ? w * 0.26 : w * 0.34, y: phase ? h * 0.36 : h * 0.28)
                 }
                 .frame(width: w, height: h)
             }
             .blur(radius: 90)
-            .opacity(scheme == .dark ? 0.55 : 0.35)
-            Rectangle().fill(.ultraThinMaterial).opacity(scheme == .dark ? 0.35 : 0.55)
+            .opacity(dark ? 0.75 : 0.8)
+            Rectangle().fill(.ultraThinMaterial).opacity(dark ? 0.25 : 0.35)
         }
         .ignoresSafeArea()
         .onAppear {
             guard animate else { return }
-            withAnimation(.easeInOut(duration: 9).repeatForever(autoreverses: true)) { phase = true }
+            withAnimation(.easeInOut(duration: 12).repeatForever(autoreverses: true)) { phase = true }
         }
     }
 
@@ -84,21 +127,29 @@ struct GlowBackground: View {
     }
 }
 
-// MARK: - Card
+// MARK: - Glass
 
+/// Frosted glass with a bright edge, like Apple's Liquid Glass.
 struct GlassCard: ViewModifier {
+    @Environment(\.colorScheme) var scheme
     var radius: CGFloat = 18
     var highlight = false
     func body(content: Content) -> some View {
+        let dark = scheme == .dark
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
         content
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
+            .background(.ultraThinMaterial, in: shape)
+            .background(shape.fill(dark ? Color(hex: 0x16383A).opacity(0.35) : Color.white.opacity(0.45)))
             .overlay(
-                RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .strokeBorder(highlight ? AnyShapeStyle(Theme.diagonal)
-                                            : AnyShapeStyle(Color.primary.opacity(0.08)),
-                                  lineWidth: highlight ? 1.5 : 1)
+                shape.strokeBorder(
+                    highlight ? AnyShapeStyle(Theme.diagonal)
+                              : AnyShapeStyle(LinearGradient(
+                                    colors: dark ? [.white.opacity(0.22), .white.opacity(0.06)]
+                                                 : [.white.opacity(0.95), .white.opacity(0.45)],
+                                    startPoint: .top, endPoint: .bottom)),
+                    lineWidth: highlight ? 1.5 : 1)
             )
-            .shadow(color: .black.opacity(0.08), radius: 14, y: 6)
+            .shadow(color: dark ? .black.opacity(0.35) : Color(hex: 0x1E786E).opacity(0.10), radius: 16, y: 6)
     }
 }
 
@@ -106,9 +157,25 @@ extension View {
     func glassCard(radius: CGFloat = 18, highlight: Bool = false) -> some View {
         modifier(GlassCard(radius: radius, highlight: highlight))
     }
+    /// Teal text (titles, numbers).
     func gradientText() -> some View {
-        foregroundStyle(Theme.linear)
+        foregroundStyle(LinearGradient(colors: [Theme.teal, Theme.tealDeep], startPoint: .leading, endPoint: .trailing))
     }
+}
+
+/// A small round glass chip (tool buttons, tags).
+struct GlassChip: ViewModifier {
+    @Environment(\.colorScheme) var scheme
+    func body(content: Content) -> some View {
+        let dark = scheme == .dark
+        content
+            .background(Capsule().fill(dark ? Color.white.opacity(0.07) : Color.white.opacity(0.72)))
+            .overlay(Capsule().strokeBorder(dark ? Color.white.opacity(0.14) : Color.white.opacity(0.95), lineWidth: 1))
+    }
+}
+
+extension View {
+    func glassChip() -> some View { modifier(GlassChip()) }
 }
 
 // MARK: - Buttons
@@ -121,9 +188,9 @@ struct GradientButtonStyle: ButtonStyle {
             .foregroundStyle(.white)
             .padding(.horizontal, compact ? 12 : 16)
             .padding(.vertical, compact ? 6 : 9)
-            .background(Capsule().fill(Theme.linear))
-            .overlay(Capsule().strokeBorder(.white.opacity(0.25), lineWidth: 1))
-            .shadow(color: Theme.purple.opacity(configuration.isPressed ? 0.2 : 0.4), radius: 10, y: 4)
+            .background(Capsule().fill(Theme.coral))
+            .overlay(Capsule().strokeBorder(.white.opacity(0.3), lineWidth: 1))
+            .shadow(color: Theme.coral.opacity(configuration.isPressed ? 0.2 : 0.35), radius: 10, y: 4)
             .scaleEffect(configuration.isPressed ? 0.96 : 1)
             .animation(.spring(response: 0.25, dampingFraction: 0.7), value: configuration.isPressed)
             .contentShape(Capsule())
@@ -137,8 +204,7 @@ struct GlassButtonStyle: ButtonStyle {
             .font(.system(size: compact ? 12 : 13, weight: .medium))
             .padding(.horizontal, compact ? 10 : 14)
             .padding(.vertical, compact ? 6 : 8)
-            .background(.thinMaterial, in: Capsule())
-            .overlay(Capsule().strokeBorder(Color.primary.opacity(0.10), lineWidth: 1))
+            .glassChip()
             .scaleEffect(configuration.isPressed ? 0.96 : 1)
             .animation(.spring(response: 0.25, dampingFraction: 0.7), value: configuration.isPressed)
             .contentShape(Capsule())
@@ -151,17 +217,17 @@ struct CircleIconButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: size * 0.4, weight: .bold))
-            .foregroundStyle(filled ? AnyShapeStyle(Color.white) : AnyShapeStyle(HierarchicalShapeStyle.primary))
+            .foregroundStyle(filled ? AnyShapeStyle(Color.white) : AnyShapeStyle(Theme.teal))
             .frame(width: size, height: size)
             .background {
                 if filled {
-                    Circle().fill(Theme.diagonal)
+                    Circle().fill(LinearGradient(colors: [Theme.tealLight, Theme.teal], startPoint: .topLeading, endPoint: .bottomTrailing))
                 } else {
-                    Circle().fill(.thinMaterial)
+                    Circle().fill(Color.primary.opacity(0.05))
                 }
             }
-            .overlay(Circle().strokeBorder(Color.primary.opacity(filled ? 0 : 0.1), lineWidth: 1))
-            .shadow(color: filled ? Theme.purple.opacity(0.35) : .clear, radius: 8, y: 3)
+            .overlay(Circle().strokeBorder(filled ? Color.white.opacity(0.35) : Color.primary.opacity(0.1), lineWidth: 1))
+            .shadow(color: filled ? Theme.teal.opacity(0.35) : .clear, radius: 8, y: 3)
             .scaleEffect(configuration.isPressed ? 0.92 : 1)
             .animation(.spring(response: 0.25, dampingFraction: 0.7), value: configuration.isPressed)
             .contentShape(Circle())

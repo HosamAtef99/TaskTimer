@@ -73,7 +73,7 @@ struct ClientsView: View {
         HStack(spacing: 10) {
             Circle().fill(Theme.diagonal).frame(width: 8, height: 8)
             Text(c.name).font(.system(size: 13, weight: .medium)).lineLimit(1)
-            if c.isPitch { ClientTag(text: "Pitch", color: Theme.purple) }
+            if c.isPitch { ClientTag(text: "Pitch", color: Theme.pitch) }
             if c.isCloud && c.teamID != cloud.profile?.teamID, let t = c.teamName {
                 ClientTag(text: t, color: Theme.blue)
             }
@@ -147,6 +147,7 @@ struct SettingsView: View {
     @AppStorage(Pref.hideDock) var hideDock = false
     @AppStorage(Pref.pauseOnSleep) var pauseOnSleep = true
     @AppStorage(Pref.menuBarStyle) var menuBarStyle = "time"
+    @AppStorage(Pref.appearance) var appearance = "system"
     @AppStorage(Pref.renderNotify) var renderNotify = true
     @AppStorage(Pref.openFinderOnCreate) var openFinder = true
     @AppStorage(Pref.openAEOnCreate) var openAE = false
@@ -474,7 +475,7 @@ struct SettingsView: View {
     private var generalTab: some View {
         VStack(alignment: .leading, spacing: 14) {
             if TestCopies.isCopy {
-                Text("This is \(TestCopies.appTitle), a copy for trying another account at the same time. It doesn't update itself: open it again from TaskTimer Dev → Settings → General to bring it up to date.")
+                Text("This is \(TestCopies.appTitle), a copy for trying another account at the same time. It doesn't update itself: open it again from Mongez → Settings → General to bring it up to date.")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
@@ -488,13 +489,24 @@ struct SettingsView: View {
                         Button("Open Test Copy 3") { TestCopies.open(3) }
                             .buttonStyle(GlassButtonStyle(compact: true))
                     }
-                    Text("Opens another TaskTimer next to this one (“TaskTimer Test 2 / 3” in your Applications folder), with its own sign-in and tasks, so you can be signed in as admin, leader and member at once. Each press brings the copy up to this version.")
+                    Text("Opens another Mongez next to this one (“Mongez Test 2 / 3” in your Applications folder), with its own sign-in and tasks, so you can be signed in as admin, leader and member at once. Each press brings the copy up to this version.")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
             Divider()
-            Toggle("Open TaskTimer at login", isOn: $launchAtLogin)
+            FieldRow(label: "Appearance") {
+                Picker("", selection: $appearance) {
+                    Text("System").tag("system")
+                    Text("Light").tag("light")
+                    Text("Dark").tag("dark")
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(maxWidth: 280)
+                .onChange(of: appearance) { _ in Appearance.apply() }
+            }
+            Toggle("Open Mongez at login", isOn: $launchAtLogin)
                 .onChange(of: launchAtLogin) { on in
                     do {
                         if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
@@ -572,7 +584,7 @@ struct ModheshSettings: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 if !auth.signedIn {
-                    Label("Sign in under Settings → Team first — Modhesh works through your TaskTimer account.",
+                    Label("Sign in under Settings → Team first — Modhesh works through your Mongez account.",
                           systemImage: "person.crop.circle.badge.exclamationmark")
                         .font(.system(size: 12)).foregroundStyle(Theme.orange)
                         .fixedSize(horizontal: false, vertical: true)
@@ -655,7 +667,7 @@ struct ModheshOwnerRow: View {
         if let seen = cloud.modheshSeenName, !seen.isEmpty {
             if cloud.modheshMismatch {
                 VStack(alignment: .leading, spacing: 8) {
-                    Label("Modhesh in Chrome is signed in as “\(seen)” — not this TaskTimer account, so its tasks aren't taken.",
+                    Label("Modhesh in Chrome is signed in as “\(seen)” — not this Mongez account, so its tasks aren't taken.",
                           systemImage: "exclamationmark.triangle.fill")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(Theme.orange)

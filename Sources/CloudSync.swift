@@ -620,7 +620,7 @@ final class CloudSync: ObservableObject {
         guard !fresh.isEmpty else { return }
         let names = fresh.prefix(3).map(\.title).joined(separator: ", ")
         Store.shared.notify(title: fresh.count == 1 ? "New task on Modhesh" : "\(fresh.count) new tasks on Modhesh",
-                            body: names + " — open Modhesh in TaskTimer to link it.")
+                            body: names + " — open Modhesh in Mongez to link it.")
         Store.shared.flash("New on Modhesh: \(names)")
     }
 

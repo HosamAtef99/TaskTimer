@@ -31,7 +31,7 @@ struct ModheshView: View {
             if all.isEmpty && cloud.modheshError == nil {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("No Modhesh tasks pending or in progress.").font(.system(size: 13, weight: .semibold))
-                    Text("Install the TaskTimer extension in Chrome and sign in to it, then press Check now in the extension (Chrome's toolbar) — your Modhesh tasks show up here.")
+                    Text("Install the Mongez extension in Chrome and sign in to it, then press Check now in the extension (Chrome's toolbar) — your Modhesh tasks show up here.")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -174,7 +174,7 @@ struct ModheshView: View {
             if let id = m.taskID, let t = store.task(id) {
                 VStack(alignment: .trailing, spacing: 2) {
                     Text(store.displayName(t)).font(.system(size: 12, weight: .medium)).lineLimit(1)
-                    Text("\(Fmt.hours(t.totalSeconds(at: store.now))) h in TaskTimer" + (m.autoLinked ? " · linked by name" : ""))
+                    Text("\(Fmt.hours(t.totalSeconds(at: store.now))) h in Mongez" + (m.autoLinked ? " · linked by name" : ""))
                         .font(.system(size: 10)).foregroundStyle(.secondary)
                     if let at = m.submittedAt {
                         Text("Sent to approver \(Fmt.relative(at)) · \(Fmt.hours(m.submittedSeconds ?? 0)) h")

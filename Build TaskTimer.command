@@ -8,7 +8,7 @@ set -e
 
 # Hosam's dev copy: its own name, executable and bundle ID, so it installs
 # next to the team's TaskTimer instead of replacing it.
-APP_NAME="TaskTimer Dev"
+APP_NAME="Mongez"
 EXE="TaskTimerDev"
 BUNDLE_ID="com.hosam.tasktimer.dev"
 
@@ -24,7 +24,7 @@ fail() {
 }
 
 VERSION="$(tr -d ' \n\r' < Resources/VERSION 2>/dev/null || echo 1.0)"
-say "TaskTimer Dev $VERSION"
+say "Mongez $VERSION"
 
 say "Checking the Swift compiler"
 if ! xcrun --find swiftc >/dev/null 2>&1; then

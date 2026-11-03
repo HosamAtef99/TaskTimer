@@ -177,7 +177,7 @@ struct TeamView: View {
                 Circle().fill(running != nil ? Theme.green : Color.secondary.opacity(0.4)).frame(width: 8, height: 8)
                 Text(m.name).font(.system(size: 12, weight: .semibold)).lineLimit(1)
                 if m.isLeader {
-                    Text("Leader").font(.system(size: 9, weight: .semibold)).foregroundStyle(Theme.purple)
+                    Text("Leader").font(.system(size: 9, weight: .semibold)).foregroundStyle(Theme.coral)
                 }
             }
             if let r = running {
@@ -303,7 +303,7 @@ struct TeamView: View {
 
     private func statusColor(_ s: String) -> Color {
         switch s {
-        case "incoming": return Theme.purple
+        case "incoming": return Theme.slate
         case "complete": return Theme.green
         default: return Theme.blue
         }
@@ -531,8 +531,8 @@ struct AddMemberSheet: View {
     }
 
     var body: some View {
-        SheetFrame(title: "Add Member", subtitle: mode == .new ? "Creates their TaskTimer account in your team"
-                                                               : "Someone who already has a TaskTimer account", icon: "person.badge.plus") {
+        SheetFrame(title: "Add Member", subtitle: mode == .new ? "Creates their Mongez account in your team"
+                                                               : "Someone who already has a Mongez account", icon: "person.badge.plus") {
             if let created {
                 VStack(alignment: .leading, spacing: 8) {
                     Label(mode == .new ? "Done ✓" : "Added to your team ✓", systemImage: "checkmark.circle.fill")
@@ -639,9 +639,9 @@ struct AddMemberSheet: View {
                 } else {
                     let r = try await CloudSync.shared.teamAdmin(["action": "create", "name": n, "email": e, "password": p])
                     if (r["existing"] as? Bool) == true {
-                        created = "\(e) already had a TaskTimer account and is now in your team.\nThey sign in with their current password."
+                        created = "\(e) already had a Mongez account and is now in your team.\nThey sign in with their current password."
                     } else {
-                        created = "TaskTimer account\nEmail: \(e)\nPassword: \(p)"
+                        created = "Mongez account\nEmail: \(e)\nPassword: \(p)"
                     }
                 }
                 await onDone()
@@ -706,7 +706,7 @@ struct ResetPasswordSheet: View {
             do {
                 try await CloudSync.shared.teamAdmin(["action": asAdmin ? "admin_reset" : "reset", "id": member.id, "password": p])
                 NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString("TaskTimer\nEmail: \(member.email)\nNew password: \(p)", forType: .string)
+                NSPasteboard.general.setString("Mongez\nEmail: \(member.email)\nNew password: \(p)", forType: .string)
                 store.flash("Password reset — copied to send to \(member.name)")
                 dismiss()
             } catch {

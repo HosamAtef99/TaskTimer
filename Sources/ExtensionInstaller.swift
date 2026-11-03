@@ -92,7 +92,7 @@ struct AddExtensionSheet: View {
     @Local var result: ExtensionInstaller.ChromeResult = .opened
 
     var body: some View {
-        SheetFrame(title: "Add the Chrome extension", subtitle: "Once — then it updates by itself with TaskTimer",
+        SheetFrame(title: "Add the Chrome extension", subtitle: "Once — then it updates by itself with Mongez",
                    icon: "puzzlepiece.extension.fill") {
             switch result {
             case .noChrome:
@@ -102,7 +102,7 @@ struct AddExtensionSheet: View {
                     .fixedSize(horizontal: false, vertical: true)
             case .chromeOnly:
                 HStack(spacing: 8) {
-                    Label("Chrome didn't open the extensions page. Click Chrome's address bar, paste (⌘V) and press Return — or allow TaskTimer to control Chrome in System Settings → Privacy & Security → Automation, then press Open Chrome again.",
+                    Label("Chrome didn't open the extensions page. Click Chrome's address bar, paste (⌘V) and press Return — or allow Mongez to control Chrome in System Settings → Privacy & Security → Automation, then press Open Chrome again.",
                           systemImage: "exclamationmark.triangle.fill")
                         .font(.system(size: 12)).foregroundStyle(Theme.orange)
                         .fixedSize(horizontal: false, vertical: true)
@@ -115,8 +115,8 @@ struct AddExtensionSheet: View {
             VStack(alignment: .leading, spacing: 12) {
                 step(1, "In the Chrome tab that just opened (chrome://extensions), turn on **Developer mode** — top right.")
                 step(2, "Drag the **TaskTimer Chrome Extension** folder from the Finder window onto that Chrome page.\nOr press **Load unpacked**, then ⌘⇧G, paste the path (**Copy Path** below) and press Select.")
-                step(3, "Click the puzzle icon 🧩 in Chrome's toolbar → **TaskTimer for Modhesh**, and sign in with the same account as TaskTimer.")
-                step(4, "Stay signed in to Modhesh in Chrome. That's it — TaskTimer shows “Extension connected” within a few minutes.")
+                step(3, "Click the puzzle icon 🧩 in Chrome's toolbar → **TaskTimer for Modhesh**, and sign in with the same account as Mongez.")
+                step(4, "Stay signed in to Modhesh in Chrome. That's it — Mongez shows “Extension connected” within a few minutes.")
             }
             .padding(14)
             .glassCard(radius: 14)
@@ -285,7 +285,7 @@ struct ExtensionStatusRow: View {
             return "Version \(cloud.extensionVersion ?? "?") · checked in \(Fmt.relative(d))"
         }
         if monitor.installed {
-            return "Sign in to it with your TaskTimer account: click 🧩 in Chrome → TaskTimer for Modhesh."
+            return "Sign in to it with your Mongez account: click 🧩 in Chrome → TaskTimer for Modhesh."
         }
         return "Needed to read Modhesh and log your time there."
     }

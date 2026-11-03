@@ -225,7 +225,7 @@ enum AfterEffects {
             DispatchQueue.main.async {
                 if err == nil { done(.success(text)); return }
                 if code == -1743 {
-                    done(.failure(Err("TaskTimer isn't allowed to control After Effects. Turn it on in System Settings → Privacy & Security → Automation → TaskTimer Dev.")))
+                    done(.failure(Err("Mongez isn't allowed to control After Effects. Turn it on in System Settings → Privacy & Security → Automation → Mongez.")))
                 } else if code == -1712 {
                     done(.failure(Err("After Effects didn't answer in time.")))
                 } else {

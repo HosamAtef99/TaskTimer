@@ -34,6 +34,7 @@ enum Pref {
     static let modheshAutoSubmit = "modheshAutoSubmit"
     static let openFinderOnCreate = "openFinderOnCreate"
     static let openAEOnCreate = "openAEOnCreate"
+    static let appearance = "appearance"   // "system" | "light" | "dark"
     static let organizeBeforeCollect = "organizeBeforeCollect"  // Collect organizes the open project first (1.30)
 
     // Read from the sheet (Settings → Sheet → Sync from Sheet)
@@ -81,6 +82,7 @@ enum Pref {
             modheshAutoSubmit: true,
             openFinderOnCreate: true,
             openAEOnCreate: false,
+            appearance: "system",
             organizeBeforeCollect: true,
             tabMode: "auto",
             folderMode: "location",

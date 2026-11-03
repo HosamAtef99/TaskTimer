@@ -17,7 +17,7 @@ enum TestCopies {
     static var isCopy: Bool { number != nil }
 
     /// "TaskTimer Dev", or "TaskTimer Test 2" in a copy.
-    static var appTitle: String { number.map { "TaskTimer Test \($0)" } ?? "TaskTimer Dev" }
+    static var appTitle: String { number.map { "Mongez Test \($0)" } ?? "Mongez" }
 
     /// Application Support folder for this app's sign-in and data.
     static var supportDir: URL {
@@ -29,7 +29,7 @@ enum TestCopies {
 
     static func copyURL(_ n: Int) -> URL {
         FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Applications/TaskTimer Test \(n).app", isDirectory: true)
+            .appendingPathComponent("Applications/Mongez Test \(n).app", isDirectory: true)
     }
 
     /// Makes (or refreshes) copy `n` and opens it.
@@ -48,10 +48,13 @@ enum TestCopies {
                     Thread.sleep(forTimeInterval: 0.2)
                 }
                 if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
+                // Before the rename to Mongez the copies were "TaskTimer Test N".
+                let old = dest.deletingLastPathComponent().appendingPathComponent("TaskTimer Test \(n).app")
+                if fm.fileExists(atPath: old.path) { try? fm.removeItem(at: old) }
                 try fm.copyItem(at: src, to: dest)
                 let plist = dest.appendingPathComponent("Contents/Info.plist")
                 run("/usr/libexec/PlistBuddy", ["-c", "Set :CFBundleIdentifier \(id)", plist.path])
-                run("/usr/libexec/PlistBuddy", ["-c", "Set :CFBundleName 'TaskTimer Test \(n)'", plist.path])
+                run("/usr/libexec/PlistBuddy", ["-c", "Set :CFBundleName 'Mongez Test \(n)'", plist.path])
                 run("/usr/libexec/PlistBuddy", ["-c", "Delete :CFBundleDisplayName", plist.path])
                 run("/usr/bin/xattr", ["-cr", dest.path])
                 if run("/usr/bin/codesign", ["--force", "--deep", "--sign", "-", dest.path]) != 0 {
