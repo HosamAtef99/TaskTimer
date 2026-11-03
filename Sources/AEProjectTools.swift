@@ -162,9 +162,30 @@ enum AEProjectTools {
     /// solids, missing. Items already inside a folder stay where they are. One undo step.
     static func organize(_ aep: URL) {
         guard needAE(aep) else { return }
-        let script = """
+        let script = organizeScript(open: openAndSave(aep), saveAfter: false)
+        AfterEffects.doScript(script, activate: true) { result in
+            Task { @MainActor in
+                switch result {
+                case .success(let text):
+                    if text == "notopen" {
+                        alert("Couldn't open the project", "Open “\(aep.lastPathComponent)” in After Effects, then try again.")
+                    } else {
+                        let n = Int(text.split(separator: " ").last ?? "") ?? 0
+                        Store.shared.flash(n == 0 ? "The project was already tidy" : "Organized \(n) item\(n == 1 ? "" : "s") into folders (⌘Z in After Effects undoes it)")
+                    }
+                case .failure(let e):
+                    alert("Couldn't organize the project", e.localizedDescription)
+                }
+            }
+        }
+    }
+
+    /// The Organize script. `open` runs first (it may return "notopen"); with `saveAfter` the
+    /// project is saved once it's organized (Collect reads the saved file).
+    private static func organizeScript(open: String, saveAfter: Bool) -> String {
+        """
         (function () {
-        \(openAndSave(aep))
+        \(open)
           app.beginUndoGroup("TaskTimer: Organize project");
           var root = app.project.rootFolder;
           var bins = {};
@@ -210,24 +231,10 @@ enum AEProjectTools {
             if (dest) { it.parentFolder = bin(dest); moved++; }
           }
           app.endUndoGroup();
+          \(saveAfter ? "if (app.project.dirty) app.project.save();" : "")
           return "ok " + moved;
         })();
         """
-        AfterEffects.doScript(script, activate: true) { result in
-            Task { @MainActor in
-                switch result {
-                case .success(let text):
-                    if text == "notopen" {
-                        alert("Couldn't open the project", "Open “\(aep.lastPathComponent)” in After Effects, then try again.")
-                    } else {
-                        let n = Int(text.split(separator: " ").last ?? "") ?? 0
-                        Store.shared.flash(n == 0 ? "The project was already tidy" : "Organized \(n) item\(n == 1 ? "" : "s") into folders (⌘Z in After Effects undoes it)")
-                    }
-                case .failure(let e):
-                    alert("Couldn't organize the project", e.localizedDescription)
-                }
-            }
-        }
     }
 
     // MARK: Collect
@@ -239,17 +246,35 @@ enum AEProjectTools {
     /// (PSD / AI layers keep their layer), with After Effects' relative paths set too, so the
     /// folder also opens on another Mac. The project you're working on isn't changed. If it's
     /// open in After Effects with unsaved changes, it's saved first.
+    /// With Settings → Folders → "Organize the AE project before Collect" (on by default), a
+    /// project that's open in After Effects is organized (like Organize AE Project) and saved
+    /// first. A project that isn't open is collected as it is (After Effects isn't opened for it).
     static func collect(_ aep: URL, taskFolder: URL, taskName: String) {
         let run = { collectFromFile(aep, taskFolder: taskFolder, taskName: taskName) }
         guard AfterEffects.isRunning else { run(); return }
-        let save = """
-        (function () {
+        let organize = Pref.bool(Pref.organizeBeforeCollect)
+        let isOpen = """
           var want = \(js(aep.path));
-          if (app.project && app.project.file && app.project.file.fsName === want && app.project.dirty) app.project.save();
-          return "ok";
-        })();
+          if (!app.project || !app.project.file || app.project.file.fsName !== want) return "notopen";
         """
-        AfterEffects.doScript(save, timeout: 60) { _ in Task { @MainActor in run() } }
+        let script = organize
+            ? organizeScript(open: isOpen, saveAfter: true)
+            : """
+            (function () {
+            \(isOpen)
+              if (app.project.dirty) app.project.save();
+              return "ok";
+            })();
+            """
+        AfterEffects.doScript(script, timeout: 120) { result in
+            Task { @MainActor in
+                if organize, case .success(let text) = result, text.hasPrefix("ok ") {
+                    let n = Int(text.split(separator: " ").last ?? "") ?? 0
+                    if n > 0 { Store.shared.flash("Organized \(n) item\(n == 1 ? "" : "s") into folders, then collecting…") }
+                }
+                run()
+            }
+        }
     }
 
     private static func collectFromFile(_ aep: URL, taskFolder: URL, taskName: String) {

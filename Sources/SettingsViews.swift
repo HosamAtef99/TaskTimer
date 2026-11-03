@@ -150,6 +150,7 @@ struct SettingsView: View {
     @AppStorage(Pref.renderNotify) var renderNotify = true
     @AppStorage(Pref.openFinderOnCreate) var openFinder = true
     @AppStorage(Pref.openAEOnCreate) var openAE = false
+    @AppStorage(Pref.organizeBeforeCollect) var organizeFirst = true
     @AppStorage(Pref.tabMode) var tabMode = "auto"
     @AppStorage(Pref.tabName) var tabName = ""
     @AppStorage(Pref.statusComplete) var statusComplete = ""
@@ -449,6 +450,11 @@ struct SettingsView: View {
                 .fixedSize(horizontal: false, vertical: true)
             Toggle("Open the folder in Finder after creating", isOn: $openFinder)
             Toggle("Open the AE project after creating", isOn: $openAE)
+            Toggle("Organize the AE project before Collect", isOn: $organizeFirst)
+            Text("When the task's project is open in After Effects, Collect first sorts its loose items into folders (like Organize AE Project) and saves it, then collects. A project that isn't open is collected as it is.")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.trailing, 6)
         }
