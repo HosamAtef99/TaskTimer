@@ -229,6 +229,58 @@ drop policy if exists tasks_delete on public.tasks;
 create policy tasks_delete on public.tasks for delete to authenticated
   using (user_id = auth.uid());
 
+-- ───────────────────────── Clients and pitches (1.30) ─────────────────────────
+-- Only admins add clients and pitches, each to the team that handles it, so every account
+-- has one spelling everywhere and its hours can be measured. Everyone signed in can read the
+-- list (a member doing support for another team searches all clients).
+-- A pitch is a short-lived account: Open → Won (becomes a normal client of its team) or
+-- Closed (active = false: hidden from the pickers, its hours stay).
+create table if not exists public.clients (
+  id         uuid primary key default gen_random_uuid(),
+  name       text not null,
+  team_id    uuid references public.teams(id) on delete set null,
+  kind       text not null default 'client' check (kind in ('client', 'pitch')),
+  active     boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create unique index if not exists clients_name_unique on public.clients (lower(name));
+
+alter table public.clients enable row level security;
+drop policy if exists clients_select on public.clients;
+create policy clients_select on public.clients for select to authenticated using (true);
+drop policy if exists clients_admin on public.clients;
+create policy clients_admin on public.clients for all to authenticated
+  using (public.is_admin()) with check (public.is_admin());
+
+-- Team names are needed next to the clients of other teams (support); they aren't secret.
+drop policy if exists teams_select on public.teams;
+create policy teams_select on public.teams for select to authenticated using (true);
+
+-- On each task: which client (by id; the name stays in `client`), whether it was support for
+-- another team's client, and who approves it on Modhesh (picked at Done; the extension uses it).
+-- No foreign keys on purpose: a deleted client or leader must never stop a task from syncing.
+alter table public.tasks add column if not exists client_id     uuid;
+alter table public.tasks add column if not exists support       boolean not null default false;
+alter table public.tasks add column if not exists approver_id   uuid;
+alter table public.tasks add column if not exists approver_name text;
+
+-- Every team leader, for the Approver list at Done (members can't read other teams' profiles).
+create or replace function public.leaders()
+returns table (id uuid, full_name text, email text, team_id uuid, team_name text)
+language sql stable security definer set search_path = public as $$
+  select p.id, p.full_name, p.email, p.team_id, t.name
+    from public.profiles p left join public.teams t on t.id = p.team_id
+   where p.role = 'leader' and auth.uid() is not null
+   order by t.name, p.full_name
+$$;
+revoke execute on function public.leaders() from public, anon;
+grant execute on function public.leaders() to authenticated;
+
+-- Modhesh's own Start Date of each task (read by the extension). TaskTimer uses it as the
+-- task's day at Done; the extension no longer writes a Start Date into Modhesh.
+alter table public.modhesh_tasks add column if not exists start_date date;
+
 -- ───────────────────────── A new team and its leader (run by hand) ─────────────────────────
 -- 1) Authentication → Users → Add user → Create new user (tick Auto Confirm User) for the leader.
 -- 2) Then, with the team name and the leader's email:

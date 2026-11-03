@@ -1,47 +1,128 @@
 import SwiftUI
 import AppKit
 
-// MARK: - Client picker (pick from the saved list, or add a new one inline)
+// MARK: - Client picker
 
+/// Picks the task's client from the list the admin keeps (nobody adds clients here): my team's
+/// clients, then my team's open pitches. With "Support" on, it searches every other team's
+/// clients instead. Before the admin's list has arrived it shows the old local list.
 struct ClientPicker: View {
     @EnvironmentObject var store: Store
+    @ObservedObject var cloud = CloudSync.shared
     @Binding var selection: UUID?
-    @Local var adding = false
-    @Local var newName = ""
+    @Binding var support: Bool
+    var allowSupport: Bool
+    @Local var search = ""
+
+    init(selection: Binding<UUID?>, support: Binding<Bool> = .constant(false), allowSupport: Bool = false) {
+        _selection = selection
+        _support = support
+        self.allowSupport = allowSupport
+    }
+
+    private var team: String? { cloud.profile?.teamID }
+
+    private func isMine(_ c: Client) -> Bool { team == nil || c.teamID == team }
+
+    private var mine: [Client] { store.teamClients(team) }
+    private var pitches: [Client] { store.teamPitches(team) }
+
+    /// The current choice when it isn't in the lists any more (removed by the admin, an old name).
+    private var stray: Client? {
+        guard let id = selection, let c = store.client(id) else { return nil }
+        return (mine + pitches).contains(where: { $0.id == id }) ? nil : c
+    }
+
+    private var supportMatches: [Client] {
+        let q = search.trimmingCharacters(in: .whitespaces)
+        return store.pickableClients
+            .filter { !isMine($0) }
+            .filter { q.isEmpty || $0.name.localizedCaseInsensitiveContains(q)
+                || ($0.teamName ?? "").localizedCaseInsensitiveContains(q) }
+    }
 
     var body: some View {
-        HStack(spacing: 8) {
-            if adding {
-                TextField("New client name", text: $newName)
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit(commit)
-                Button("Add", action: commit)
-                    .buttonStyle(GradientButtonStyle(compact: true))
-                    .disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty)
-                Button("Cancel") { adding = false; newName = "" }
-                    .buttonStyle(GlassButtonStyle(compact: true))
+        VStack(alignment: .leading, spacing: 8) {
+            if store.hasCloudClients {
+                if allowSupport && support { supportList } else { teamPicker }
+                if allowSupport && team != nil {
+                    Toggle("Support — I'm helping another team on one of its clients", isOn: Binding(
+                        get: { support },
+                        set: { on in
+                            support = on
+                            search = ""
+                            // Keep the client only if it still fits the list now shown.
+                            if let id = selection, let c = store.client(id), on == isMine(c) { selection = nil }
+                        }))
+                        .font(.system(size: 12))
+                }
             } else {
                 Picker("", selection: $selection) {
                     Text("— Choose client —").tag(UUID?.none)
-                    ForEach(store.clients) { c in
-                        Text(c.missingFromSheet == true ? "\(c.name)  (not in sheet)" : c.name).tag(UUID?.some(c.id))
-                    }
+                    ForEach(store.clients) { c in Text(c.name).tag(UUID?.some(c.id)) }
                 }
                 .labelsHidden()
                 .frame(maxWidth: .infinity)
-                Button {
-                    adding = true
-                } label: { Image(systemName: "plus") }
-                    .buttonStyle(CircleIconButtonStyle(size: 26))
-                    .help("Add a client to the list")
+                Text("Clients are added by the admin. Sign in (Settings → Team) to get your team's list.")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
 
-    private func commit() {
-        if let c = store.addClient(newName) { selection = c.id }
-        newName = ""
-        adding = false
+    private var teamPicker: some View {
+        Picker("", selection: $selection) {
+            Text("— Choose client —").tag(UUID?.none)
+            ForEach(mine) { c in Text(c.name).tag(UUID?.some(c.id)) }
+            if !pitches.isEmpty {
+                Section("Pitches") {
+                    ForEach(pitches) { c in Text("Pitch · \(c.name)").tag(UUID?.some(c.id)) }
+                }
+            }
+            if let c = stray {
+                Divider()
+                Text(c.name + (c.isActive ? "" : "  (removed)")).tag(UUID?.some(c.id))
+            }
+        }
+        .labelsHidden()
+        .frame(maxWidth: .infinity)
+    }
+
+    private var supportList: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                TextField("Search the client you're supporting", text: $search).textFieldStyle(.plain)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 2) {
+                    ForEach(supportMatches) { c in
+                        Button { selection = c.id } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: selection == c.id ? "checkmark.circle.fill" : "circle")
+                                    .foregroundStyle(selection == c.id ? AnyShapeStyle(Theme.purple) : AnyShapeStyle(HierarchicalShapeStyle.tertiary))
+                                Text(c.name).font(.system(size: 12, weight: .medium)).lineLimit(1)
+                                if c.isPitch { ClientTag(text: "Pitch", color: Theme.purple) }
+                                Spacer()
+                                Text(c.teamName ?? "No team").font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                            }
+                            .padding(.horizontal, 6).padding(.vertical, 4)
+                            .background(selection == c.id ? Theme.purple.opacity(0.12) : Color.clear,
+                                        in: RoundedRectangle(cornerRadius: 6))
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    if supportMatches.isEmpty {
+                        Text(search.isEmpty ? "No other team has clients yet." : "No client matches “\(search)”.")
+                            .font(.system(size: 11)).foregroundStyle(.secondary).padding(6)
+                    }
+                }
+            }
+            .frame(height: 130)
+        }
     }
 }
 
@@ -93,6 +174,7 @@ struct NewTaskSheet: View {
 
     @Local var name = ""
     @Local var clientID: UUID? = nil
+    @Local var support = false
     @Local var makeFolder = true
     @Local var startNow = true
     @Local var location: String = Pref.string(Pref.lastLocation)
@@ -106,7 +188,7 @@ struct NewTaskSheet: View {
                     .font(.system(size: 14))
             }
             FieldRow(label: "Client / Account") {
-                ClientPicker(selection: $clientID)
+                ClientPicker(selection: $clientID, support: $support, allowSupport: true)
             }
 
             VStack(alignment: .leading, spacing: 10) {
@@ -165,6 +247,7 @@ struct NewTaskSheet: View {
             }
         }
         .frame(width: 480)
+        .task { await CloudSync.shared.loadClients() }
     }
 
     private var autoRoot: URL? { store.autoFolderRoot(for: clientID) }
@@ -204,7 +287,7 @@ struct NewTaskSheet: View {
                 UserDefaults.standard.set(location, forKey: Pref.lastLocation)
             }
             store.addTask(name: clean, clientID: clientID, folder: nil, start: false, incoming: true,
-                          wantsFolder: makeFolder, folderBase: autoRoot == nil ? location : nil)
+                          wantsFolder: makeFolder, folderBase: autoRoot == nil ? location : nil, support: support)
             store.flash("Added “\(clean)” to Incoming" + (makeFolder ? " — its folder is made when you start it" : ""))
             dismiss()
             return
@@ -220,13 +303,9 @@ struct NewTaskSheet: View {
                 return
             }
         }
-        store.addTask(name: clean, clientID: clientID, folder: folder, start: true)
+        store.addTask(name: clean, clientID: clientID, folder: folder, start: true, support: support)
         if let folder { store.openNewFolder(folder) }
-        if folder != nil && FolderService.templateIsMissing {
-            store.flash("Created “\(clean)” — no AE template set (Settings → Folders)")
-        } else {
-            store.flash("Created “\(clean)” — timer running")
-        }
+        store.flash("Created “\(clean)” — timer running")
         dismiss()
     }
 }
@@ -238,8 +317,13 @@ struct DoneSheet: View {
     @Environment(\.dismiss) var dismiss
     let taskID: UUID
 
+    @ObservedObject var cloud = CloudSync.shared
     @Local var name = ""
     @Local var clientID: UUID? = nil
+    @Local var support = false
+    @Local var approverID = ""
+    @Local var approverTouched = false
+    @Local var dateFromModhesh = false
     @Local var date = Date()
     @Local var hours = 0
     @Local var minutes = 0
@@ -264,7 +348,7 @@ struct DoneSheet: View {
                 }
             }
             FieldRow(label: "Client / Account") {
-                ClientPicker(selection: $clientID)
+                ClientPicker(selection: $clientID, support: $support, allowSupport: true)
             }
 
             // Time — big and simple, in steps of half an hour.
@@ -297,6 +381,10 @@ struct DoneSheet: View {
                     DatePicker("", selection: $date, displayedComponents: .date)
                         .labelsHidden()
                         .datePickerStyle(.field)
+                    if dateFromModhesh {
+                        Text("Start Date on Modhesh")
+                            .font(.system(size: 10)).foregroundStyle(.secondary)
+                    }
                 }
                 FieldRow(label: "Deliverables") {
                     HStack(spacing: 6) {
@@ -323,12 +411,29 @@ struct DoneSheet: View {
                 Spacer(minLength: 0)
             }
 
-            FieldRow(label: "Did you face any challenges?") {
-                Picker("", selection: $challenge) {
-                    ForEach(ModheshSettings.challenges, id: \.0) { c in Text(c.1).tag(c.0) }
+            HStack(alignment: .top, spacing: 18) {
+                FieldRow(label: "Did you face any challenges?") {
+                    Picker("", selection: $challenge) {
+                        ForEach(ModheshSettings.challenges, id: \.0) { c in Text(c.1).tag(c.0) }
+                    }
+                    .labelsHidden()
+                    .frame(maxWidth: 220, alignment: .leading)
                 }
-                .labelsHidden()
-                .frame(maxWidth: 260, alignment: .leading)
+                FieldRow(label: "Approver on Modhesh") {
+                    if cloud.leaders.isEmpty {
+                        Text("Your team leader").font(.system(size: 12)).foregroundStyle(.secondary)
+                    } else {
+                        Picker("", selection: Binding(get: { approverID },
+                                                      set: { approverID = $0; approverTouched = true })) {
+                            Text("— Choose —").tag("")
+                            ForEach(cloud.leaders) { l in
+                                Text(l.teamName.map { "\(l.name) — \($0)" } ?? l.name).tag(l.id)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(maxWidth: 240, alignment: .leading)
+                    }
+                }
             }
 
             HStack {
@@ -345,8 +450,15 @@ struct DoneSheet: View {
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
-        .frame(width: 520)
+        .frame(width: 560)
         .onAppear(perform: load)
+        .task {
+            await cloud.loadLeaders()
+            if !approverTouched && approverID.isEmpty { approverID = defaultApprover }
+        }
+        .onChange(of: clientID) { _ in
+            if !approverTouched { approverID = defaultApprover }
+        }
         .onChange(of: minutes) { m in
             if m >= 60 { hours += m / 60; minutes = m % 60 }
             if m < 0 { minutes = 0 }
@@ -387,7 +499,13 @@ struct DoneSheet: View {
         loaded = true
         name = t.name
         clientID = t.clientID
-        date = t.workDate ?? Date()
+        support = t.support ?? false
+        // The day is Modhesh's Start Date when the task is linked to Modhesh and it's known.
+        let fromModhesh = cloud.modheshStartDate(for: t.id) ?? t.parentID.flatMap { cloud.modheshStartDate(for: $0) }
+        dateFromModhesh = fromModhesh != nil
+        date = fromModhesh ?? t.workDate ?? Date()
+        approverID = t.approverID ?? defaultApprover
+        if t.approverID != nil { approverTouched = true }   // picked before: keep it
         let secs = t.totalSeconds(at: Date())
         var m = Int((secs / 1800).rounded()) * 30          // nearest half hour
         if secs > 0 && m == 0 { m = 30 }
@@ -401,11 +519,18 @@ struct DoneSheet: View {
     private func save(_ status: TaskStatus) {
         let n = name.trimmingCharacters(in: .whitespaces)
         guard !n.isEmpty else { return }
+        let approver = cloud.leaders.first { $0.id == approverID }.map { (id: $0.id, name: $0.name) }
         store.complete(taskID, name: n, clientID: clientID, status: status,
                        date: date, totalSeconds: TimeInterval(totalMinutes * 60),
                        deliverables: max(0, deliverables), rating: min(5, max(1, rating)),
-                       challenge: challenge)
+                       challenge: challenge, support: support, approver: approver)
         dismiss()
+    }
+
+    /// The leader of the team that handles the client (another team's leader for support),
+    /// otherwise my own team leader.
+    private var defaultApprover: String {
+        cloud.defaultApprover(for: store.client(clientID))?.id ?? ""
     }
 }
 

@@ -44,6 +44,9 @@ struct TeamTask: Identifiable, Hashable {
     var deleted: Bool
     var deliverables: Int?
     var rating: Int?
+    var clientID: String?
+    var support: Bool
+    var approverName: String?
 
     var isRunning: Bool { runningSince != nil }
 
@@ -78,7 +81,19 @@ struct TeamTask: Identifiable, Hashable {
         deleted = (row["deleted"] as? Bool) ?? false
         deliverables = row["deliverables"] as? Int
         rating = row["rating"] as? Int
+        clientID = (row["client_id"] as? String)?.lowercased()
+        support = (row["support"] as? Bool) ?? false
+        approverName = row["approver_name"] as? String
     }
+}
+
+/// A team leader, for the Approver list at Done (from the `leaders()` database function).
+struct Leader: Identifiable, Hashable {
+    let id: String
+    var name: String
+    var email: String
+    var teamID: String?
+    var teamName: String?
 }
 
 /// Keeps this Mac's tasks in the team database, and brings in tasks a leader added for you.
@@ -128,6 +143,7 @@ final class CloudSync: ObservableObject {
     func start() async {
         guard CloudAuth.shared.signedIn, ensureState() else { return }
         await loadProfile()
+        await loadClients()
         await restoreIfEmpty()
         await saveSettings()
         await loadSettings()
@@ -148,6 +164,7 @@ final class CloudSync: ObservableObject {
                     if self.ticks % 5 == 0 {
                         await self.checkWeeklyReport()
                         await self.loadSettings()
+                        await self.loadClients()
                     }
                 }
             }
@@ -175,6 +192,7 @@ final class CloudSync: ObservableObject {
         modheshMismatch = false
         modheshStatus = nil
         modheshReadAt = nil
+        leaders = []
     }
 
     /// First sign-in on this Mac for an account that already has tasks: bring them back.
@@ -284,10 +302,15 @@ final class CloudSync: ObservableObject {
             "rating": t.rating.map { $0 as Any } ?? NSNull(),
             "challenge": t.challenge.map { $0 as Any } ?? NSNull(),
             "started_at": t.sessions.first.map { Cloud.iso($0.start) as Any } ?? NSNull(),
+            "client_id": Store.shared.client(t.clientID)?.cloudID.map { $0 as Any } ?? NSNull(),
+            "support": t.support ?? false,
+            "approver_id": t.approverID.map { $0 as Any } ?? NSNull(),
+            "approver_name": t.approverName.map { $0 as Any } ?? NSNull(),
         ]
     }
 
-    private static let newColumns = ["deliverables", "rating", "started_at", "challenge"]
+    private static let newColumns = ["deliverables", "rating", "started_at", "challenge",
+                                     "client_id", "support", "approver_id", "approver_name"]
 
     /// Set when the database doesn't have the deliverables / rating columns yet
     /// (schema.sql not re-run), so syncing keeps working without them.
@@ -406,6 +429,7 @@ final class CloudSync: ObservableObject {
         var submittedAt: Date?
         var submitNote: String?
         var autoLinked: Bool
+        var startDate: Date?
     }
 
     @Published private(set) var modheshTasks: [ModheshTask] = []
@@ -434,7 +458,8 @@ final class CloudSync: ObservableObject {
                                    submittedSeconds: (r["submitted_seconds"] as? Double) ?? (r["submitted_seconds"] as? Int).map(Double.init),
                                    submittedAt: Cloud.date(r["submitted_at"]),
                                    submitNote: r["submit_note"] as? String,
-                                   autoLinked: (r["auto_linked"] as? Bool) ?? false)
+                                   autoLinked: (r["auto_linked"] as? Bool) ?? false,
+                                   startDate: Self.day(r["start_date"]))
             }
             modheshError = nil
             announceNewModhesh(uid)
@@ -535,7 +560,7 @@ final class CloudSync: ObservableObject {
             await loadSettings()
             await loadModhesh()
             await loadModheshLinks()
-            Store.shared.flash("Modhesh cleared — your tasks come back within 5 minutes")
+            Store.shared.flash("Modhesh cleared — press Check now in the Chrome extension to read it again")
         } catch {
             modheshError = error.localizedDescription
         }
@@ -580,25 +605,45 @@ final class CloudSync: ObservableObject {
     struct ModheshLink: Hashable {
         var status: Int?
         var sent: Bool
+        var startDate: Date?
     }
     @Published private(set) var modheshLinks: [UUID: ModheshLink] = [:]
+
+    /// "2026-11-03" → that day at noon here (so it never slips to the day before).
+    static func day(_ v: Any?) -> Date? {
+        guard let s = v as? String, s.count >= 10, let d = Fmt.isoDay.date(from: String(s.prefix(10))) else { return nil }
+        return Calendar.current.date(byAdding: .hour, value: 12, to: d)
+    }
+
+    /// Modhesh's Start Date of the Modhesh task linked to this TaskTimer task, if known.
+    func modheshStartDate(for taskID: UUID) -> Date? {
+        modheshLinks[taskID]?.startDate ?? modheshTasks.first { $0.taskID == taskID }?.startDate
+    }
 
     func loadModheshLinks() async {
         guard let uid = CloudAuth.shared.session?.userID else { return }
         let since = Calendar.current.date(byAdding: .day, value: -365, to: Date()) ?? Date()
-        do {
-            let rows = try await CloudAPI.select("modhesh_tasks", [
-                URLQueryItem(name: "select", value: "task_id,status,submitted_at"),
+        func query(_ cols: String) async throws -> [[String: Any]] {
+            try await CloudAPI.select("modhesh_tasks", [
+                URLQueryItem(name: "select", value: cols),
                 URLQueryItem(name: "user_id", value: "eq.\(uid)"),
                 URLQueryItem(name: "task_id", value: "not.is.null"),
                 URLQueryItem(name: "updated_at", value: "gt.\(Cloud.iso(since))"),
             ])
+        }
+        do {
+            let rows: [[String: Any]]
+            do {
+                rows = try await query("task_id,status,submitted_at,start_date")
+            } catch {
+                rows = try await query("task_id,status,submitted_at")   // schema.sql not run again yet
+            }
             var map: [UUID: ModheshLink] = [:]
             for r in rows {
                 guard let s = r["task_id"] as? String, let id = UUID(uuidString: s) else { continue }
                 let status = r["status"] as? Int
                 let sent = r["submitted_at"] is String || status == 4 || status == 5
-                map[id] = ModheshLink(status: status, sent: sent)
+                map[id] = ModheshLink(status: status, sent: sent, startDate: Self.day(r["start_date"]))
             }
             if map != modheshLinks { modheshLinks = map }
         } catch {
@@ -616,6 +661,13 @@ final class CloudSync: ObservableObject {
             ], ["task_id": taskID.map { $0.uuidString.lowercased() as Any } ?? NSNull()])
             await loadModhesh()
             await loadModheshLinks()
+            // A task finished before it was linked takes Modhesh's Start Date as its day.
+            if let taskID, let t = Store.shared.task(taskID), t.status == .complete,
+               let start = modheshStartDate(for: taskID),
+               !Calendar.current.isDate(start, inSameDayAs: t.workDate ?? .distantPast) {
+                Store.shared.update(taskID) { $0.workDate = start }
+                Store.shared.flash("Day set to Modhesh's Start Date: \(Fmt.nice.string(from: start))")
+            }
         } catch {
             modheshError = error.localizedDescription
         }
@@ -632,6 +684,91 @@ final class CloudSync: ObservableObject {
         case 5: return "Pending Approver"
         default: return "—"
         }
+    }
+
+    // MARK: - Clients and pitches (added by admins)
+
+    /// Every client and pitch with its team (admins add them; everyone reads them). Small table,
+    /// read at start, every 10 minutes and when New Task opens.
+    @discardableResult
+    func loadClients() async -> [Store.CloudClient] {
+        guard CloudAuth.shared.signedIn else { return [] }
+        do {
+            let rows = try await CloudAPI.select("clients", [
+                URLQueryItem(name: "select", value: "id,name,team_id,kind,active"),
+                URLQueryItem(name: "order", value: "name.asc"),
+            ])
+            let teamRows = try await CloudAPI.select("teams", [URLQueryItem(name: "select", value: "id,name")])
+            var teamNames: [String: String] = [:]
+            for t in teamRows {
+                if let id = (t["id"] as? String)?.lowercased() { teamNames[id] = t["name"] as? String }
+            }
+            let list: [Store.CloudClient] = rows.compactMap { r -> Store.CloudClient? in
+                guard let id = (r["id"] as? String)?.lowercased(), let name = r["name"] as? String else { return nil }
+                let team = (r["team_id"] as? String)?.lowercased()
+                return Store.CloudClient(id: id, name: name, teamID: team, teamName: team.flatMap { teamNames[$0] },
+                                         kind: (r["kind"] as? String) ?? "client", active: (r["active"] as? Bool) ?? true)
+            }
+            Store.shared.applyCloudClients(list)
+            return list
+        } catch {
+            return []   // table not there yet (schema.sql not run again): the local list stays
+        }
+    }
+
+    /// Admin: add, change or remove a client / pitch (the database lets only admins write).
+    func saveClient(id: String?, name: String, teamID: String?, kind: String, active: Bool = true) async throws {
+        var row: [String: Any] = [
+            "name": name, "team_id": teamID.map { $0 as Any } ?? NSNull(),
+            "kind": kind, "active": active, "updated_at": Cloud.iso(Date()),
+        ]
+        do {
+            if let id {
+                try await CloudAPI.update("clients", [URLQueryItem(name: "id", value: "eq.\(id)")], row)
+            } else {
+                row["id"] = UUID().uuidString.lowercased()
+                try await CloudAPI.insert("clients", [row])
+            }
+        } catch let e as Cloud.CloudError where e.message.contains("clients_name_unique") || e.message.contains("duplicate") {
+            throw Cloud.CloudError("There's already a client or pitch called “\(name)”.")
+        }
+        await loadClients()
+    }
+
+    func deleteClient(_ id: String) async throws {
+        try await CloudAPI.delete("clients", [URLQueryItem(name: "id", value: "eq.\(id)")])
+        await loadClients()
+    }
+
+    // MARK: - Approvers
+
+    /// Every team leader (any team), for the Approver list at Done.
+    @Published private(set) var leaders: [Leader] = []
+
+    func loadLeaders() async {
+        guard CloudAuth.shared.signedIn else { return }
+        do {
+            let rows = try await CloudAPI.rpc("leaders")
+            let list = rows.compactMap { r -> Leader? in
+                guard let id = (r["id"] as? String)?.lowercased() else { return nil }
+                let email = r["email"] as? String ?? ""
+                let n = (r["full_name"] as? String ?? "").trimmingCharacters(in: .whitespaces)
+                return Leader(id: id, name: n.isEmpty ? email : n, email: email,
+                              teamID: (r["team_id"] as? String)?.lowercased(), teamName: r["team_name"] as? String)
+            }
+            if list != leaders { leaders = list }
+        } catch {
+            // Database without leaders() yet: Done shows "Your team leader" and the extension
+            // picks the team leader as before.
+        }
+    }
+
+    /// The leader of the team that handles the client (support → that other team's leader),
+    /// otherwise my own team's leader.
+    func defaultApprover(for client: Client?) -> Leader? {
+        if let team = client?.teamID, let l = leaders.first(where: { $0.teamID == team }) { return l }
+        if let team = profile?.teamID, let l = leaders.first(where: { $0.teamID == team }) { return l }
+        return nil
     }
 
     // MARK: - Leader
@@ -703,15 +840,22 @@ final class CloudSync: ObservableObject {
     /// none), plus every timer running now. Only the columns the Admin stats need.
     func loadAllTasks(from: Date, to: Date) async throws -> (inRange: [TeamTask], running: [TeamTask]) {
         guard isAdmin else { throw Cloud.CloudError("Only an admin can see every team.") }
-        let cols = "id,user_id,team_id,parent_id,name,client,status,seconds,running_since,work_date,created_at,owner_name,deleted"
+        var cols = "id,user_id,team_id,parent_id,name,client,status,seconds,running_since,work_date,created_at,owner_name,deleted"
+        if !skipNewColumns { cols += ",client_id,support" }
         let d1 = Fmt.isoDay.string(from: from), d2 = Fmt.isoDay.string(from: to)
         let t1 = Cloud.iso(from), t2 = Cloud.iso(to)
-        let rows = try await CloudAPI.select("tasks", [
-            URLQueryItem(name: "select", value: cols),
-            URLQueryItem(name: "deleted", value: "eq.false"),
-            URLQueryItem(name: "or", value: "(and(work_date.gte.\(d1),work_date.lt.\(d2)),and(work_date.is.null,created_at.gte.\(t1),created_at.lt.\(t2)))"),
-            URLQueryItem(name: "limit", value: "10000"),
-        ])
+        let rows: [[String: Any]]
+        do {
+            rows = try await CloudAPI.select("tasks", [
+                URLQueryItem(name: "select", value: cols),
+                URLQueryItem(name: "deleted", value: "eq.false"),
+                URLQueryItem(name: "or", value: "(and(work_date.gte.\(d1),work_date.lt.\(d2)),and(work_date.is.null,created_at.gte.\(t1),created_at.lt.\(t2)))"),
+                URLQueryItem(name: "limit", value: "10000"),
+            ])
+        } catch let e as Cloud.CloudError where e.message.contains("client_id") || e.message.contains("support") {
+            skipNewColumns = true   // schema.sql not run again yet
+            return try await loadAllTasks(from: from, to: to)
+        }
         let running = try await CloudAPI.select("tasks", [
             URLQueryItem(name: "select", value: cols),
             URLQueryItem(name: "deleted", value: "eq.false"),

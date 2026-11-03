@@ -427,16 +427,16 @@ struct AssignTaskSheet: View {
                 TextField("e.g. Ramadan Promo 15s", text: $name).textFieldStyle(.roundedBorder)
             }
             FieldRow(label: "Client / Account") {
-                HStack(spacing: 8) {
-                    TextField("Account", text: $client).textFieldStyle(.roundedBorder)
-                    if !store.clients.isEmpty {
-                        Menu {
-                            ForEach(store.clients) { c in Button(c.name) { client = c.name } }
-                        } label: { Text("Pick") }
-                            .menuStyle(.borderlessButton)
-                            .fixedSize()
-                    }
+                // The team's clients and pitches, as the admin added them.
+                let team = CloudSync.shared.profile?.teamID
+                let names = store.hasCloudClients
+                    ? (store.teamClients(team) + store.teamPitches(team)).map(\.name)
+                    : store.clients.map(\.name)
+                Picker("", selection: $client) {
+                    Text("— No client —").tag("")
+                    ForEach(names, id: \.self) { Text($0).tag($0) }
                 }
+                .labelsHidden()
             }
             if let error {
                 Label(error, systemImage: "exclamationmark.triangle.fill")

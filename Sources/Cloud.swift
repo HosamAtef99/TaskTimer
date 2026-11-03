@@ -249,6 +249,13 @@ enum CloudAPI {
         _ = try await call("PATCH", table, query: query, body: values, prefer: "return=minimal")
     }
 
+    /// POST /rest/v1/rpc/<function> → rows (a database function).
+    @MainActor
+    static func rpc(_ function: String, _ args: [String: Any] = [:]) async throws -> [[String: Any]] {
+        let data = try await call("POST", "rpc/\(function)", query: [], body: args, prefer: nil)
+        return (try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]) ?? []
+    }
+
     @MainActor
     private static func call(_ method: String, _ table: String, query: [URLQueryItem],
                              body: Any?, prefer: String?) async throws -> Data {

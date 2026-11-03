@@ -2,8 +2,8 @@ import SwiftUI
 import AppKit
 
 /// Tasks read from Modhesh (by the TaskTimer Chrome extension) and the TaskTimer task each one
-/// is linked to. Linked tasks get their hours, deliverables, stars and start date filled in
-/// on Modhesh by the extension.
+/// is linked to. Linked tasks get their hours, deliverables and stars filled in on Modhesh by the
+/// extension; Modhesh's Start Date becomes the task's day.
 struct ModheshView: View {
     @EnvironmentObject var store: Store
     @Environment(\.dismiss) var dismiss
@@ -31,7 +31,7 @@ struct ModheshView: View {
             if all.isEmpty && cloud.modheshError == nil {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("No Modhesh tasks pending or in progress.").font(.system(size: 13, weight: .semibold))
-                    Text("Install the TaskTimer extension in Chrome, sign in to it, then open your tasks on Modhesh once — they show up here.")
+                    Text("Install the TaskTimer extension in Chrome and sign in to it, then press Check now in the extension (Chrome's toolbar) — your Modhesh tasks show up here.")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -98,7 +98,7 @@ struct ModheshView: View {
                 Task { @MainActor in await cloud.resetModhesh() }
             }
         } message: {
-            Text("Removes every Modhesh task here (and their links) that wasn't sent yet. Tasks whose time was already sent stay. Your own Modhesh tasks come back within 5 minutes, as long as Chrome is signed in to your Modhesh.")
+            Text("Removes every Modhesh task here (and their links) that wasn't sent yet. Tasks whose time was already sent stay. Your own Modhesh tasks come back when you press Check now in the Chrome extension (Chrome must be signed in to your Modhesh).")
         }
     }
 
@@ -232,7 +232,8 @@ struct ModheshView: View {
     }
 
     private func addToIncoming(_ m: CloudSync.ModheshTask) {
-        let clientID = m.client.isEmpty ? nil : store.addClient(m.client)?.id
+        // Only the admin's clients: take the one whose name matches Modhesh's account, if any.
+        let clientID = store.matchClient(m.client)?.id
         let id = store.addTask(name: FolderService.cleanName(m.title), clientID: clientID, folder: nil,
                                start: false, incoming: true, wantsFolder: true)
         Task { @MainActor in await cloud.linkModhesh(m.code, to: id) }

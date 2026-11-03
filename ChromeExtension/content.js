@@ -1,7 +1,9 @@
 // TaskTimer on Modhesh.
-// 1. Sends your Modhesh tasks to TaskTimer (so you can link them there).
-// 2. Adds a "Fill from TaskTimer" bar to Log Time and to Task Details.
-// It only fills the form — you check it and press Save yourself.
+// 1. Adds a "Fill from TaskTimer" bar to Log Time (you check it and press Save yourself).
+// 2. Logs finished tasks by itself when the background worker asks (jobs).
+// 3. Remembers Modhesh's Start Date of a task whenever its Task Details open (TaskTimer uses it
+//    as the task's day). It never writes a Start Date into Modhesh.
+// Reading your Modhesh tasks happens only when you press "Check now" in the extension.
 
 (() => {
   const STATUS = { 1: 'Pending to Start', 6: 'In Progress', 4: 'Completed', 5: 'Pending Approver', 2: 'Rejected' };
@@ -76,6 +78,28 @@
     const row = { user_id: uid, code, task_id: taskId };
     if (title) row.title = title;
     await TT.rest('POST', 'modhesh_tasks', [row], 'resolution=merge-duplicates,return=minimal');
+  }
+
+  /// "2026-11-03", "03/11/2026" → "2026-11-03".
+  function isoDate(v) {
+    const t = String(v || '').trim();
+    let m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (m) return `${m[1]}-${pad(m[2])}-${pad(m[3])}`;
+    m = t.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})/);
+    if (m) return `${m[3]}-${pad(m[2])}-${pad(m[1])}`;
+    return null;
+  }
+
+  /// Saves Modhesh's Start Date of this task for TaskTimer (only for tasks already read into it).
+  async function rememberStart(form) {
+    try {
+      const code = (form.querySelector('[name=task_id]') || {}).value;
+      const day = isoDate((form.querySelector('[name=start_date]') || {}).value);
+      if (!code || !day || !(await TT.session())) return;
+      const uid = await TT.userId();
+      await TT.rest('PATCH', `modhesh_tasks?user_id=eq.${uid}&code=eq.${encodeURIComponent(code)}`,
+        { start_date: day }, 'return=minimal');
+    } catch (e) { /* older database without start_date */ }
   }
 
   let leaderCache;
@@ -247,6 +271,7 @@
 
   async function showLogTime(form, body, t, row) {
     const total = liveSeconds(t);
+    const approver = t.approver_name || null;
     const logged = (row && Number(row.logged_seconds)) || 0;
     const toLog = Math.max(0, total - logged);
     const st = await TT.settings().catch(() => ({}));
@@ -259,7 +284,7 @@
       `${hours(total)} h in TaskTimer` + (logged ? ` − ${hours(logged)} h already logged here = ${hours(toLog)} h` : '') +
       ` · ${deliverables} deliverable${deliverables === 1 ? '' : 's'} · ${'★'.repeat(rating)}` +
       (complete ? ' · Completed' : ''));
-    const btn = el('button', { type: 'button', class: 'tt-btn', onclick: () => fillLogTime(form, body, { toLog, deliverables, rating, complete, challenge: t.challenge || st.challenge }) },
+    const btn = el('button', { type: 'button', class: 'tt-btn', onclick: () => fillLogTime(form, body, { toLog, deliverables, rating, complete, challenge: t.challenge || st.challenge, approver }) },
       'Fill from TaskTimer');
     body.replaceChildren(info, el('div', { class: 'tt-row' }, btn));
   }
@@ -283,7 +308,8 @@
     if (v.complete) {
       await new Promise((r) => setTimeout(r, 400));
       const select = form.querySelector('[name=approver]');
-      const leader = await leaderName();
+      // The approver picked at Done in TaskTimer; otherwise the team leader.
+      const leader = v.approver ? { full_name: v.approver } : await leaderName();
       if (select && leader) {
         const want = [leader.full_name, leader.email].filter(Boolean).map((s) => s.toLowerCase());
         const opt = [...select.options].find((o) => {
@@ -337,8 +363,8 @@
     return e ? e.textContent.trim().slice(0, 160) : '';
   }
 
-  /// Pending to Start → In Progress, through Task Details. Sets only the status and the
-  /// Start Date (from TaskTimer); Estimate and the deliverables link are left as they are.
+  /// Pending to Start → In Progress, through Task Details. Changes only the status: the Start
+  /// Date, Estimate and deliverables link stay as they are on Modhesh.
   async function startInModhesh(job) {
     const open = document.querySelector(`[data-act="drawer-modal"][data-post-task_id="${CSS.escape(job.code)}"]`);
     if (!open) throw new Error('Task not found on the Modhesh board');
@@ -356,8 +382,7 @@
     status.value = opt.value;
     status.dispatchEvent(new Event('change', { bubbles: true }));
 
-    const start = form.querySelector('[name=start_date]');
-    if (start) setValue(start, isoDay(job.startedAt ? new Date(job.startedAt) : new Date()));
+    rememberStart(form);
     await sleep(400);
 
     const save = [...document.querySelectorAll('button, input[type=submit]')]
@@ -469,40 +494,11 @@
     if (msg.type === 'jobs') runJobs(msg.jobs);
   });
 
-  // Task Details (Start Date)
+  // Task Details: nothing to fill any more (Modhesh's Start Date is the one that counts);
+  // just remember that date for TaskTimer.
 
-  async function decorateDetails(form) {
-    const code = (form.querySelector('[name=task_id]') || {}).value;
-    if (!code) return;
-    const body = bar(form, 'details');
-    if (!(await TT.session())) return signedOut(body);
-    try {
-      const row = await modheshRow(code);
-      const tasks = await myTasks(true);
-      const t = row && row.task_id && tasks.find((x) => x.id === row.task_id);
-      const title = (form.querySelector('[name=title]') || {}).value || (row && row.title) || '';
-      if (t) showDetails(form, body, t);
-      else {
-        await chooser(body, code, title, async (picked) => showDetails(form, body, picked));
-        watchForLink(form, code, (picked) => showDetails(form, body, picked));
-      }
-    } catch (e) {
-      body.replaceChildren(`Couldn't reach TaskTimer: ${e.message}`);
-    }
-  }
-
-  function showDetails(form, body, t) {
-    const started = t.started_at ? new Date(t.started_at) : null;
-    if (!started) {
-      body.replaceChildren(el('div', {}, el('b', {}, t.display), el('br'), 'Not started in TaskTimer yet.'));
-      return;
-    }
-    const day = isoDay(started);
-    const btn = el('button', { type: 'button', class: 'tt-btn', onclick: () => {
-      setValue(form.querySelector('[name=start_date]'), day);
-      body.replaceChildren(el('div', { class: 'tt-done' }, `Start Date set to ${day}. Check it, then press Update Task.`));
-    } }, 'Fill Start Date');
-    body.replaceChildren(el('div', {}, el('b', {}, t.display), el('br'), `Started in TaskTimer on ${day}`), el('div', { class: 'tt-row' }, btn));
+  function decorateDetails(form) {
+    rememberStart(form);
   }
 
   // ───────────── Badges on the board ─────────────
@@ -581,11 +577,6 @@
       badgeTimer = setTimeout(decorateBoard, 2000);
     }).observe(document.documentElement, { childList: true, subtree: true });
     setInterval(() => { if (!document.hidden) decorateBoard(); }, 60000);
-    // Reading Modhesh is done by the background worker (it checks whose Modhesh this is).
-    // Opening the page just asks it to read now.
-    chrome.runtime.sendMessage({ type: 'readNow' }).catch(() => {});
-    document.addEventListener('visibilitychange', () => {
-      if (!document.hidden) chrome.runtime.sendMessage({ type: 'readNow' }).catch(() => {});
-    });
+    // Reading Modhesh is done by the background worker, only on "Check now" in the extension.
   }
 })();

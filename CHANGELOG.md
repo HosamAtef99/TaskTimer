@@ -2,6 +2,16 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
+## 1.30
+- Clients come from the admin only: Admin → Clients adds each team's clients and pitches, so everyone uses the same name and the admin sees the hours of every client and pitch. You pick from your team's list; there's no "add client" any more.
+- Support: in New Task (and Done), tick Support to search every other team's clients when you're helping another team.
+- Pitches: the admin adds a pitch to the team that handles it. It shows under Pitches in New Task. When it's won it becomes a normal client; when it's closed it disappears from the lists and its hours stay.
+- Done has "Approver on Modhesh": your team leader is picked for you (the other team's leader for support), and you can choose any leader from the list. The extension sends the task to that person.
+- The day of a task linked to Modhesh is Modhesh's Start Date. TaskTimer no longer writes a Start Date into Modhesh.
+- The Chrome extension only reads Modhesh when you press Check now (it no longer checks every 5 minutes or when a Modhesh page opens).
+- Task folders are the same for everyone (no editing folder names), and each new task gets an empty After Effects project — no template to choose.
+- Run the latest schema.sql in Supabase once (adds clients, pitches, approvers and Modhesh start dates).
+
 ## 1.29
 - Task folder menu → Set Render Outputs: puts everything queued in the Render Queue into the task's Render folder, named Task_v01, Task_v02… (never overwriting an older render). It runs only when you press it — nothing checks After Effects in the background.
 

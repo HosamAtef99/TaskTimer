@@ -18,9 +18,20 @@ struct AdminView: View {
     }
 
     enum Tab: String, CaseIterable, Identifiable {
-        case stats = "Hours", people = "People", teams = "Teams"
+        case stats = "Hours", clients = "Clients", people = "People", teams = "Teams"
         var id: String { rawValue }
     }
+
+    // Clients and pitches
+    @Local var clientRows: [Store.CloudClient] = []
+    @Local var newClientName = ""
+    @Local var newClientKind = "client"
+    @Local var newClientTeam: String? = nil
+    @Local var clientSearch = ""
+    @Local var editingClient: String? = nil
+    @Local var editClientText = ""
+    @Local var deletingClient: Store.CloudClient? = nil
+    @Local var showClosed = false
 
     @Local var tab: Tab = .stats
     @Local var people: [TeamProfile] = []
@@ -70,7 +81,7 @@ struct AdminView: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            .frame(maxWidth: 300)
+            .frame(maxWidth: 380)
             Spacer()
             if loading { ProgressView().controlSize(.small) }
             Button { Task { await loadAll() } } label: { Image(systemName: "arrow.clockwise") }
@@ -85,6 +96,7 @@ struct AdminView: View {
         Group {
             switch tab {
             case .stats: statsTab
+            case .clients: clientsTab
             case .people: peopleTab
             case .teams: teamsTab
             }
@@ -107,6 +119,14 @@ struct AdminView: View {
             }
         } message: {
             Text("Only an empty team can be deleted. Its past tasks stay in the database, without a team.")
+        }
+        .confirmationDialog("Delete “\(deletingClient?.name ?? "")” from the list?", isPresented: Binding(
+            get: { deletingClient != nil }, set: { if !$0 { deletingClient = nil } })) {
+            Button("Delete", role: .destructive) {
+                if let c = deletingClient { clientAction("Deleted “\(c.name)”") { try await cloud.deleteClient(c.id) } }
+            }
+        } message: {
+            Text("Tasks already done for it keep the name and their hours. To only hide it from the pickers, use Remove / Close instead.")
         }
         .confirmationDialog("Delete “\(deletingPerson?.name ?? "")” for good?", isPresented: Binding(
             get: { deletingPerson != nil }, set: { if !$0 { deletingPerson = nil } })) {
@@ -360,6 +380,264 @@ struct AdminView: View {
         }
     }
 
+    // MARK: Clients and pitches
+
+    private func hours(of c: Store.CloudClient) -> (seconds: Double, count: Int, support: Double) {
+        let name = c.name.lowercased()
+        let mine = tasks.filter { t in
+            if let id = t.clientID { return id == c.id }
+            return t.client.lowercased() == name
+        }
+        let secs = mine.reduce(0.0) { $0 + $1.liveSeconds(at: loadedAt) }
+        let sup = mine.filter(\.support).reduce(0.0) { $0 + $1.liveSeconds(at: loadedAt) }
+        return (secs, mine.count, sup)
+    }
+
+    private struct StrayName: Identifiable { var id: String { name }; let name: String; let seconds: Double }
+    private struct ClientGroup: Identifiable { let id: String; let name: String; let list: [Store.CloudClient] }
+
+    /// Client names used in this month's tasks that aren't in the list (old spellings).
+    private var strayNames: [StrayName] {
+        let known = Set(clientRows.map { $0.name.lowercased() })
+        let ids = Set(clientRows.map(\.id))
+        var out: [String: Double] = [:]
+        for t in tasks where !t.client.isEmpty {
+            if let id = t.clientID, ids.contains(id) { continue }
+            if known.contains(t.client.lowercased()) { continue }
+            out[t.client, default: 0] += t.liveSeconds(at: loadedAt)
+        }
+        return out.map { StrayName(name: $0.key, seconds: $0.value) }.sorted { $0.seconds > $1.seconds }
+    }
+
+    private var clientGroups: [ClientGroup] {
+        let q = clientSearch.trimmingCharacters(in: .whitespaces)
+        let shown = clientRows.filter { c in
+            (showClosed || c.active) && (q.isEmpty || c.name.localizedCaseInsensitiveContains(q)
+                                         || (c.teamName ?? "").localizedCaseInsensitiveContains(q))
+        }
+        let all = teams.map { (id: $0.id, name: $0.name) } + [(id: "", name: "Without a team")]
+        return all.compactMap { g -> ClientGroup? in
+            let list = shown.filter { ($0.teamID ?? "") == g.id }.sorted { a, b in
+                if (a.kind == "pitch") != (b.kind == "pitch") { return a.kind != "pitch" }
+                return a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
+            }
+            return list.isEmpty ? nil : ClientGroup(id: g.id, name: g.name, list: list)
+        }
+    }
+
+    private var clientsTab: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            addClientBar
+            Text("Only admins add clients, so everyone picks the same name. Each client and pitch belongs to the team that handles it; it shows in that team's New Task, and anyone can pick it under Support. A pitch is Won (it becomes a client of its team) or Closed (hidden, its hours stay).")
+                .font(.system(size: 11)).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            clientFilterBar
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 8) {
+                    if clientRows.isEmpty {
+                        Text("No clients yet. Add each team's clients above. (If adding fails, run the latest schema.sql in Supabase first.)")
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    ForEach(clientGroups) { g in groupCard(g) }
+                    strayCard
+                }
+                .padding(2)
+            }
+        }
+    }
+
+    private var addClientBar: some View {
+        HStack(spacing: 8) {
+            TextField("New client or pitch", text: $newClientName)
+                .textFieldStyle(.roundedBorder)
+                .onSubmit(addClient)
+            Picker("", selection: $newClientKind) {
+                Text("Client").tag("client")
+                Text("Pitch").tag("pitch")
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(width: 130)
+            Picker("", selection: $newClientTeam) {
+                Text("— Team —").tag(String?.none)
+                ForEach(teams) { t in Text(t.name).tag(String?.some(t.id)) }
+            }
+            .labelsHidden()
+            .frame(maxWidth: 170)
+            Button { addClient() } label: { Label("Add", systemImage: "plus") }
+                .buttonStyle(GradientButtonStyle(compact: true))
+                .disabled(newClientName.trimmingCharacters(in: .whitespaces).isEmpty || newClientTeam == nil)
+        }
+    }
+
+    private var clientFilterBar: some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                TextField("Search clients or teams", text: $clientSearch).textFieldStyle(.plain)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .background(.thinMaterial, in: Capsule())
+            Toggle("Show closed / removed", isOn: $showClosed).font(.system(size: 12))
+            Spacer()
+            Picker("", selection: $month) {
+                ForEach(monthChoices, id: \.self) { m in Text(Fmt.monthYear.string(from: m)).tag(m) }
+            }
+            .labelsHidden()
+            .frame(maxWidth: 170)
+            .help("Hours shown for this month")
+        }
+    }
+
+    private func groupCard(_ g: ClientGroup) -> some View {
+        let total = g.list.reduce(0.0) { $0 + hours(of: $1).seconds }
+        let clients = g.list.filter { $0.kind != "pitch" }.count
+        let pitches = g.list.count - clients
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(g.name).font(.system(size: 14, weight: .semibold))
+                Text("\(clients) clients · \(pitches) pitches")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                Spacer()
+                Text("\(Fmt.hours(total)) h").font(.system(size: 13, weight: .semibold, design: .rounded).monospacedDigit())
+            }
+            ForEach(g.list, id: \.id) { c in clientRow(c) }
+        }
+        .padding(12)
+        .glassCard(radius: 14)
+    }
+
+    @ViewBuilder
+    private var strayCard: some View {
+        let stray = strayNames
+        if !stray.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Names in this month's tasks that aren't in the list").font(.system(size: 13, weight: .semibold))
+                Text("Old spellings from before clients came from here. Add the right client above; new tasks will use it.")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                ForEach(stray) { s in
+                    HStack {
+                        Text(s.name).font(.system(size: 12))
+                        Spacer()
+                        Text("\(Fmt.hours(s.seconds)) h").font(.system(size: 12).monospacedDigit())
+                        Button("Use this name") { newClientName = s.name }
+                            .buttonStyle(GlassButtonStyle(compact: true))
+                    }
+                }
+            }
+            .padding(12)
+            .glassCard(radius: 14)
+        }
+    }
+
+    private func clientRow(_ c: Store.CloudClient) -> some View {
+        let h = hours(of: c)
+        let isPitch = c.kind == "pitch"
+        return HStack(spacing: 8) {
+            if editingClient == c.id {
+                TextField("", text: $editClientText)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit {
+                        let n = editClientText.trimmingCharacters(in: .whitespaces)
+                        editingClient = nil
+                        guard !n.isEmpty, n != c.name else { return }
+                        clientAction("Renamed to “\(n)”") {
+                            try await cloud.saveClient(id: c.id, name: n, teamID: c.teamID, kind: c.kind, active: c.active)
+                        }
+                    }
+                    .frame(maxWidth: 240)
+            } else {
+                Text(c.name).font(.system(size: 12, weight: .medium)).lineLimit(1)
+            }
+            if isPitch { tag("Pitch", Theme.purple) }
+            if !c.active { tag(isPitch ? "Closed" : "Removed", Theme.orange) }
+            Spacer(minLength: 8)
+            Text("\(h.count) tasks").font(.system(size: 11)).foregroundStyle(.secondary)
+            if h.support > 0 {
+                Text("\(Fmt.hours(h.support)) h support").font(.system(size: 11)).foregroundStyle(Theme.blue)
+                    .help("Hours other teams' people spent on it")
+            }
+            Text("\(Fmt.hours(h.seconds)) h")
+                .font(.system(size: 12, weight: .medium, design: .rounded).monospacedDigit())
+                .frame(width: 60, alignment: .trailing)
+            Menu {
+                Button("Rename…") { editingClient = c.id; editClientText = c.name }
+                Menu("Move to Team") {
+                    ForEach(teams) { t in
+                        Button(t.name) {
+                            clientAction("“\(c.name)” → \(t.name)") {
+                                try await cloud.saveClient(id: c.id, name: c.name, teamID: t.id, kind: c.kind, active: c.active)
+                            }
+                        }
+                        .disabled(c.teamID == t.id)
+                    }
+                }
+                Divider()
+                if isPitch {
+                    Button("Won — make it a client of this team") {
+                        clientAction("“\(c.name)” is a client now") {
+                            try await cloud.saveClient(id: c.id, name: c.name, teamID: c.teamID, kind: "client", active: true)
+                        }
+                    }
+                }
+                if c.active {
+                    Button(isPitch ? "Close Pitch (hide it)" : "Remove from the lists (keep its hours)") {
+                        clientAction("“\(c.name)” hidden") {
+                            try await cloud.saveClient(id: c.id, name: c.name, teamID: c.teamID, kind: c.kind, active: false)
+                        }
+                    }
+                } else {
+                    Button(isPitch ? "Reopen Pitch" : "Bring Back") {
+                        clientAction("“\(c.name)” is back") {
+                            try await cloud.saveClient(id: c.id, name: c.name, teamID: c.teamID, kind: c.kind, active: true)
+                        }
+                    }
+                }
+                if !isPitch {
+                    Button("Turn into a Pitch") {
+                        clientAction("“\(c.name)” is a pitch now") {
+                            try await cloud.saveClient(id: c.id, name: c.name, teamID: c.teamID, kind: "pitch", active: c.active)
+                        }
+                    }
+                }
+                Divider()
+                Button("Delete…", role: .destructive) { deletingClient = c }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+        }
+        .padding(.vertical, 6).padding(.horizontal, 8)
+        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
+        .opacity(c.active ? 1 : 0.6)
+    }
+
+    private func addClient() {
+        let n = newClientName.trimmingCharacters(in: .whitespaces)
+        guard !n.isEmpty, let team = newClientTeam else { return }
+        let kind = newClientKind
+        clientAction("Added “\(n)”") {
+            try await cloud.saveClient(id: nil, name: n, teamID: team, kind: kind)
+            newClientName = ""
+        }
+    }
+
+    private func clientAction(_ done: String, _ work: @escaping () async throws -> Void) {
+        error = nil
+        Task { @MainActor in
+            do {
+                try await work()
+                clientRows = await cloud.loadClients()
+                store.flash(done)
+            } catch {
+                self.error = error.localizedDescription
+            }
+        }
+    }
+
     // MARK: People
 
     private var shownPeople: [TeamProfile] {
@@ -596,6 +874,7 @@ struct AdminView: View {
     func loadAll() async {
         await load()
         await loadHours()
+        clientRows = await cloud.loadClients()
     }
 
     func loadHours() async {

@@ -1,25 +1,27 @@
 import Foundation
 import AppKit
 
-/// Replaces "New Project.command": builds the task folder tree, copies the AE
-/// template, and sorts downloaded files into the right subfolders.
+/// Replaces "New Project.command": builds the task folder tree (the team's fixed subfolders),
+/// puts an empty After Effects project in it, and sorts downloaded files into the right subfolders.
 enum FolderService {
 
     enum FolderError: LocalizedError {
-        case exists(String), templateMissing(String), emptyName
+        case exists(String), emptyName
 
         var errorDescription: String? {
             switch self {
             case .exists(let n): return "A folder named “\(n)” already exists there."
-            case .templateMissing(let p): return "AE template not found:\n\(p)\nSet the right path in Settings → Folders."
             case .emptyName: return "Task name is empty."
             }
         }
     }
 
-    static var templateIsMissing: Bool {
-        let p = Pref.string(Pref.templatePath)
-        return p.isEmpty || !FileManager.default.fileExists(atPath: p)
+    /// The empty After Effects project that comes inside the app (Resources/Blank.aep), copied
+    /// into every new task folder as "<Task>.aep". Nobody picks a template any more (Hosam's call).
+    static var blankAEP: URL? {
+        guard let u = Bundle.main.url(forResource: "Blank", withExtension: "aep"),
+              FileManager.default.fileExists(atPath: u.path) else { return nil }
+        return u
     }
 
     static func cleanName(_ name: String) -> String {
@@ -61,7 +63,7 @@ enum FolderService {
         return panel.url
     }
 
-    /// Creates <base>/<name>/ with the subfolder tree and the renamed AE template.
+    /// Creates <base>/<name>/ with the subfolder tree and an empty "<name>.aep" in the AE folder.
     @discardableResult
     static func createProject(name rawName: String, in base: URL) throws -> URL {
         let fm = FileManager.default
@@ -71,22 +73,16 @@ enum FolderService {
         let project = base.appendingPathComponent(name, isDirectory: true)
         if fm.fileExists(atPath: project.path) { throw FolderError.exists(name) }
 
-        let templatePath = Pref.string(Pref.templatePath)
-        // No template (or not found on this Mac, e.g. a teammate's): still make the folders.
-        let hasTemplate = !templatePath.isEmpty && fm.fileExists(atPath: templatePath)
-
-        let subs = Pref.subfolderList
         try fm.createDirectory(at: project, withIntermediateDirectories: true)
-        for sub in subs {
+        for sub in Pref.subfolderList {
             try fm.createDirectory(at: project.appendingPathComponent(sub, isDirectory: true),
                                    withIntermediateDirectories: true)
         }
 
-        if hasTemplate {
-            let template = URL(fileURLWithPath: templatePath)
+        if let blank = blankAEP {
             let aeFolder = folder(in: project, matching: ["ae"]) ?? project
-            let dest = aeFolder.appendingPathComponent("\(name).\(template.pathExtension)")
-            try fm.copyItem(at: template, to: dest)
+            let dest = aeFolder.appendingPathComponent("\(name).aep")
+            try fm.copyItem(at: blank, to: dest)
         }
         return project
     }

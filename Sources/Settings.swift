@@ -46,6 +46,7 @@ enum Pref {
     static let folderMode = "folderMode"   // "location" | "client" | "months"
     static let monthsRoot = "monthsRoot"   // folder that holds the month folders ("months" mode)
 
+    /// The task folder tree. The same for everyone (Hosam's call: no choosing folder names).
     static let defaultSubfolders = """
     00 - Render
     01 - AE
@@ -58,34 +59,11 @@ enum Pref {
     08 - Others
     """
 
-    /// No template until each person picks their own (the path below is only shown as an example).
-    static let defaultTemplate = ""
-    static let templateExample = "/Users/you/Templates/new.aep"
-
-    static let oldDefaultSubfolders = """
-    00 - Render
-    01 - AE
-    02 - PSD
-    03 - For AI
-    04 - From AI
-    05 - Sound
-    06 - Assets and others
-    """
-
     static func registerDefaults() {
-        // The template path used to default to one person's Mac; forget it if it isn't there.
-        if let t = UserDefaults.standard.string(forKey: templatePath),
-           t.hasPrefix("/Users/mousab.hassan/"), !FileManager.default.fileExists(atPath: t) {
-            UserDefaults.standard.removeObject(forKey: templatePath)
-        }
-        // If the old folder tree was saved untouched, switch to the new one.
-        if let saved = UserDefaults.standard.string(forKey: subfolders),
-           saved.trimmingCharacters(in: .whitespacesAndNewlines) == oldDefaultSubfolders.trimmingCharacters(in: .whitespacesAndNewlines) {
-            UserDefaults.standard.removeObject(forKey: subfolders)
-        }
+        // Folder names and the AE template aren't chosen any more: forget old choices.
+        UserDefaults.standard.removeObject(forKey: subfolders)
+        UserDefaults.standard.removeObject(forKey: templatePath)
         UserDefaults.standard.register(defaults: [
-            subfolders: defaultSubfolders,
-            templatePath: defaultTemplate,
             timeFormat: "hm",
             rounding: 0,
             updateSameRow: true,
@@ -119,7 +97,7 @@ enum Pref {
     }
 
     static var subfolderList: [String] {
-        string(subfolders)
+        defaultSubfolders
             .split(whereSeparator: \.isNewline)
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }

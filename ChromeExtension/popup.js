@@ -7,10 +7,12 @@ async function render() {
   if (s) $('who').textContent = s.email || '';
 }
 $('runNow').addEventListener('click', async () => {
-  $('runMsg').textContent = 'Checking…';
+  $('runNow').disabled = true;
+  $('runMsg').textContent = 'Checking Modhesh…';
   await chrome.storage.local.set({ attempts: {} });
-  await chrome.runtime.sendMessage({ type: 'tickNow' }).catch(() => {});
-  $('runMsg').textContent = 'Done — finished tasks are being logged.';
+  await chrome.runtime.sendMessage({ type: 'readNow' }).catch(() => {});
+  $('runMsg').textContent = 'Done — your Modhesh tasks are in TaskTimer, and finished ones are being logged.';
+  $('runNow').disabled = false;
 });
 
 $('signin').addEventListener('click', async () => {

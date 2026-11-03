@@ -4,139 +4,54 @@ import ServiceManagement
 
 // MARK: - Clients
 
+/// The clients and pitches the admin added for this person's team (nobody else adds clients),
+/// each with an optional folder on this Mac for "Client's folder" mode.
 struct ClientsView: View {
     @EnvironmentObject var store: Store
     @Environment(\.dismiss) var dismiss
+    @ObservedObject var cloud = CloudSync.shared
     var inSheet = false
 
-    @Local var newName = ""
-    @Local var editing: UUID? = nil
-    @Local var editText = ""
-    @Local var bulk = ""
-    @Local var showBulk = false
-    @ObservedObject var sync = SheetSync.shared
+    private var shown: [Client] {
+        guard store.hasCloudClients else { return store.clients }
+        let team = cloud.profile?.teamID
+        let used = Set(store.tasks.compactMap(\.clientID))
+        // My team's clients and open pitches, plus any other client I have tasks for (support).
+        return store.clients.filter { c in
+            (c.isCloud && c.isActive && (team == nil || c.teamID == team)) || used.contains(c.id)
+        }
+        .sorted { a, b in
+            if a.isPitch != b.isPitch { return !a.isPitch }
+            return a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
+        }
+    }
 
     var body: some View {
         SheetFrame(title: "Clients",
-                   subtitle: Features.sheet ? "Read from the sheet's Account column — or add them by hand" : "Add them once, then pick from the list. Give each one a folder if you like.",
+                   subtitle: "Added by the admin for your team. Give each one a folder on this Mac if you like.",
                    icon: "person.2.fill") {
-            if Features.sheet {
             HStack(spacing: 8) {
                 Button {
-                    Task { await sync.sync(silent: false) }
-                } label: {
-                    HStack(spacing: 6) {
-                        if sync.syncing { ProgressView().controlSize(.small).tint(.white) }
-                        Label("Sync from Sheet", systemImage: "arrow.triangle.2.circlepath")
-                    }
+                    Task { @MainActor in await cloud.loadClients() }
+                } label: { Label("Refresh", systemImage: "arrow.clockwise") }
+                    .buttonStyle(GlassButtonStyle(compact: true))
+                if !store.hasCloudClients {
+                    Text("No clients from the admin yet. Ask them to add your team's clients in Admin → Clients.")
+                        .font(.system(size: 11)).foregroundStyle(Theme.orange)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .buttonStyle(GradientButtonStyle(compact: true))
-                .disabled(sync.syncing)
-                Text(sync.config?.syncedAt.map { "Last sync \(Fmt.relative($0))" } ?? "Not synced yet")
-                    .font(.system(size: 11)).foregroundStyle(.secondary)
                 Spacer()
-            }
-            }
-            HStack(spacing: 8) {
-                TextField("Add a client or account", text: $newName)
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit(add)
-                Button("Add", action: add)
-                    .buttonStyle(GradientButtonStyle(compact: true))
-                    .disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty)
-                Button { showBulk.toggle() } label: { Image(systemName: "text.badge.plus") }
-                    .buttonStyle(CircleIconButtonStyle(size: 28))
-                    .help("Paste many clients at once")
-            }
-
-            if showBulk {
-                VStack(alignment: .leading, spacing: 6) {
-                    SectionLabel(text: "One client per line")
-                    TextEditor(text: $bulk)
-                        .font(.system(size: 12))
-                        .frame(height: 90)
-                        .scrollContentBackground(.hidden)
-                        .padding(6)
-                        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
-                    HStack {
-                        Spacer()
-                        Button("Add all") {
-                            for line in bulk.split(whereSeparator: \.isNewline) { store.addClient(String(line)) }
-                            bulk = ""
-                            showBulk = false
-                        }
-                        .buttonStyle(GradientButtonStyle(compact: true))
-                    }
-                }
             }
 
             ScrollView {
                 VStack(spacing: 6) {
-                    if store.clients.isEmpty {
+                    if shown.isEmpty {
                         Text("No clients yet.")
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 30)
                     }
-                    ForEach(store.clients) { c in
-                        HStack(spacing: 10) {
-                            Circle().fill(Theme.diagonal).frame(width: 8, height: 8)
-                            if editing == c.id {
-                                TextField("", text: $editText)
-                                    .textFieldStyle(.roundedBorder)
-                                    .onSubmit { store.renameClient(c.id, to: editText); editing = nil }
-                            } else {
-                                Text(c.name).font(.system(size: 13, weight: .medium))
-                                Text("\(store.taskCount(for: c.id)) tasks")
-                                    .font(.system(size: 11)).foregroundStyle(.tertiary)
-                                if c.missingFromSheet == true {
-                                    Text("Not in sheet")
-                                        .font(.system(size: 10, weight: .semibold))
-                                        .foregroundStyle(Theme.orange)
-                                        .help("The last Sync didn't find this account in the sheet. Old tasks keep it; delete it if it's gone for good.")
-                                }
-                            }
-                            Spacer()
-                            if let p = c.folderPath, !p.isEmpty {
-                                Text((p as NSString).abbreviatingWithTildeInPath)
-                                    .font(.system(size: 10))
-                                    .foregroundStyle(FileManager.default.fileExists(atPath: p) ? AnyShapeStyle(HierarchicalShapeStyle.tertiary) : AnyShapeStyle(Theme.pink))
-                                    .lineLimit(1)
-                                    .truncationMode(.head)
-                                    .frame(maxWidth: 140, alignment: .trailing)
-                                    .help(FileManager.default.fileExists(atPath: p) ? p : "Folder not found: \(p)")
-                            }
-                            Menu {
-                                Button("Choose Folder…") {
-                                    let panel = NSOpenPanel()
-                                    panel.canChooseDirectories = true
-                                    panel.canChooseFiles = false
-                                    panel.canCreateDirectories = true
-                                    panel.prompt = "Choose"
-                                    panel.message = "Choose \(c.name)'s folder. Month folders and task folders go inside it."
-                                    if let p = c.folderPath { panel.directoryURL = URL(fileURLWithPath: p) }
-                                    if panel.runModal() == .OK, let u = panel.url { store.setClientFolder(c.id, u.path) }
-                                }
-                                if let p = c.folderPath, !p.isEmpty {
-                                    Button("Show in Finder") { NSWorkspace.shared.open(URL(fileURLWithPath: p)) }
-                                    Button("Remove Folder") { store.setClientFolder(c.id, nil) }
-                                }
-                            } label: {
-                                Image(systemName: c.folderPath == nil ? "folder.badge.plus" : "folder")
-                            }
-                            .menuStyle(.borderlessButton)
-                            .menuIndicator(.hidden)
-                            .fixedSize()
-                            .help("This client's folder")
-                            Button { editing = c.id; editText = c.name } label: { Image(systemName: "pencil") }
-                                .buttonStyle(.borderless)
-                            Button { store.deleteClient(c.id) } label: { Image(systemName: "trash") }
-                                .buttonStyle(.borderless)
-                                .foregroundStyle(Theme.pink)
-                        }
-                        .padding(.horizontal, 12).padding(.vertical, 8)
-                        .glassCard(radius: 10)
-                    }
+                    ForEach(shown) { c in row(c) }
                 }
                 .padding(2)
             }
@@ -154,9 +69,65 @@ struct ClientsView: View {
         .frame(width: 520, height: inSheet ? 560 : 520)
     }
 
-    private func add() {
-        store.addClient(newName)
-        newName = ""
+    private func row(_ c: Client) -> some View {
+        HStack(spacing: 10) {
+            Circle().fill(Theme.diagonal).frame(width: 8, height: 8)
+            Text(c.name).font(.system(size: 13, weight: .medium)).lineLimit(1)
+            if c.isPitch { ClientTag(text: "Pitch", color: Theme.purple) }
+            if c.isCloud && c.teamID != cloud.profile?.teamID, let t = c.teamName {
+                ClientTag(text: t, color: Theme.blue)
+            }
+            if !c.isActive { ClientTag(text: c.isPitch ? "Closed" : "Removed", color: Theme.orange) }
+            Text("\(store.taskCount(for: c.id)) tasks")
+                .font(.system(size: 11)).foregroundStyle(.tertiary)
+            Spacer()
+            if let p = c.folderPath, !p.isEmpty {
+                Text((p as NSString).abbreviatingWithTildeInPath)
+                    .font(.system(size: 10))
+                    .foregroundStyle(FileManager.default.fileExists(atPath: p) ? AnyShapeStyle(HierarchicalShapeStyle.tertiary) : AnyShapeStyle(Theme.pink))
+                    .lineLimit(1)
+                    .truncationMode(.head)
+                    .frame(maxWidth: 140, alignment: .trailing)
+                    .help(FileManager.default.fileExists(atPath: p) ? p : "Folder not found: \(p)")
+            }
+            Menu {
+                Button("Choose Folder…") {
+                    let panel = NSOpenPanel()
+                    panel.canChooseDirectories = true
+                    panel.canChooseFiles = false
+                    panel.canCreateDirectories = true
+                    panel.prompt = "Choose"
+                    panel.message = "Choose \(c.name)'s folder. Month folders and task folders go inside it."
+                    if let p = c.folderPath { panel.directoryURL = URL(fileURLWithPath: p) }
+                    if panel.runModal() == .OK, let u = panel.url { store.setClientFolder(c.id, u.path) }
+                }
+                if let p = c.folderPath, !p.isEmpty {
+                    Button("Show in Finder") { NSWorkspace.shared.open(URL(fileURLWithPath: p)) }
+                    Button("Remove Folder") { store.setClientFolder(c.id, nil) }
+                }
+            } label: {
+                Image(systemName: c.folderPath == nil ? "folder.badge.plus" : "folder")
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("This client's folder")
+        }
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .glassCard(radius: 10)
+    }
+}
+
+struct ClientTag: View {
+    let text: String
+    let color: Color
+    var body: some View {
+        Text(text)
+            .font(.system(size: 9, weight: .bold))
+            .lineLimit(1)
+            .padding(.horizontal, 6).padding(.vertical, 2)
+            .foregroundStyle(color)
+            .background(color.opacity(0.15), in: Capsule())
     }
 }
 
@@ -170,8 +141,6 @@ struct SettingsView: View {
     @AppStorage(Pref.memberName) var memberName = ""
     @AppStorage(Pref.webAppURL) var webAppURL = ""
     @AppStorage(Pref.token) var token = ""
-    @AppStorage(Pref.templatePath) var templatePath = Pref.defaultTemplate
-    @AppStorage(Pref.subfolders) var subfolders = Pref.defaultSubfolders
     @AppStorage(Pref.timeFormat) var timeFormat = "hm"
     @AppStorage(Pref.rounding) var rounding = 0
     @AppStorage(Pref.updateSameRow) var updateSameRow = true
@@ -461,30 +430,17 @@ struct SettingsView: View {
                 }
             }
             Divider()
-            FieldRow(label: "After Effects template (.aep)") {
-                HStack {
-                    TextField("e.g. \(Pref.templateExample)", text: $templatePath)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 11, design: .monospaced))
-                    Button("Choose…") {
-                        let p = NSOpenPanel()
-                        p.canChooseFiles = true
-                        p.canChooseDirectories = false
-                        if p.runModal() == .OK, let u = p.url { templatePath = u.path }
-                    }
-                    .buttonStyle(GlassButtonStyle(compact: true))
-                }
-                if !templatePath.isEmpty && !FileManager.default.fileExists(atPath: templatePath) {
-                    Text("File not found at this path.").font(.system(size: 11)).foregroundStyle(Theme.pink)
-                }
-            }
-            FieldRow(label: "Subfolders (one per line)") {
-                TextEditor(text: $subfolders)
+            FieldRow(label: "Every task folder") {
+                Text(Pref.subfolderList.joined(separator: "  ·  "))
                     .font(.system(size: 12, design: .monospaced))
-                    .frame(height: 140)
-                    .scrollContentBackground(.hidden)
-                    .padding(6)
-                    .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+                Text(FolderService.blankAEP == nil
+                     ? "The same folders for everyone."
+                     : "The same folders for everyone, with an empty After Effects project named after the task in “01 - AE”.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Text("Dropping files on a task moves them by type: PSD / AI → “PSD”, AEP → “AE”, audio → “Sound”, images → “Images”, video → “Videos”, everything else → “Others”. A dropped folder goes to Images or Videos when everything inside is that type, otherwise to Others.")
                 .font(.system(size: 11))
@@ -630,8 +586,8 @@ struct ModheshSettings: View {
 
                 Divider()
                 SectionLabel(text: "Automatic")
-                Toggle("Log finished tasks on Modhesh by themselves and send them to my team leader", isOn: $autoSubmit)
-                Text("A task that's still Pending to Start on Modhesh is moved to In Progress first (with your start date), then logged.")
+                Toggle("Log finished tasks on Modhesh by themselves and send them to the approver", isOn: $autoSubmit)
+                Text("A task that's still Pending to Start on Modhesh is moved to In Progress first (its Start Date on Modhesh isn't changed), then logged. The approver is the one picked at Done.")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }

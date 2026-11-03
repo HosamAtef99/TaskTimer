@@ -693,11 +693,19 @@ struct TaskRow: View {
     }
 
     private var clientMenu: some View {
-        Menu {
-            ForEach(store.clients) { c in
+        let team = CloudSync.shared.profile?.teamID
+        let list = store.hasCloudClients ? store.teamClients(team) : store.clients
+        let pitches = store.hasCloudClients ? store.teamPitches(team) : []
+        return Menu {
+            ForEach(list) { c in
                 Button(c.missingFromSheet == true ? "\(c.name)  (not in sheet)" : c.name) { store.setClient(task.id, c.id) }
             }
-            if !store.clients.isEmpty { Divider() }
+            if !pitches.isEmpty {
+                Divider()
+                ForEach(pitches) { c in Button("Pitch · \(c.name)") { store.setClient(task.id, c.id) } }
+            }
+            if !list.isEmpty || !pitches.isEmpty { Divider() }
+            Text("Support for another team: Done → Support")
             Button("No client") { store.setClient(task.id, nil) }
         } label: {
             Text(store.clientName(task.clientID).isEmpty ? "Choose client" : store.clientName(task.clientID))

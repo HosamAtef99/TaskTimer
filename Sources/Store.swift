@@ -201,6 +201,9 @@ final class Store: ObservableObject {
         let n = max(used.max() ?? 0, subtasks(of: parentID).count) + 1
         var s = TaskItem(name: "Amend \(n)", clientID: p.clientID, folderPath: p.folderPath)
         s.parentID = parentID
+        s.support = p.support
+        s.approverID = p.approverID
+        s.approverName = p.approverName
         if start {
             stopAll()
             s.sessions.append(WorkSession(start: Date()))
@@ -256,6 +259,74 @@ final class Store: ObservableObject {
         return sum
     }
 
+    // MARK: - Clients from the admin (team database)
+
+    struct CloudClient {
+        let id: String
+        var name: String
+        var teamID: String?
+        var teamName: String?
+        var kind: String
+        var active: Bool
+    }
+
+    /// True once the admin's client list has arrived: from then on only those can be picked.
+    var hasCloudClients: Bool { clients.contains { $0.isCloud } }
+
+    /// Takes the admin's list of clients and pitches. A local client with the same name becomes
+    /// that client (keeping its folder on this Mac); clients the admin removed stay for old tasks
+    /// but can't be picked any more. Nothing is deleted.
+    func applyCloudClients(_ list: [CloudClient]) {
+        guard !list.isEmpty else { return }
+        func same(_ a: String, _ b: String) -> Bool { a.caseInsensitiveCompare(b) == .orderedSame }
+        var out = clients
+        var seen = Set<String>()
+        for c in list {
+            seen.insert(c.id)
+            let i = out.firstIndex { $0.cloudID == c.id }
+                ?? out.firstIndex { $0.cloudID == nil && same($0.name, c.name) }
+            var item = i.map { out[$0] } ?? Client(name: c.name)
+            item.name = c.name
+            item.cloudID = c.id
+            item.teamID = c.teamID
+            item.teamName = c.teamName
+            item.kind = c.kind
+            item.active = c.active
+            item.missingFromSheet = nil
+            if let i { out[i] = item } else { out.append(item) }
+        }
+        for i in out.indices where out[i].isCloud && !seen.contains(out[i].cloudID!) {
+            out[i].active = false
+        }
+        out.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        if out != clients { clients = out }
+    }
+
+    /// Clients and pitches that can be picked now.
+    var pickableClients: [Client] { clients.filter { $0.isCloud && $0.isActive } }
+
+    /// My team's clients (not pitches), for New Task. Everything when I'm not in a team.
+    func teamClients(_ teamID: String?) -> [Client] {
+        pickableClients.filter { !$0.isPitch && (teamID == nil || $0.teamID == teamID) }
+    }
+
+    /// My team's open pitches.
+    func teamPitches(_ teamID: String?) -> [Client] {
+        pickableClients.filter { $0.isPitch && (teamID == nil || $0.teamID == teamID) }
+    }
+
+    /// The client whose name is closest to `name` (Modhesh's account names), or nil.
+    func matchClient(_ name: String) -> Client? {
+        let n = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !n.isEmpty else { return nil }
+        let pool = hasCloudClients ? clients.filter { $0.isCloud } : clients
+        if let c = pool.first(where: { $0.name.lowercased() == n }) { return c }
+        return pool.first { c in
+            let m = c.name.lowercased()
+            return m.count >= 4 && n.count >= 4 && (m.contains(n) || n.contains(m))
+        }
+    }
+
     // MARK: - Clients
 
     @discardableResult
@@ -295,9 +366,10 @@ final class Store: ObservableObject {
 
     @discardableResult
     func addTask(name: String, clientID: UUID?, folder: URL?, start: Bool, incoming: Bool = false,
-                 wantsFolder: Bool = false, folderBase: String? = nil) -> UUID {
+                 wantsFolder: Bool = false, folderBase: String? = nil, support: Bool = false) -> UUID {
         var t = TaskItem(name: name, clientID: clientID, folderPath: folder?.path)
         if incoming { t.status = .incoming }
+        if support { t.support = true }
         if folder == nil && wantsFolder {
             t.wantsFolder = true
             t.folderBase = folderBase
@@ -418,13 +490,18 @@ final class Store: ObservableObject {
     /// Done (no sheet): stops the timer and saves the final hours, day and status.
     func complete(_ id: UUID, name: String, clientID: UUID?, status: TaskStatus,
                   date: Date, totalSeconds: TimeInterval, deliverables: Int? = nil, rating: Int? = nil,
-                  challenge: Int? = nil) {
+                  challenge: Int? = nil, support: Bool? = nil, approver: (id: String, name: String)? = nil) {
         pause(id)
         guard let t = task(id) else { return }
         let raw = t.rawSeconds()
         update(id) { t in
             t.name = name
             t.clientID = clientID
+            if let support { t.support = support }
+            if let approver {
+                t.approverID = approver.id
+                t.approverName = approver.name
+            }
             t.status = status
             t.workDate = date
             t.manualAdjust = totalSeconds - raw

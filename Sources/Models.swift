@@ -46,6 +46,20 @@ struct Client: Identifiable, Codable, Hashable {
     var missingFromSheet: Bool?
     /// This client's folder on this Mac (month folders and task folders go inside).
     var folderPath: String?
+    /// Set for clients and pitches the admin added (team database `clients`); nil for the old
+    /// local-only names (kept so older tasks keep their client).
+    var cloudID: String?
+    /// The team that handles it, and that team's name.
+    var teamID: String?
+    var teamName: String?
+    /// "client" or "pitch".
+    var kind: String?
+    /// false: removed by the admin, or a closed pitch (hidden from the pickers).
+    var active: Bool?
+
+    var isCloud: Bool { cloudID != nil }
+    var isPitch: Bool { kind == "pitch" }
+    var isActive: Bool { active ?? true }
 }
 
 // MARK: - Work session
@@ -89,6 +103,11 @@ struct TaskItem: Identifiable, Codable, Hashable {
     var wantsFolder: Bool?
     /// For such a task: the location picked by hand (when not using client / month folders).
     var folderBase: String?
+    /// Support for another team's client (picked in New Task / Done).
+    var support: Bool?
+    /// Who approves it on Modhesh (picked at Done; the team leader of the client's team by default).
+    var approverID: String?
+    var approverName: String?
 
     var isSubtask: Bool { parentID != nil }
 
@@ -123,6 +142,7 @@ struct TaskItem: Identifiable, Codable, Hashable {
         case id, name, clientID, folderPath, createdAt, sessions, status
         case manualAdjust, loggedSeconds, sheetRow, lastLoggedAt, pendingLog
         case parentID, sheetTab, workDate, wantsFolder, folderBase, deliverables, rating, challenge
+        case support, approverID, approverName
     }
 
     init(from decoder: Decoder) throws {
@@ -147,6 +167,9 @@ struct TaskItem: Identifiable, Codable, Hashable {
         deliverables = try c.decodeIfPresent(Int.self, forKey: .deliverables)
         rating = try c.decodeIfPresent(Int.self, forKey: .rating)
         challenge = try c.decodeIfPresent(Int.self, forKey: .challenge)
+        support = try c.decodeIfPresent(Bool.self, forKey: .support)
+        approverID = try c.decodeIfPresent(String.self, forKey: .approverID)
+        approverName = try c.decodeIfPresent(String.self, forKey: .approverName)
     }
 }
 
