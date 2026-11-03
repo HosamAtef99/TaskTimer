@@ -16,12 +16,25 @@ enum FolderService {
         }
     }
 
-    /// The empty After Effects project that comes inside the app (Resources/Blank.aep), copied
-    /// into every new task folder as "<Task>.aep". Nobody picks a template any more (Hosam's call).
+    /// The After Effects versions the app has an empty project for (Resources/Blank-<v>.aep).
+    static let aeVersions = ["24", "25", "26"]
+
+    /// The empty After Effects project for the version picked in Settings → Folders, copied into
+    /// every new task folder as "<Task>.aep". Nobody picks a template any more (Hosam's call).
     static var blankAEP: URL? {
-        guard let u = Bundle.main.url(forResource: "Blank", withExtension: "aep"),
+        let v = Pref.string(Pref.aeVersion)
+        guard let u = Bundle.main.url(forResource: "Blank-\(aeVersions.contains(v) ? v : "26")", withExtension: "aep"),
               FileManager.default.fileExists(atPath: u.path) else { return nil }
         return u
+    }
+
+    /// "26" when After Effects 2026 is installed, and so on (the newest one found).
+    static var newestInstalledAE: String? {
+        let fm = FileManager.default
+        for v in aeVersions.reversed() where fm.fileExists(atPath: "/Applications/Adobe After Effects 20\(v)") {
+            return v
+        }
+        return nil
     }
 
     static func cleanName(_ name: String) -> String {

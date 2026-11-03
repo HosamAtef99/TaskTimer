@@ -1,8 +1,7 @@
 // TaskTimer on Modhesh.
 // 1. Adds a "Fill from TaskTimer" bar to Log Time (you check it and press Save yourself).
 // 2. Logs finished tasks by itself when the background worker asks (jobs).
-// 3. Remembers Modhesh's Start Date of a task whenever its Task Details open (TaskTimer uses it
-//    as the task's day). It never writes a Start Date into Modhesh.
+// 3. Before logging, sets the Modhesh task's Start Date to the day picked at Done in TaskTimer.
 // Reading your Modhesh tasks happens only when you press "Check now" in the extension.
 
 (() => {
@@ -88,18 +87,6 @@
     m = t.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})/);
     if (m) return `${m[3]}-${pad(m[2])}-${pad(m[1])}`;
     return null;
-  }
-
-  /// Saves Modhesh's Start Date of this task for TaskTimer (only for tasks already read into it).
-  async function rememberStart(form) {
-    try {
-      const code = (form.querySelector('[name=task_id]') || {}).value;
-      const day = isoDate((form.querySelector('[name=start_date]') || {}).value);
-      if (!code || !day || !(await TT.session())) return;
-      const uid = await TT.userId();
-      await TT.rest('PATCH', `modhesh_tasks?user_id=eq.${uid}&code=eq.${encodeURIComponent(code)}`,
-        { start_date: day }, 'return=minimal');
-    } catch (e) { /* older database without start_date */ }
   }
 
   let leaderCache;
@@ -363,9 +350,10 @@
     return e ? e.textContent.trim().slice(0, 160) : '';
   }
 
-  /// Pending to Start → In Progress, through Task Details. Changes only the status: the Start
-  /// Date, Estimate and deliverables link stay as they are on Modhesh.
-  async function startInModhesh(job) {
+  /// Through Task Details, before logging: the Start Date becomes the day picked at Done in
+  /// TaskTimer, and a Pending to Start task becomes In Progress. Estimate and the deliverables
+  /// link stay as they are. Returns true when it saved something.
+  async function prepareInModhesh(job) {
     const open = document.querySelector(`[data-act="drawer-modal"][data-post-task_id="${CSS.escape(job.code)}"]`);
     if (!open) throw new Error('Task not found on the Modhesh board');
     open.click();
@@ -375,14 +363,27 @@
     }, 20000);
     if (!form) throw new Error('Task Details didn\'t open, or the task can\'t be edited');
     await sleep(600);
+    const closeDrawer = () => {
+      const x = [...document.querySelectorAll('.btn-close, [data-kt-drawer-dismiss], [data-bs-dismiss]')].find(visible);
+      if (x) x.click();
+    };
 
+    let changed = false;
     const status = form.querySelector('[name=status]');
-    const opt = [...status.options].find((o) => /in\s*progress/i.test(o.textContent));
-    if (!opt) throw new Error('Modhesh has no "In Progress" status for this task');
-    status.value = opt.value;
-    status.dispatchEvent(new Event('change', { bubbles: true }));
-
-    rememberStart(form);
+    const inProgress = [...status.options].find((o) => /in\s*progress/i.test(o.textContent));
+    const selected = status.options[status.selectedIndex];
+    if (!selected || !/in\s*progress/i.test(selected.textContent)) {
+      if (!inProgress) throw new Error('Modhesh has no "In Progress" status for this task');
+      status.value = inProgress.value;
+      status.dispatchEvent(new Event('change', { bubbles: true }));
+      changed = true;
+    }
+    const start = form.querySelector('[name=start_date]');
+    if (start && job.startDate && isoDate(start.value) !== job.startDate) {
+      setValue(start, job.startDate);
+      changed = true;
+    }
+    if (!changed) { closeDrawer(); return false; }
     await sleep(400);
 
     const save = [...document.querySelectorAll('button, input[type=submit]')]
@@ -397,10 +398,10 @@
       return null;
     }, 20000);
     if (!result || result.err) {
-      throw new Error((result && result.err) || 'Modhesh didn\'t confirm the status change');
+      throw new Error((result && result.err) || 'Modhesh didn\'t confirm the Start Date / status change');
     }
-    const x = [...document.querySelectorAll('.btn-close, [data-kt-drawer-dismiss], [data-bs-dismiss]')].find(visible);
-    if (x) x.click();
+    closeDrawer();
+    return true;
   }
 
   async function submitLogTime(job) {
@@ -462,8 +463,9 @@
         try {
           const logBtn = () => document.querySelector(`[data-action-url$="/tasks/log-time"][data-post-task_id="${CSS.escape(job.code)}"]`);
           await waitFor(() => logBtn() || document.querySelector(`[data-post-task_id="${CSS.escape(job.code)}"]`), 20000);
-          if (!logBtn()) {
-            await startInModhesh(job);
+          const wasPending = !logBtn();
+          await prepareInModhesh(job);
+          if (wasPending) {
             if (!(await waitFor(logBtn, 15000))) {
               // The board didn't refresh by itself: reload and log right after.
               await chrome.runtime.sendMessage({ type: 'jobRetry', job }).catch(() => {});
@@ -493,13 +495,6 @@
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg.type === 'jobs') runJobs(msg.jobs);
   });
-
-  // Task Details: nothing to fill any more (Modhesh's Start Date is the one that counts);
-  // just remember that date for TaskTimer.
-
-  function decorateDetails(form) {
-    rememberStart(form);
-  }
 
   // ───────────── Badges on the board ─────────────
   // Each Modhesh card that is linked shows its TaskTimer task and hours, refreshed every few
@@ -549,11 +544,6 @@
       if (!f.querySelector('[name=actual_spent_hours]')) continue;
       f.dataset.tt = '1';
       decorateLogTime(f);
-    }
-    for (const f of document.querySelectorAll('form#updaterequest')) {
-      if (f.dataset.tt) continue;
-      f.dataset.tt = '1';
-      decorateDetails(f);
     }
   }
 

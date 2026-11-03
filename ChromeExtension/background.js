@@ -81,74 +81,6 @@ async function report(text) {
   } catch (e) { /* older database */ }
 }
 
-// ───────────── Modhesh's Start Date of each task ─────────────
-// Read from the task's details (the same request Modhesh makes when you open a task), so
-// TaskTimer can use it as the task's day. Nothing is written to Modhesh.
-
-const pad2 = (n) => String(n).padStart(2, '0');
-
-/// "2026-11-03", "03/11/2026", "03-11-2026" → "2026-11-03".
-function isoDate(v) {
-  const s = String(v || '').trim();
-  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
-  if (m) return `${m[1]}-${pad2(m[2])}-${pad2(m[3])}`;
-  m = s.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})/);
-  if (m) return `${m[3]}-${pad2(m[2])}-${pad2(m[1])}`;
-  return null;
-}
-
-function startFromHtml(html) {
-  const text = String(html || '').replace(/\\"/g, '"').replace(/\\\//g, '/');
-  const tag = (text.match(/<input[^>]*name=["']start_date["'][^>]*>/i) || [])[0];
-  if (!tag) return null;
-  return isoDate((tag.match(/\svalue=["']([^"']*)["']/i) || [])[1]);
-}
-
-async function csrfToken() {
-  const r = await fetch(`${MODHESH}/tasks/my`, { credentials: 'include' });
-  const html = await r.text();
-  return (html.match(/<meta[^>]*name=["']csrf-token["'][^>]*content=["']([^"']+)/i) ||
-          html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*name=["']csrf-token/i) || [])[1] || '';
-}
-
-async function readStartDate(t, token) {
-  const url = t.view_url ? (t.view_url.startsWith('http') ? t.view_url : MODHESH + t.view_url) : null;
-  if (!url) return null;
-  const body = new URLSearchParams({ task_id: t.code });
-  if (token) body.set('_token', token);
-  const r = await fetch(url, {
-    method: 'POST',
-    credentials: 'include',
-    headers: {
-      'X-Requested-With': 'XMLHttpRequest',
-      'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-      ...(token ? { 'X-CSRF-TOKEN': token } : {}),
-    },
-    body,
-  });
-  if (!r.ok) return null;
-  return startFromHtml(await r.text());
-}
-
-/// Fills `start_date` on the active tasks (remembered, so each task is asked once).
-async function addStartDates(uid, tasks) {
-  const key = `startDates_${uid}`;
-  const { [key]: known = {} } = await chrome.storage.local.get(key);
-  const need = tasks.filter((t) => ACTIVE.includes(t.status) && !known[t.code]).slice(0, 20);
-  if (need.length) {
-    let token = '';
-    try { token = await csrfToken(); } catch (e) { /* try without */ }
-    for (const t of need) {
-      try {
-        const d = await readStartDate(t, token);
-        if (d) known[t.code] = d;
-      } catch (e) { /* next one */ }
-    }
-    await chrome.storage.local.set({ [key]: known });
-  }
-  for (const t of tasks) if (known[t.code]) t.start_date = known[t.code];
-}
-
 let lastRead = 0;
 async function readModhesh(force) {
   await reloadIfUpdated();
@@ -194,7 +126,6 @@ async function readModhesh(force) {
       return;
     }
     await report(`${seen.size} tasks read from Modhesh${owner ? ` (${owner})` : ''} · ${active} pending or in progress.`);
-    await addStartDates(uid, [...seen.values()]).catch(() => {});
 
     // Only send what changed since last time (remembered per account).
     const key = `sentModhesh_${uid}`;
@@ -202,13 +133,7 @@ async function readModhesh(force) {
     const changed = [...seen.values()].filter((t) => sentModhesh[t.code] !== JSON.stringify(t));
     if (!changed.length) return;
     const rows = changed.map((t) => ({ ...t, user_id: uid, updated_at: new Date().toISOString() }));
-    try {
-      await TT.rest('POST', 'modhesh_tasks', rows, 'resolution=merge-duplicates,return=minimal');
-    } catch (e) {
-      if (!/start_date/.test(e.message)) throw e;
-      // Database without start_date yet (schema.sql not run again).
-      await TT.rest('POST', 'modhesh_tasks', rows.map(({ start_date, ...r }) => r), 'resolution=merge-duplicates,return=minimal');
-    }
+    await TT.rest('POST', 'modhesh_tasks', rows, 'resolution=merge-duplicates,return=minimal');
     for (const t of changed) sentModhesh[t.code] = JSON.stringify(t);
     await chrome.storage.local.set({ [key]: sentModhesh });
     console.log(`[TaskTimer] sent ${rows.length} changed Modhesh tasks`);
@@ -368,6 +293,7 @@ function jobsFrom({ rows, byId }, st = {}) {
       challenge: t.challenge || st.challenge || 1,
       complete: true,
       approver: t.approver_name || null,   // picked at Done; null = the team leader
+      startDate: t.work_date || null,      // the day picked at Done → the Modhesh task's Start Date
     });
   }
   return jobs;

@@ -3,7 +3,7 @@ import AppKit
 
 /// Tasks read from Modhesh (by the TaskTimer Chrome extension) and the TaskTimer task each one
 /// is linked to. Linked tasks get their hours, deliverables and stars filled in on Modhesh by the
-/// extension; Modhesh's Start Date becomes the task's day.
+/// extension, and the day picked at Done becomes the Modhesh task's Start Date.
 struct ModheshView: View {
     @EnvironmentObject var store: Store
     @Environment(\.dismiss) var dismiss

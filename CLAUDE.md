@@ -43,16 +43,15 @@ When you make a decision that the other person would need to know, add it here.
 | `Store.swift` | All local state; per-account data file `data-<uid>.json` (the first account on a Mac claims the old `data.json`); `switchAccount`, folders, `complete(...)` |
 | `MainView.swift` | Main window. Responsive: the width comes from a root `GeometryReader` (window width, **not** content width). `compact` < 780, `narrow` < 640. Filters: status, month (creation date), Modhesh (closed / not closed / not linked) |
 | `Sheets.swift` | New Task, Done (hours/min rounded to ½ h, deliverables, stars, challenge) |
-| `FolderService.swift` / `MonthFolder.swift` | **Fixed folder tree** (`Pref.subfolderList` = `Pref.defaultSubfolders`; nobody edits folder names any more, Hosam's call) and **no AE template choice**: `createProject` copies the empty `Resources/Blank.aep` (bundled by the build script when the file is in the repo) as `<Task>.aep` into "01 - AE"; no file in the build → folders only. `aeFile(in:)` = the task's AE project: newest .aep/.aepx anywhere in the task folder (3 levels; skips Auto-Save, Collect and Render folders) — used by Open AE Project, Organize and Collect. Task folders (client folder or months root; the month folder name copies the style of the existing ones). Dropped files are sorted into subfolders by type, moved or copied (the user picks in `DropFilesSheet`, in `MainView.swift`) |
+| `FolderService.swift` / `MonthFolder.swift` | **Fixed folder tree** (`Pref.subfolderList` = `Pref.defaultSubfolders`; nobody edits folder names any more, Hosam's call) and **no AE template choice**: `createProject` copies the empty `Resources/Blank-<24|25|26>.aep` (Hosam's files, one per AE version; `Pref.aeVersion`, Settings → Folders, default = newest AE in /Applications) as `<Task>.aep` into "01 - AE". `aeFile(in:)` = the task's AE project: newest .aep/.aepx anywhere in the task folder (3 levels; skips Auto-Save, Collect and Render folders) — used by Open AE Project, Organize and Collect. Task folders (client folder or months root; the month folder name copies the style of the existing ones). Dropped files are sorted into subfolders by type, moved or copied (the user picks in `DropFilesSheet`, in `MainView.swift`) |
 | `AfterEffects.swift` | Imports dropped files into the open AE project through AppleScript `DoScript` |
 | `AEHelperRemoval.swift` | **No helper inside After Effects any more** (Hosam's call, 1.28): the Render Queue → Render folder / `_v01` naming and the timer following the open project were removed, and nothing checks AE in the background. On launch this deletes the old "TaskTimer Helper" CEP extension (`~/Library/Application Support/Adobe/CEP/extensions/com.tasktimer.aehelper`) and its files. Don't bring a background AE poller back without asking |
 | `AEProjectTools.swift` | Task row → folder menu: **Set Render Outputs** (`renderToTask`, only when pressed — Hosam wants no background AE checks: queued Render Queue items of the task's open project → the task's Render folder, named `<Task folder>_v01…`, next free number in the folder + queue; already-correct items left alone), **Organize AE Project** (loose items into numbered bins, one undo step) and **Collect AE Project** — done **without After Effects** by `AEPFile.swift`, which reads/rewrites the .aep (RIFX) directly: footage paths are the `alas` JSON records inside `LIST:"Pin "` (render outputs are under `LIST:"LOm "` and are left alone). Copies go to `<Task>/Collect/<Task> <date>/(Footage)/<the item's project-panel folders>/` like AE's own Collect (Hosam's call: organized as in After Effects, not by where the file sits on disk; folders come from `LIST:Item` → `idta` type 1 + `Utf8` name → `LIST:Sfdr`), the copy's records get the new `fullpath` and AE's relative-path counts (`ascendcount_base/target`), the result is read back before it's written, plus a `<Project> Report.txt`. PSD/AI layers keep their layer. If AE has the project open with unsaved changes it's saved first. Unchanged chunks are written byte for byte (`Tests/AEPFileTest`, run in CI before the build, checks round trips). Format reference: forticheprod/aep_parser `docs/file_format.md`. `collectWithAE` (old way, through AE scripting; starts AE hidden if needed) is only the fallback for project files `AEPFile` can't read. "Check Render Folder…" (`RenderWatcher.diagnose`) explains why notifications / thumbnails don't show. Also `RenderThumb`: newest render's thumbnail on the task row (QuickLook, checked every 60 s) |
-| `DownloadsWatcher.swift` | Auto-import downloads (`Pref.autoImportDownloads`, header ⬇︎ button / Settings → General): while on, checks ~/Downloads every 2 s; a new file (not `.crdownload`/`.download`/`.part`…, same size for 4 s, batch waits while anything still downloads) is **moved** into the running task's folder (`FolderService.sort`) and imported into the open AE project (`activate` only for PSD/AI). Files there when it's switched on are left alone; no running task → stays in Downloads with a notification |
 | `Cloud.swift` / `CloudSync.swift` | Supabase auth + REST, push/pull, team, Modhesh state, weekly report |
 | `TeamView.swift` | Leader window: tasks, summary, add member (new account, or an existing account by email), reset/remove member, assign task, CSV. `isValidEmail` / `EmailHint` live here |
 | `AdminView.swift` | Admin panel — the **main window for admin accounts** (`AdminView(embedded: true)` in `MainView`). Tabs: Hours (every team's and person's hours / done / in progress / working now for a month, per-person task list, CSV), People (move between teams, set role, reset password, unblock, delete account for good), Teams (create / rename / delete empty) |
 | `ModheshView.swift` | Link Modhesh tasks to TaskTimer tasks or amends (manual only). Linking a task that's already Completed sets its day to Modhesh's Start Date |
-| Clients (`Store.applyCloudClients`, `CloudSync.loadClients`, `ClientPicker` in `Sheets.swift`, Admin → Clients) | **Only admins add clients and pitches** (table `clients`: name, team, kind `client`/`pitch`, active). Everyone reads the list; the app merges it into the local `clients` (a local client with the same name becomes the cloud one and keeps its folder; old names stay for old tasks, never pickable). New Task / Done: my team's clients, then my team's open pitches; the **Support** toggle searches every other team's clients instead (`TaskItem.support`). Pitch life: Open → Won (kind becomes client) or Closed (active = false). Admin → Clients shows hours per client / pitch per month and old names not in the list |
+| Clients (`Store.applyCloudClients`, `CloudSync.loadClients`, `ClientPicker` in `Sheets.swift`, Admin → Clients) | **Only admins add clients and pitches** (table `clients`: name, team, kind `client`/`pitch`, active). Everyone reads the list; the app merges it into the local `clients` (a local client with the same name becomes the cloud one and keeps its folder; old names stay for old tasks, never pickable). New Task / Done: my team's clients, then my team's open pitches; the **Support** toggle searches every other team's clients instead (`TaskItem.support`). Pitches have no life cycle (Hosam's call): added to a team, shown under Pitches, deleted by the admin when done. Admin → Clients shows hours per client / pitch per month and old names not in the list |
 | Approver (`DoneSheet`, `CloudSync.leaders` / `defaultApprover`) | Done has "Approver on Modhesh": all leaders from the SQL function `leaders()`; default = leader of the client's team (so support goes to the other team's leader), else my leader. Saved on the task (`approver_id`, `approver_name`); the extension picks that name in Log Time, or the team leader when empty |
 | `ExtensionInstaller.swift` | Copies the bundled extension to `~/Library/Application Support/TaskTimer Dev/…`, opens `chrome://extensions` through AppleScript, detects the installed extension from Chrome's prefs |
 | `RenderWatcher.swift` | "Render finished" notification with Stop/Done. Watches a task's Render folder while the task or an amend is in progress / Incoming / timing, or was timed in the last 3 days (`RenderWatcher.watched`); new **or overwritten** files (size + modified date), finished after 45 s with no change |
@@ -93,6 +92,10 @@ When you make a decision that the other person would need to know, add it here.
   Keep polling slow and queries incremental and filtered (select only the needed columns,
   `updated_at=gt.`). Current timers: sync every 120 s; Modhesh links every 3rd tick; weekly
   report and settings every 5th; team window every 60 s while open.
+- **Start Fresh** (Admin → Teams): SQL `admin_start_fresh()` deletes every task and Modhesh link,
+  sets every `user_settings.modhesh_reset_at` (the extension forgets what it sent) and writes
+  `app_settings.data_reset_at`. Each app (`CloudSync.applyFreshStart`, at start and every tick)
+  drops local tasks created before it, after copying its data file to `…-before-fresh-start-<day>.json`.
 - Backups (planned): nightly `pg_dump` via GitHub Actions into a **private** repo
   (`tasktimer-backup`, secret `SUPABASE_DB_URL`). Never in this repo, because it's public.
 
@@ -104,11 +107,9 @@ When you make a decision that the other person would need to know, add it here.
 - **Modhesh is read only when the person presses "Check now"** in the extension popup (Hosam's call):
   no 5-minute alarm, no read when a Modhesh page opens. The 2-minute `tick` stays: it reads only
   TaskTimer's database and logs finished linked tasks (off with Settings → Modhesh → automatic).
-- **Start Date:** the extension never writes a Start Date into Modhesh. On Check now it reads each
-  active task's Start Date from its details (POST to the card's `view-task` URL with the page's CSRF
-  token, `input[name=start_date]`; asked once per task, remembered in `startDates_<uid>`), and
-  whenever Task Details open on the page. Saved as `modhesh_tasks.start_date`; the app's Done uses it
-  as the task's day.
+- **Start Date:** the day picked at Done (`tasks.work_date`) becomes the Modhesh task's Start Date:
+  before Log Time, `prepareInModhesh` opens Task Details and sets Start Date (and In Progress if it
+  was Pending), then Update Task; nothing is saved when both already match.
 - Modhesh `/tasks/my?...start_month=&start_year=` returns JSON whose `columns` are keyed
   by status: 1 Pending to Start, 6 In Progress, 4 Completed, 5 Pending Approver, 2 Rejected.
   The app shows only statuses 1 and 6.
@@ -118,8 +119,8 @@ When you make a decision that the other person would need to know, add it here.
 - **Linking is manual only.** Automatic linking by name was removed because it linked the
   wrong tasks. Don't bring it back.
 - When a **linked** task is Completed in TaskTimer, the extension:
-  1. If the Modhesh task is Pending, sets status In Progress on Task Details (`#updaterequest`),
-     nothing else (Start Date, Estimate and the deliverables link stay as they are).
+  1. On Task Details (`#updaterequest`): Start Date = the Done day, status In Progress if it was
+     Pending. Estimate and the deliverables link stay as they are.
   2. Fills Log Time (`#add_members`): hours/mins, deliverables, stars, challenge (default
      1 = "No Challenges at all"), Complete, approver = the one picked at Done (`approver_name`),
      or the team leader. Then Save.
@@ -136,11 +137,12 @@ When you make a decision that the other person would need to know, add it here.
 - Only items created by the import are moved into the project folder. Existing items are
   never touched; a name clash gets " (new)" added; a file already in the project is skipped.
 - Layer styles (Editable/Merge) can't be set from scripting.
-- Nothing in TaskTimer checks After Effects on a timer. The only thing that sends scripts to AE
-  without a click right then is **Auto-import downloads** (each finished download → one import).
-  Versions 1.21–1.27 left `app.scheduleTask` / the CEP helper running inside AE until AE restarts.
+- Nothing in TaskTimer checks After Effects on a timer. **Auto-import downloads was removed in
+  1.30** (Hosam's call: it sent imports to AE in the background and clashed with his other
+  scripts); the drop sheet's "Import into After Effects" checkbox stays. Versions 1.21–1.27 left
+  `app.scheduleTask` / the CEP helper running inside AE until AE restarts.
 - TaskTimer only talks to AE (AppleScript `DoScript`) when the person does something: an import
-  (drop, or auto-import downloads), Organize, the save before Collect. A DoScript while AE shows
+  (drop), Set Render Outputs, Organize, the save before Collect. A DoScript while AE shows
   one of its own windows makes AE show "Cannot run a script while a modal dialog is waiting".
 
 ## User-facing text

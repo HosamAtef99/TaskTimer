@@ -323,7 +323,6 @@ struct DoneSheet: View {
     @Local var support = false
     @Local var approverID = ""
     @Local var approverTouched = false
-    @Local var dateFromModhesh = false
     @Local var date = Date()
     @Local var hours = 0
     @Local var minutes = 0
@@ -381,9 +380,10 @@ struct DoneSheet: View {
                     DatePicker("", selection: $date, displayedComponents: .date)
                         .labelsHidden()
                         .datePickerStyle(.field)
-                    if dateFromModhesh {
-                        Text("Start Date on Modhesh")
+                    if cloud.isLinkedToModhesh(taskID) {
+                        Text("Also Modhesh's Start Date")
                             .font(.system(size: 10)).foregroundStyle(.secondary)
+                            .help("When this task is logged on Modhesh, its Start Date there is set to this day.")
                     }
                 }
                 FieldRow(label: "Deliverables") {
@@ -500,10 +500,7 @@ struct DoneSheet: View {
         name = t.name
         clientID = t.clientID
         support = t.support ?? false
-        // The day is Modhesh's Start Date when the task is linked to Modhesh and it's known.
-        let fromModhesh = cloud.modheshStartDate(for: t.id) ?? t.parentID.flatMap { cloud.modheshStartDate(for: $0) }
-        dateFromModhesh = fromModhesh != nil
-        date = fromModhesh ?? t.workDate ?? Date()
+        date = t.workDate ?? Date()
         approverID = t.approverID ?? defaultApprover
         if t.approverID != nil { approverTouched = true }   // picked before: keep it
         let secs = t.totalSeconds(at: Date())

@@ -77,7 +77,7 @@ struct ClientsView: View {
             if c.isCloud && c.teamID != cloud.profile?.teamID, let t = c.teamName {
                 ClientTag(text: t, color: Theme.blue)
             }
-            if !c.isActive { ClientTag(text: c.isPitch ? "Closed" : "Removed", color: Theme.orange) }
+            if !c.isActive { ClientTag(text: "Removed", color: Theme.orange) }
             Text("\(store.taskCount(for: c.id)) tasks")
                 .font(.system(size: 11)).foregroundStyle(.tertiary)
             Spacer()
@@ -157,6 +157,7 @@ struct SettingsView: View {
     @AppStorage(Pref.timeFormatFromSheet) var timeFormatFromSheet = true
     @AppStorage(Pref.folderMode) var folderMode = "location"
     @AppStorage(Pref.monthsRoot) var monthsRoot = ""
+    @AppStorage(Pref.aeVersion) var aeVersion = "26"
     @ObservedObject var sync = SheetSync.shared
 
     @Local var tab = Features.sheet ? 0 : 1
@@ -435,9 +436,19 @@ struct SettingsView: View {
                     .font(.system(size: 12, design: .monospaced))
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
-                Text(FolderService.blankAEP == nil
-                     ? "The same folders for everyone."
-                     : "The same folders for everyone, with an empty After Effects project named after the task in “01 - AE”.")
+                Text("The same folders for everyone, with an empty After Effects project named after the task in “01 - AE”.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            FieldRow(label: "After Effects version of the new project") {
+                Picker("", selection: $aeVersion) {
+                    ForEach(FolderService.aeVersions, id: \.self) { v in Text("After Effects 20\(v)").tag(v) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(maxWidth: 420)
+                Text("Pick the version you open projects with. A project saved in a newer version doesn't open in an older one.")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -483,7 +494,6 @@ struct SettingsView: View {
                 }
             Toggle("Pause the timer when the Mac goes to sleep", isOn: $pauseOnSleep)
             Toggle("Notify me when a render finishes (watches each task's Render folder)", isOn: $renderNotify)
-            AESettingsRows()
             HStack(spacing: 10) {
                 Text("Menu bar").font(.system(size: 12))
                 Picker("", selection: $menuBarStyle) {
@@ -587,7 +597,7 @@ struct ModheshSettings: View {
                 Divider()
                 SectionLabel(text: "Automatic")
                 Toggle("Log finished tasks on Modhesh by themselves and send them to the approver", isOn: $autoSubmit)
-                Text("A task that's still Pending to Start on Modhesh is moved to In Progress first (its Start Date on Modhesh isn't changed), then logged. The approver is the one picked at Done.")
+                Text("Before logging, the Modhesh task's Start Date is set to the day you picked at Done (and a Pending to Start task is moved to In Progress). The approver is the one picked at Done.")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -849,15 +859,5 @@ struct UpdatesSection: View {
                 }
             }
         }
-    }
-}
-
-/// Settings → General: After Effects options.
-struct AESettingsRows: View {
-    @ObservedObject var downloads = DownloadsWatcher.shared
-
-    var body: some View {
-        Toggle("Auto-import downloads: new files in Downloads go to the running task's folder and into After Effects",
-               isOn: Binding(get: { downloads.isOn }, set: { downloads.set($0) }))
     }
 }

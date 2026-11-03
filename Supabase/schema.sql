@@ -233,8 +233,8 @@ create policy tasks_delete on public.tasks for delete to authenticated
 -- Only admins add clients and pitches, each to the team that handles it, so every account
 -- has one spelling everywhere and its hours can be measured. Everyone signed in can read the
 -- list (a member doing support for another team searches all clients).
--- A pitch is a short-lived account: Open → Won (becomes a normal client of its team) or
--- Closed (active = false: hidden from the pickers, its hours stay).
+-- A pitch is added to the team that handles it and shows under Pitches in that team's New Task.
+-- active = false hides a client from the pickers (its hours stay).
 create table if not exists public.clients (
   id         uuid primary key default gen_random_uuid(),
   name       text not null,
@@ -277,9 +277,6 @@ $$;
 revoke execute on function public.leaders() from public, anon;
 grant execute on function public.leaders() to authenticated;
 
--- Modhesh's own Start Date of each task (read by the extension). TaskTimer uses it as the
--- task's day at Done; the extension no longer writes a Start Date into Modhesh.
-alter table public.modhesh_tasks add column if not exists start_date date;
 
 -- ───────────────────────── A new team and its leader (run by hand) ─────────────────────────
 -- 1) Authentication → Users → Add user → Create new user (tick Auto Confirm User) for the leader.
@@ -306,3 +303,31 @@ alter table public.modhesh_tasks add column if not exists start_date date;
 -- See who has signed up:
 --   select email, full_name, role, (select name from public.teams t where t.id = team_id) as team
 --     from public.profiles order by created_at;
+
+-- ───────────────────────── Fresh start (1.30) ─────────────────────────
+-- Admin → Teams → Start Fresh calls admin_start_fresh(): every task and Modhesh link is deleted
+-- and the time is written to app_settings. Each TaskTimer then drops its local tasks made before
+-- that time (keeping a copy of its data file) and the extension forgets what it sent.
+create table if not exists public.app_settings (
+  key        text primary key,
+  value      text,
+  updated_at timestamptz not null default now()
+);
+alter table public.app_settings enable row level security;
+drop policy if exists app_settings_select on public.app_settings;
+create policy app_settings_select on public.app_settings for select to authenticated using (true);
+
+create or replace function public.admin_start_fresh() returns timestamptz
+language plpgsql security definer set search_path = public as $$
+declare stamp timestamptz := now();
+begin
+  if not public.is_admin() then raise exception 'Only an admin can do this.'; end if;
+  delete from public.modhesh_tasks where true;
+  delete from public.tasks where true;
+  update public.user_settings set modhesh_reset_at = stamp where true;
+  insert into public.app_settings (key, value, updated_at) values ('data_reset_at', stamp::text, stamp)
+    on conflict (key) do update set value = excluded.value, updated_at = excluded.updated_at;
+  return stamp;
+end $$;
+revoke execute on function public.admin_start_fresh() from public, anon;
+grant execute on function public.admin_start_fresh() to authenticated;

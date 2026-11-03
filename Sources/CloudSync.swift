@@ -144,6 +144,7 @@ final class CloudSync: ObservableObject {
         guard CloudAuth.shared.signedIn, ensureState() else { return }
         await loadProfile()
         await loadClients()
+        await applyFreshStart()
         await restoreIfEmpty()
         await saveSettings()
         await loadSettings()
@@ -157,6 +158,7 @@ final class CloudSync: ObservableObject {
                 Task { @MainActor in
                     guard let self else { return }
                     self.ticks += 1
+                    await self.applyFreshStart()
                     await self.pull()
                     await self.pushNow()
                     await self.loadModhesh()
@@ -193,6 +195,33 @@ final class CloudSync: ObservableObject {
         modheshStatus = nil
         modheshReadAt = nil
         leaders = []
+    }
+
+    /// The admin's "Start Fresh": once per reset, drop this account's tasks made before it (here
+    /// and in the database). Tasks made after it stay.
+    func applyFreshStart() async {
+        guard let uid = CloudAuth.shared.session?.userID, ensureState(), !isAdmin else { return }
+        guard let rows = try? await CloudAPI.select("app_settings", [
+                URLQueryItem(name: "select", value: "updated_at"),
+                URLQueryItem(name: "key", value: "eq.data_reset_at"),
+              ]),
+              let stamp = Cloud.date(rows.first?["updated_at"]) else { return }
+        let doneKey = "freshStartDone-\(uid)"
+        let hasOld = Store.shared.tasks.contains { $0.createdAt < stamp }
+        if !hasOld, let done = UserDefaults.standard.object(forKey: doneKey) as? Date, done >= stamp { return }
+        let gone = Store.shared.dropTasks(before: stamp)
+        for id in gone { pushed.removeValue(forKey: id.uuidString.lowercased()) }
+        UserDefaults.standard.set(pushed, forKey: pushedKey)
+        _ = try? await CloudAPI.delete("tasks", [
+            URLQueryItem(name: "user_id", value: "eq.\(uid)"),
+            URLQueryItem(name: "created_at", value: "lt.\(Cloud.iso(stamp))"),
+        ])
+        UserDefaults.standard.set(stamp, forKey: doneKey)
+        modheshTasks = []
+        modheshLinks = [:]
+        if !gone.isEmpty {
+            Store.shared.flash("Fresh start: the admin cleared all tasks (a copy of your old ones is in the data folder)")
+        }
     }
 
     /// First sign-in on this Mac for an account that already has tasks: bring them back.
@@ -429,7 +458,6 @@ final class CloudSync: ObservableObject {
         var submittedAt: Date?
         var submitNote: String?
         var autoLinked: Bool
-        var startDate: Date?
     }
 
     @Published private(set) var modheshTasks: [ModheshTask] = []
@@ -458,8 +486,7 @@ final class CloudSync: ObservableObject {
                                    submittedSeconds: (r["submitted_seconds"] as? Double) ?? (r["submitted_seconds"] as? Int).map(Double.init),
                                    submittedAt: Cloud.date(r["submitted_at"]),
                                    submitNote: r["submit_note"] as? String,
-                                   autoLinked: (r["auto_linked"] as? Bool) ?? false,
-                                   startDate: Self.day(r["start_date"]))
+                                   autoLinked: (r["auto_linked"] as? Bool) ?? false)
             }
             modheshError = nil
             announceNewModhesh(uid)
@@ -605,45 +632,30 @@ final class CloudSync: ObservableObject {
     struct ModheshLink: Hashable {
         var status: Int?
         var sent: Bool
-        var startDate: Date?
     }
     @Published private(set) var modheshLinks: [UUID: ModheshLink] = [:]
 
-    /// "2026-11-03" → that day at noon here (so it never slips to the day before).
-    static func day(_ v: Any?) -> Date? {
-        guard let s = v as? String, s.count >= 10, let d = Fmt.isoDay.date(from: String(s.prefix(10))) else { return nil }
-        return Calendar.current.date(byAdding: .hour, value: 12, to: d)
-    }
-
-    /// Modhesh's Start Date of the Modhesh task linked to this TaskTimer task, if known.
-    func modheshStartDate(for taskID: UUID) -> Date? {
-        modheshLinks[taskID]?.startDate ?? modheshTasks.first { $0.taskID == taskID }?.startDate
+    /// True when this TaskTimer task is linked to a Modhesh task.
+    func isLinkedToModhesh(_ taskID: UUID) -> Bool {
+        modheshLinks[taskID] != nil || modheshTasks.contains { $0.taskID == taskID }
     }
 
     func loadModheshLinks() async {
         guard let uid = CloudAuth.shared.session?.userID else { return }
         let since = Calendar.current.date(byAdding: .day, value: -365, to: Date()) ?? Date()
-        func query(_ cols: String) async throws -> [[String: Any]] {
-            try await CloudAPI.select("modhesh_tasks", [
-                URLQueryItem(name: "select", value: cols),
+        do {
+            let rows = try await CloudAPI.select("modhesh_tasks", [
+                URLQueryItem(name: "select", value: "task_id,status,submitted_at"),
                 URLQueryItem(name: "user_id", value: "eq.\(uid)"),
                 URLQueryItem(name: "task_id", value: "not.is.null"),
                 URLQueryItem(name: "updated_at", value: "gt.\(Cloud.iso(since))"),
             ])
-        }
-        do {
-            let rows: [[String: Any]]
-            do {
-                rows = try await query("task_id,status,submitted_at,start_date")
-            } catch {
-                rows = try await query("task_id,status,submitted_at")   // schema.sql not run again yet
-            }
             var map: [UUID: ModheshLink] = [:]
             for r in rows {
                 guard let s = r["task_id"] as? String, let id = UUID(uuidString: s) else { continue }
                 let status = r["status"] as? Int
                 let sent = r["submitted_at"] is String || status == 4 || status == 5
-                map[id] = ModheshLink(status: status, sent: sent, startDate: Self.day(r["start_date"]))
+                map[id] = ModheshLink(status: status, sent: sent)
             }
             if map != modheshLinks { modheshLinks = map }
         } catch {
@@ -661,13 +673,6 @@ final class CloudSync: ObservableObject {
             ], ["task_id": taskID.map { $0.uuidString.lowercased() as Any } ?? NSNull()])
             await loadModhesh()
             await loadModheshLinks()
-            // A task finished before it was linked takes Modhesh's Start Date as its day.
-            if let taskID, let t = Store.shared.task(taskID), t.status == .complete,
-               let start = modheshStartDate(for: taskID),
-               !Calendar.current.isDate(start, inSameDayAs: t.workDate ?? .distantPast) {
-                Store.shared.update(taskID) { $0.workDate = start }
-                Store.shared.flash("Day set to Modhesh's Start Date: \(Fmt.nice.string(from: start))")
-            }
         } catch {
             modheshError = error.localizedDescription
         }

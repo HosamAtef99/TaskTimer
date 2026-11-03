@@ -70,6 +70,24 @@ final class Store: ObservableObject {
 
     // MARK: - Persistence
 
+    /// Fresh start (the admin cleared every task): drops the tasks made before `stamp` and their
+    /// amends, after keeping a copy of the data file next to it. Returns the ids dropped.
+    @discardableResult
+    func dropTasks(before stamp: Date) -> [UUID] {
+        let old = Set(tasks.filter { $0.createdAt < stamp }.map(\.id))
+        let gone = Set(tasks.filter { old.contains($0.id) || ($0.parentID.map { old.contains($0) } ?? false) }.map(\.id))
+        guard !gone.isEmpty else { return [] }
+        saveWork?.cancel()
+        writeFile()
+        let stem = fileURL.deletingPathExtension().lastPathComponent
+        let backup = dataDir.appendingPathComponent("\(stem)-before-fresh-start-\(Fmt.isoDay.string(from: Date())).json")
+        if !FileManager.default.fileExists(atPath: backup.path) {
+            try? FileManager.default.copyItem(at: fileURL, to: backup)
+        }
+        tasks.removeAll { gone.contains($0.id) }
+        return Array(gone)
+    }
+
     private func claimLocalTasksIfFirst() {
         guard let account else { return }
         let fm = FileManager.default

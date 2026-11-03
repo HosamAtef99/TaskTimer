@@ -24,7 +24,8 @@ enum Pref {
     static let pauseOnSleep = "pauseOnSleep"
     static let menuBarStyle = "menuBarStyle"   // "time" (1:05) | "seconds" (01:05:12) | "icon"
     static let renderNotify = "renderNotify"
-    static let autoImportDownloads = "autoImportDownloads"  // new downloads → running task + After Effects
+    static let autoImportDownloads = "autoImportDownloads"  // removed in 1.30 (cleared on launch)
+    static let aeVersion = "aeVersion"     // "24" | "25" | "26": which empty AE project new task folders get
     static let defaultDeliverables = "defaultDeliverables"
     static let defaultRating = "defaultRating"
     // Modhesh (Settings → Modhesh; sent to the Chrome extension through the team database)
@@ -63,6 +64,7 @@ enum Pref {
         // Folder names and the AE template aren't chosen any more: forget old choices.
         UserDefaults.standard.removeObject(forKey: subfolders)
         UserDefaults.standard.removeObject(forKey: templatePath)
+        UserDefaults.standard.removeObject(forKey: autoImportDownloads)   // Auto-import downloads is gone
         UserDefaults.standard.register(defaults: [
             timeFormat: "hm",
             rounding: 0,
@@ -81,6 +83,7 @@ enum Pref {
             tabMode: "auto",
             folderMode: "location",
             timeFormatFromSheet: true,
+            aeVersion: FolderService.newestInstalledAE ?? "26",
         ])
     }
 

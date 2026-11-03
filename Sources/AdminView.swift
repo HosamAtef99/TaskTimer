@@ -32,6 +32,7 @@ struct AdminView: View {
     @Local var editClientText = ""
     @Local var deletingClient: Store.CloudClient? = nil
     @Local var showClosed = false
+    @Local var confirmFresh = false
 
     @Local var tab: Tab = .stats
     @Local var people: [TeamProfile] = []
@@ -428,7 +429,7 @@ struct AdminView: View {
     private var clientsTab: some View {
         VStack(alignment: .leading, spacing: 10) {
             addClientBar
-            Text("Only admins add clients, so everyone picks the same name. Each client and pitch belongs to the team that handles it; it shows in that team's New Task, and anyone can pick it under Support. A pitch is Won (it becomes a client of its team) or Closed (hidden, its hours stay).")
+            Text("Only admins add clients, so everyone picks the same name. Each client and pitch belongs to the team that handles it; it shows in that team's New Task (pitches under Pitches), and anyone can pick it under Support.")
                 .font(.system(size: 11)).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             clientFilterBar
@@ -479,7 +480,7 @@ struct AdminView: View {
             }
             .padding(.horizontal, 10).padding(.vertical, 6)
             .background(.thinMaterial, in: Capsule())
-            Toggle("Show closed / removed", isOn: $showClosed).font(.system(size: 12))
+            Toggle("Show removed", isOn: $showClosed).font(.system(size: 12))
             Spacer()
             Picker("", selection: $month) {
                 ForEach(monthChoices, id: \.self) { m in Text(Fmt.monthYear.string(from: m)).tag(m) }
@@ -551,7 +552,7 @@ struct AdminView: View {
                 Text(c.name).font(.system(size: 12, weight: .medium)).lineLimit(1)
             }
             if isPitch { tag("Pitch", Theme.purple) }
-            if !c.active { tag(isPitch ? "Closed" : "Removed", Theme.orange) }
+            if !c.active { tag("Removed", Theme.orange) }
             Spacer(minLength: 8)
             Text("\(h.count) tasks").font(.system(size: 11)).foregroundStyle(.secondary)
             if h.support > 0 {
@@ -573,31 +574,19 @@ struct AdminView: View {
                         .disabled(c.teamID == t.id)
                     }
                 }
-                Divider()
-                if isPitch {
-                    Button("Won — make it a client of this team") {
-                        clientAction("“\(c.name)” is a client now") {
-                            try await cloud.saveClient(id: c.id, name: c.name, teamID: c.teamID, kind: "client", active: true)
-                        }
-                    }
-                }
-                if c.active {
-                    Button(isPitch ? "Close Pitch (hide it)" : "Remove from the lists (keep its hours)") {
-                        clientAction("“\(c.name)” hidden") {
-                            try await cloud.saveClient(id: c.id, name: c.name, teamID: c.teamID, kind: c.kind, active: false)
-                        }
-                    }
-                } else {
-                    Button(isPitch ? "Reopen Pitch" : "Bring Back") {
-                        clientAction("“\(c.name)” is back") {
-                            try await cloud.saveClient(id: c.id, name: c.name, teamID: c.teamID, kind: c.kind, active: true)
-                        }
-                    }
-                }
                 if !isPitch {
-                    Button("Turn into a Pitch") {
-                        clientAction("“\(c.name)” is a pitch now") {
-                            try await cloud.saveClient(id: c.id, name: c.name, teamID: c.teamID, kind: "pitch", active: c.active)
+                    Divider()
+                    if c.active {
+                        Button("Remove from the lists (keep its hours)") {
+                            clientAction("“\(c.name)” hidden") {
+                                try await cloud.saveClient(id: c.id, name: c.name, teamID: c.teamID, kind: c.kind, active: false)
+                            }
+                        }
+                    } else {
+                        Button("Bring Back") {
+                            clientAction("“\(c.name)” is back") {
+                                try await cloud.saveClient(id: c.id, name: c.name, teamID: c.teamID, kind: c.kind, active: true)
+                            }
                         }
                     }
                 }
@@ -792,6 +781,7 @@ struct AdminView: View {
             ScrollView {
                 LazyVStack(spacing: 8) {
                     ForEach(teams) { t in teamRow(t) }
+                    freshStartCard
                     let loose = people.filter { $0.teamID == nil && !$0.isAdmin }.count
                     if loose > 0 {
                         Button {
@@ -808,6 +798,33 @@ struct AdminView: View {
                 }
                 .padding(2)
             }
+        }
+    }
+
+    private var freshStartCard: some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Start Fresh").font(.system(size: 13, weight: .semibold))
+                Text("Deletes every task and Modhesh link of every team. Accounts, teams and clients stay. Each person's TaskTimer drops its old tasks within 2 minutes and keeps a copy of them in its data folder.")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 8)
+            Button("Start Fresh…") { confirmFresh = true }
+                .buttonStyle(GlassButtonStyle(compact: true))
+                .foregroundStyle(Theme.pink)
+        }
+        .padding(10)
+        .glassCard(radius: 12)
+        .confirmationDialog("Delete every task of every team?", isPresented: $confirmFresh) {
+            Button("Delete All Tasks and Start Fresh", role: .destructive) {
+                clientAction("All tasks deleted — fresh start") {
+                    _ = try await CloudAPI.rpc("admin_start_fresh")
+                    await loadHours()
+                }
+            }
+        } message: {
+            Text("This can't be undone in the database. Hours, Modhesh links and history go for everyone.")
         }
     }
 
