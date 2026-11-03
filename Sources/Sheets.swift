@@ -63,7 +63,9 @@ struct ClientPicker: View {
                 }
                 .labelsHidden()
                 .frame(maxWidth: .infinity)
-                Text("Clients are added by the admin. Sign in (Settings → Team) to get your team's list.")
+                Text(CloudAuth.shared.signedIn
+                     ? "Clients are added by the admin. Your team's list isn't there yet — ask the admin to add it (Admin → Clients)."
+                     : "Clients are added by the admin. Sign in (Settings → Team) to get your team's list.")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
