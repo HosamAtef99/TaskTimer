@@ -30,10 +30,7 @@ final class Store: ObservableObject {
     private var retryTimer: Timer?
 
     private let dataDir: URL = {
-        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("TaskTimer Dev", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir
+        TestCopies.supportDir
     }()
 
     /// Whose tasks are loaded: nil when signed out (this Mac only), otherwise the account's id.

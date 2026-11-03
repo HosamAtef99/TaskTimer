@@ -116,7 +116,7 @@ struct MainView: View {
     private var header: some View {
         HStack(alignment: .center, spacing: compact ? 6 : 10) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("TaskTimer Dev")
+                Text(TestCopies.appTitle)
                     .font(.system(size: narrow ? 20 : (compact ? 22 : 26), weight: .bold, design: .rounded))
                     .gradientText()
                     .lineLimit(1)
@@ -621,13 +621,7 @@ struct TaskRow: View {
                         Button("Check Render Folder…") { checkRender() }
                         if let ae = FolderService.aeFile(in: f) {
                             Divider()
-                            Button("Set Render Outputs (Render folder, \(FolderService.cleanName(f.lastPathComponent))_v01…)") {
-                                AEProjectTools.renderToTask(ae, taskFolder: f)
-                            }
                             Button("Organize AE Project") { AEProjectTools.organize(ae) }
-                            Button("Collect AE Project") {
-                                AEProjectTools.collect(ae, taskFolder: f, taskName: task.name)
-                            }
                         }
                     } label: {
                         Image(systemName: "folder")
@@ -636,6 +630,20 @@ struct TaskRow: View {
                     .menuIndicator(.hidden)
                     .fixedSize()
                     .help("Task folder")
+                    if let ae = FolderService.aeFile(in: f) {
+                        Button { AEProjectTools.renderToTask(ae, taskFolder: f) } label: {
+                            Image(systemName: "film.stack")
+                        }
+                        .buttonStyle(.borderless)
+                        .fixedSize()
+                        .help("Set Render Outputs: the queued items in After Effects' Render Queue go to this task's Render folder, named \(FolderService.cleanName(f.lastPathComponent))_v01, _v02…")
+                        Button { AEProjectTools.collect(ae, taskFolder: f, taskName: task.name) } label: {
+                            Image(systemName: "shippingbox")
+                        }
+                        .buttonStyle(.borderless)
+                        .fixedSize()
+                        .help("Collect AE Project: copies the project and every file it uses into the task's Collect folder")
+                    }
                 }
                 Button { addAmend() } label: { Image(systemName: "plus.square.on.square") }
                     .buttonStyle(CircleIconButtonStyle(size: 28))

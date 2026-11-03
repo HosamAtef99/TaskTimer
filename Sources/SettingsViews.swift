@@ -150,7 +150,6 @@ struct SettingsView: View {
     @AppStorage(Pref.renderNotify) var renderNotify = true
     @AppStorage(Pref.openFinderOnCreate) var openFinder = true
     @AppStorage(Pref.openAEOnCreate) var openAE = false
-    @AppStorage(Pref.autoRenderOutputs) var autoRender = true
     @AppStorage(Pref.tabMode) var tabMode = "auto"
     @AppStorage(Pref.tabName) var tabName = ""
     @AppStorage(Pref.statusComplete) var statusComplete = ""
@@ -450,11 +449,6 @@ struct SettingsView: View {
                 .fixedSize(horizontal: false, vertical: true)
             Toggle("Open the folder in Finder after creating", isOn: $openFinder)
             Toggle("Open the AE project after creating", isOn: $openAE)
-            Toggle("Send Render Queue items to the task's Render folder automatically", isOn: $autoRender)
-            Text("A minute after you open a task's After Effects project, anything you add to the Render Queue gets the task's Render folder and the name “Task_v01”, “Task_v02”… TaskTimer checks every 10 s, only while After Effects is in front and none of its dialogs or menus is open. Turn it off if it gets in the way of your scripts; Set Render Outputs in the task's folder menu still does it when you press it.")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.trailing, 6)
         }
@@ -473,7 +467,26 @@ struct SettingsView: View {
 
     private var generalTab: some View {
         VStack(alignment: .leading, spacing: 14) {
-            UpdatesSection()
+            if TestCopies.isCopy {
+                Text("This is \(TestCopies.appTitle), a copy for trying another account at the same time. It doesn't update itself: open it again from TaskTimer Dev → Settings → General to bring it up to date.")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                UpdatesSection()
+                Divider()
+                VStack(alignment: .leading, spacing: 6) {
+                    SectionLabel(text: "Test Copies")
+                    HStack(spacing: 8) {
+                        Button("Open Test Copy 2") { TestCopies.open(2) }
+                            .buttonStyle(GlassButtonStyle(compact: true))
+                        Button("Open Test Copy 3") { TestCopies.open(3) }
+                            .buttonStyle(GlassButtonStyle(compact: true))
+                    }
+                    Text("Opens another TaskTimer next to this one (“TaskTimer Test 2 / 3” in your Applications folder), with its own sign-in and tasks, so you can be signed in as admin, leader and member at once. Each press brings the copy up to this version.")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
             Divider()
             Toggle("Open TaskTimer at login", isOn: $launchAtLogin)
                 .onChange(of: launchAtLogin) { on in

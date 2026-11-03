@@ -76,7 +76,7 @@ enum AEProjectTools {
 
     // MARK: Render outputs
 
-    /// When you press it (AutoRenderOutputs does the same by itself when that setting is on): every queued item in the Render Queue of the
+    /// When you press it (no background checking): every queued item in the Render Queue of the
     /// task's open project gets its output in the task's Render folder, named
     /// `<Task>_v01`, `_v02`… (next free number in the folder and the queue). Items already
     /// named that way in the Render folder are left alone.
@@ -86,8 +86,50 @@ enum AEProjectTools {
             return
         }
         guard needAE(aep) else { return }
-        let script = renderScript([renderTarget(taskFolder: taskFolder, render: render)])
-        let base = renderBase(taskFolder)
+        let base = FolderService.cleanName(taskFolder.lastPathComponent)
+            .replacingOccurrences(of: "\\", with: "-") + "_v"
+        let script = """
+        (function () {
+          var task = \(js(taskFolder.standardizedFileURL.path));
+          var render = new Folder(\(js(render.path)));
+          var base = \(js(base));
+          if (!app.project || !app.project.file || app.project.file.fsName.indexOf(task + "/") !== 0) return "notopen";
+          var rq = app.project.renderQueue;
+          var max = 0;
+          function look(name) {
+            if (name.indexOf(base) !== 0) return;
+            var m = name.substr(base.length).match(/^(\\d+)/);
+            if (m) max = Math.max(max, parseInt(m[1], 10));
+          }
+          var files = render.getFiles();
+          for (var i = 0; i < files.length; i++) look(decodeURI(files[i].name));
+          for (var r = 1; r <= rq.numItems; r++)
+            for (var m = 1; m <= rq.item(r).numOutputModules; m++) {
+              var f = rq.item(r).outputModule(m).file;
+              if (f) look(decodeURI(f.name));
+            }
+          var changed = 0, queued = 0;
+          for (var r = 1; r <= rq.numItems; r++) {
+            var it = rq.item(r);
+            if (it.status !== RQItemStatus.QUEUED && it.status !== RQItemStatus.UNQUEUED) continue;
+            queued++;
+            for (var m = 1; m <= it.numOutputModules; m++) {
+              var om = it.outputModule(m), cur = om.file;
+              if (!cur) continue;
+              var name = decodeURI(cur.name);
+              if (cur.parent.fsName === render.fsName && name.indexOf(base) === 0) continue;
+              var dot = name.lastIndexOf(".");
+              var ext = dot > 0 ? name.substr(dot) : "";
+              var seq = name.match(/_?\\[#+\\]/);
+              max++;
+              var n = (max < 10 ? "0" : "") + max;
+              om.file = new File(render.fsName + "/" + base + n + (seq ? "_" + seq[0].replace(/^_/, "") : "") + ext);
+              changed++;
+            }
+          }
+          return "ok " + changed + " " + queued;
+        })();
+        """
         AfterEffects.doScript(script, activate: false) { result in
             Task { @MainActor in
                 switch result {
@@ -111,82 +153,6 @@ enum AEProjectTools {
                 }
             }
         }
-    }
-
-    /// `<Task folder>_v`: what render outputs of this task are named (then 01, 02…).
-    static func renderBase(_ taskFolder: URL) -> String {
-        FolderService.cleanName(taskFolder.lastPathComponent).replacingOccurrences(of: "\\", with: "-") + "_v"
-    }
-
-    static func renderTarget(taskFolder: URL, render: URL) -> [String: String] {
-        ["task": taskFolder.standardizedFileURL.path, "render": render.path, "base": renderBase(taskFolder)]
-    }
-
-    /// ExtendScript: if the open project is inside one of `targets`' task folders, its queued
-    /// Render Queue items go to that task's Render folder as `<Task>_v01`… Returns "notopen",
-    /// or "ok <changed> <queued>". With `onlyIf`, nothing changes unless that is the open
-    /// project's path (returns "seen <path>" instead).
-    static func renderScript(_ targets: [[String: String]], onlyIf: String? = nil) -> String {
-        let data = (try? JSONSerialization.data(withJSONObject: targets)) ?? Data("[]".utf8)
-        let list = String(data: data, encoding: .utf8) ?? "[]"
-        var gate = ""
-        if let only = onlyIf { gate = "if (path !== " + js(only) + ") return \"seen \" + path;" }
-        return """
-        (function () {
-          var targets = \(list);
-          if (!app.project || !app.project.file) return "notopen";
-          var path = app.project.file.fsName, t = null;
-          for (var i = 0; i < targets.length; i++)
-            if (path.indexOf(targets[i].task + "/") === 0) { t = targets[i]; break; }
-          if (!t) return "notopen";
-          \(gate)
-          var render = new Folder(t.render);
-          var base = t.base;
-          var rq = app.project.renderQueue;
-          var max = 0;
-          function look(name) {
-            if (name.indexOf(base) !== 0) return;
-            var m = name.substr(base.length).match(/^(\\d+)/);
-            if (m) max = Math.max(max, parseInt(m[1], 10));
-          }
-          var changed = 0, queued = 0, todo = false;
-          for (var r = 1; r <= rq.numItems; r++) {
-            var it = rq.item(r);
-            if (it.status !== RQItemStatus.QUEUED && it.status !== RQItemStatus.UNQUEUED) continue;
-            queued++;
-            for (var m = 1; m <= it.numOutputModules; m++) {
-              var f = it.outputModule(m).file;
-              if (f && !(f.parent.fsName === render.fsName && decodeURI(f.name).indexOf(base) === 0)) todo = true;
-            }
-          }
-          if (!todo) return "ok 0 " + queued;
-          var files = render.getFiles();
-          for (var i = 0; i < files.length; i++) look(decodeURI(files[i].name));
-          for (var r = 1; r <= rq.numItems; r++)
-            for (var m = 1; m <= rq.item(r).numOutputModules; m++) {
-              var f = rq.item(r).outputModule(m).file;
-              if (f) look(decodeURI(f.name));
-            }
-          for (var r = 1; r <= rq.numItems; r++) {
-            var it = rq.item(r);
-            if (it.status !== RQItemStatus.QUEUED && it.status !== RQItemStatus.UNQUEUED) continue;
-            for (var m = 1; m <= it.numOutputModules; m++) {
-              var om = it.outputModule(m), cur = om.file;
-              if (!cur) continue;
-              var name = decodeURI(cur.name);
-              if (cur.parent.fsName === render.fsName && name.indexOf(base) === 0) continue;
-              var dot = name.lastIndexOf(".");
-              var ext = dot > 0 ? name.substr(dot) : "";
-              var seq = name.match(/_?\\[#+\\]/);
-              max++;
-              var n = (max < 10 ? "0" : "") + max;
-              om.file = new File(render.fsName + "/" + base + n + (seq ? "_" + seq[0].replace(/^_/, "") : "") + ext);
-              changed++;
-            }
-          }
-          return "ok " + changed + " " + queued;
-        })();
-        """
     }
 
     // MARK: Organize

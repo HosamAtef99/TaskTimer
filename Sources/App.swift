@@ -7,12 +7,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.setActivationPolicy(.accessory)
         }
         MainActor.assumeIsolated {
-            UpdateManager.shared.start()
+            if !TestCopies.isCopy { UpdateManager.shared.start() }
             NotificationHandler.shared.install()
             RenderWatcher.shared.start()
             AEHelperRemoval.run()
-            AutoRenderOutputs.shared.start()
-            ExtensionInstaller.refresh()
+            if !TestCopies.isCopy { ExtensionInstaller.refresh() }
             _ = ExtensionMonitor.shared
             if Features.sheet { SheetSync.shared.start() }
             Task { @MainActor in await CloudSync.shared.start() }
@@ -44,7 +43,7 @@ struct TaskTimerApp: App {
     }
 
     var body: some Scene {
-        Window("TaskTimer Dev", id: "main") {
+        Window(TestCopies.appTitle, id: "main") {
             MainView()
                 .environmentObject(store)
         }
@@ -136,7 +135,7 @@ struct MenuBarPanel: View {
             GlowBackground(animate: false)
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    Text("TaskTimer Dev")
+                    Text(TestCopies.appTitle)
                         .font(.system(size: 15, weight: .bold, design: .rounded))
                         .gradientText()
                     Spacer()
