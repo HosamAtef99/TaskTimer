@@ -295,7 +295,8 @@ final class Store: ObservableObject {
     /// that client (keeping its folder on this Mac); clients the admin removed stay for old tasks
     /// but can't be picked any more. Nothing is deleted.
     func applyCloudClients(_ list: [CloudClient]) {
-        guard !list.isEmpty else { return }
+        // An empty list (the admin removed every client) still hides the ones removed.
+        guard !list.isEmpty || hasCloudClients else { return }
         func same(_ a: String, _ b: String) -> Bool { a.caseInsensitiveCompare(b) == .orderedSame }
         var out = clients
         var seen = Set<String>()
