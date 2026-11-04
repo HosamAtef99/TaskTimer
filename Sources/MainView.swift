@@ -259,7 +259,7 @@ struct MainView: View {
             }
         }
         .labelsHidden()
-        .frame(minWidth: 90, maxWidth: 140)
+        .fixedSize()
         .help("Show tasks created in this month")
     }
 
@@ -270,14 +270,14 @@ struct MainView: View {
             }
         }
         .labelsHidden()
-        .frame(minWidth: 90, maxWidth: 150)
+        .fixedSize()
         .help("Closed on Modhesh = time sent there. Not closed yet = linked, waiting for Done.")
     }
 
     private var searchField: some View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass").foregroundStyle(Theme.teal)
-            TextField("Search tasks or clients", text: $search)
+            TextField("Search", text: $search)
                 .textFieldStyle(.plain)
             if !search.isEmpty {
                 Button { search = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
@@ -295,11 +295,16 @@ struct MainView: View {
         let hasCloud = cloud.profile != nil
         if width < 1000 {
             VStack(spacing: 8) {
-                filterPicker.frame(maxWidth: .infinity, alignment: .leading)
                 HStack(spacing: 8) {
-                    searchField.frame(minWidth: 80, maxWidth: .infinity)
+                    filterPicker
+                    if !narrow { searchField.frame(minWidth: 80, maxWidth: .infinity) }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                HStack(spacing: 8) {
+                    if narrow { searchField.frame(minWidth: 80, maxWidth: .infinity) }
                     monthPicker
-                    if hasCloud && !narrow { modheshPicker }
+                    if hasCloud { modheshPicker }
+                    if !narrow { Spacer(minLength: 0) }
                 }
             }
         } else {
@@ -810,9 +815,15 @@ struct TaskRow: View {
 
             Spacer(minLength: 6)
 
-            if let f = task.folderURL { RenderThumb(folder: f) }
-
-            TaskTools(task: task, size: 27)
+            // Drops the render picture, then the tools, when the window is too narrow for them.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    if let f = task.folderURL { RenderThumb(folder: f) }
+                    TaskTools(task: task, size: 27)
+                }
+                TaskTools(task: task, size: 27)
+                EmptyView()
+            }
 
             VStack(alignment: .trailing, spacing: 2) {
                 Text(task.status == .complete ? "\(Fmt.hours(task.totalSeconds(at: store.now))) h" : Fmt.clock(task.totalSeconds(at: store.now)))
