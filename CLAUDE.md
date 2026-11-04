@@ -165,7 +165,7 @@ When you make a decision that the other person would need to know, add it here.
   amends as chips you press to switch the timer, + Amend, AE tools as small icons with tooltips,
   clock teal→coral, Done; files can be dropped on it); then status tabs with counts + search +
   month + Modhesh filter; then the task rows (whole name on up to 2 lines, Support / Pitch tags,
-  `TaskTools` icons). No render thumbnail on the card or rows (Hosam's call).
+  `TaskTools` icons). The newest render's thumbnail (`RenderThumb`) shows on the task rows, not on the NowCard (Hosam's call).
 
 ## User-facing text
 - UI text is English. Hosam talks in Egyptian Arabic; reply to him in Arabic.

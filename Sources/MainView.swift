@@ -784,6 +784,8 @@ struct TaskRow: View {
 
             Spacer(minLength: 6)
 
+            if let f = task.folderURL { RenderThumb(folder: f) }
+
             TaskTools(task: task, size: 27)
 
             VStack(alignment: .trailing, spacing: 2) {
