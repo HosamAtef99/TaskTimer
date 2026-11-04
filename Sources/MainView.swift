@@ -50,6 +50,9 @@ struct MainView: View {
                 .onAppear { width = g.size.width }
                 .onChange(of: g.size.width) { width = $0 }
         }
+        // One piece of glass: the content runs under the title bar, the window buttons sit on it.
+        .ignoresSafeArea()
+        .background(UnifiedWindow())
         .frame(minWidth: 470, minHeight: 560)
     }
 
@@ -71,8 +74,7 @@ struct MainView: View {
                 }
             }
             .padding(.horizontal, narrow ? 12 : (compact ? 16 : 22))
-            .padding(.top, 3)
-            .ignoresSafeArea(.container, edges: .top)   // the bar sits next to the window buttons
+            .padding(.top, 2)   // the bar sits beside the window buttons
             .padding(.bottom, 12)
             .frame(maxWidth: .infinity)
 
@@ -372,6 +374,30 @@ struct MainView: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - Window without a separate title bar
+
+/// Makes the main window one surface: transparent title bar, content under it, draggable
+/// anywhere there's no control.
+struct UnifiedWindow: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let v = NSView()
+        DispatchQueue.main.async { configure(v.window) }
+        return v
+    }
+    func updateNSView(_ v: NSView, context: Context) {
+        DispatchQueue.main.async { configure(v.window) }
+    }
+    private func configure(_ w: NSWindow?) {
+        guard let w else { return }
+        w.titlebarAppearsTransparent = true
+        w.titleVisibility = .hidden
+        w.styleMask.insert(.fullSizeContentView)
+        w.isMovableByWindowBackground = true
+        w.backgroundColor = .clear
+        w.isOpaque = false
     }
 }
 
