@@ -410,7 +410,7 @@ final class Store: ObservableObject {
     /// A task the team leader added for you (arrives from the team database).
     func adoptAssigned(id: UUID, name: String, client: String, createdAt: Date) {
         guard task(id) == nil else { return }
-        let clientID = client.isEmpty ? nil : addClient(client)?.id
+        let clientID = client.isEmpty ? nil : (matchClient(client)?.id ?? (hasCloudClients ? nil : addClient(client)?.id))
         var t = TaskItem(name: name, clientID: clientID, folderPath: nil)
         t.id = id
         t.createdAt = createdAt
@@ -420,16 +420,34 @@ final class Store: ObservableObject {
     }
 
     /// Imports an existing folder as a task (re-uses its saved info if present).
-    func importFolder(_ url: URL) -> UUID {
-        if let existing = tasks.first(where: { $0.folderPath == url.path && $0.parentID == nil }) { return existing.id }
-        var clientID: UUID?
+    func importFolder(_ url: URL, name: String? = nil, clientID: UUID?, support: Bool = false) -> UUID {
+        if let existing = tasks.first(where: { $0.folderPath == url.path && $0.parentID == nil }) {
+            update(existing.id) { $0.clientID = clientID; $0.support = support ? true : nil }
+            return existing.id
+        }
+        let n = (name ?? "").trimmingCharacters(in: .whitespaces)
+        return addTask(name: n.isEmpty ? url.lastPathComponent : n, clientID: clientID, folder: url, start: false, support: support)
+    }
+
+    /// The client a folder being imported most likely belongs to: the one saved in the folder,
+    /// the client whose folder it's inside, or a client named like one of the folders above it.
+    func guessClient(for url: URL) -> Client? {
         let marker = url.appendingPathComponent(".tasktimer.json")
         if let data = try? Data(contentsOf: marker),
            let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-           let cname = obj["client"] as? String, !cname.isEmpty {
-            clientID = addClient(cname)?.id
+           let cname = obj["client"] as? String, let c = matchClient(cname) {
+            return c
         }
-        return addTask(name: url.lastPathComponent, clientID: clientID, folder: url, start: false)
+        let path = url.standardizedFileURL.path
+        let pool = hasCloudClients ? clients.filter { $0.isCloud && $0.isActive } : clients
+        if let c = pool.first(where: { c in
+            guard let f = c.folderPath, !f.isEmpty else { return false }
+            return path.hasPrefix(URL(fileURLWithPath: f).standardizedFileURL.path + "/")
+        }) { return c }
+        for part in url.deletingLastPathComponent().pathComponents.reversed().prefix(4) {
+            if let c = matchClient(part) { return c }
+        }
+        return nil
     }
 
     private func writeMarker(_ t: TaskItem, in folder: URL) {

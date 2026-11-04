@@ -207,12 +207,24 @@ enum AEProjectTools {
               if (src && src instanceof CompItem) used[src.id] = true;
             }
           }
+          var moved = 0;
+          // Comps that were rendered (done in the Render Queue) go to "Main Comps", wherever they are.
+          var rendered = {};
+          var rq = app.project.renderQueue;
+          for (var r = 1; r <= rq.numItems; r++) {
+            var q = rq.item(r);
+            if (q.status === RQItemStatus.DONE && q.comp) rendered[q.comp.id] = q.comp;
+          }
+          for (var id in rendered) {
+            var c = rendered[id], main = bin("Main Comps");
+            if (c.parentFolder !== main) { c.parentFolder = main; moved++; }
+          }
           var loose = [];
           for (var i = 1; i <= root.numItems; i++) loose.push(root.item(i));
-          var moved = 0;
           for (var k = 0; k < loose.length; k++) {
             var it = loose[k], dest = null;
             if (it instanceof FolderItem) continue;
+            if (it instanceof CompItem && rendered[it.id]) continue;
             if (it instanceof CompItem) {
               dest = used[it.id] ? "02 Precomps" : "01 Comps";
             } else if (it instanceof FootageItem) {

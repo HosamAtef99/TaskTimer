@@ -33,6 +33,7 @@ struct MainView: View {
     @Local var showClients = false
     @Local var showTeam = false
     @Local var showModhesh = false
+    @Local var importTarget: ImportTarget? = nil
     @Local var width: CGFloat = 900
     @ObservedObject var cloud = CloudSync.shared
 
@@ -109,6 +110,9 @@ struct MainView: View {
         .sheet(isPresented: $showModhesh) {
             ModheshView().environmentObject(store)
         }
+        .sheet(item: $importTarget) { target in
+            ImportFolderSheet(url: target.url) { filter = .inProgress }.environmentObject(store)
+        }
 
         .onChange(of: store.teamReportRequest) { want in
             if want && cloud.isLeader { showTeam = true }
@@ -162,8 +166,7 @@ struct MainView: View {
                 if !compact {
                     Button {
                         if let url = FolderService.chooseExistingFolder() {
-                            _ = store.importFolder(url)
-                            filter = .inProgress
+                            importTarget = ImportTarget(url: url)
                         }
                     } label: { Image(systemName: "folder.badge.plus") }
                         .buttonStyle(CircleIconButtonStyle())
@@ -570,7 +573,7 @@ struct TaskTools: View {
                     tool(help: "Set Render Outputs: the queued Render Queue items go to this task's Render folder, named \(FolderService.cleanName(f.lastPathComponent))_v01, _v02…") {
                         AEProjectTools.renderToTask(ae, taskFolder: f)
                     } label: { Image(systemName: "film.stack") }
-                    tool(help: "Organize AE Project: loose items go into numbered folders (⌘Z in After Effects undoes it)") {
+                    tool(help: "Organize AE Project: comps that were rendered go to Main Comps, loose items into numbered folders (⌘Z in After Effects undoes it)") {
                         AEProjectTools.organize(ae)
                     } label: { Image(systemName: "square.grid.2x2") }
                     tool(help: "Collect AE Project: the project and every file it uses, into the task's Collect folder") {
@@ -997,6 +1000,70 @@ struct SubtaskRow: View {
 func doneLabel(_ t: TaskItem) -> String {
     if t.status == .complete { return Features.sheet ? "Log again" : "Edit" }
     return "Done"
+}
+
+// MARK: - Import an existing task folder
+
+struct ImportTarget: Identifiable {
+    let url: URL
+    var id: String { url.path }
+}
+
+/// Importing a folder asks for the task's name and its client (or Support for another team),
+/// with the client guessed from the folder.
+struct ImportFolderSheet: View {
+    @EnvironmentObject var store: Store
+    @Environment(\.dismiss) var dismiss
+    let url: URL
+    var done: () -> Void = {}
+    @Local var name = ""
+    @Local var clientID: UUID? = nil
+    @Local var support = false
+    @Local var loaded = false
+
+    var body: some View {
+        SheetFrame(title: "Import Task Folder", subtitle: url.path, icon: "folder.badge.plus") {
+            FieldRow(label: "Task name") {
+                TextField(url.lastPathComponent, text: $name)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 14))
+            }
+            FieldRow(label: "Client / Account") {
+                ClientPicker(selection: $clientID, support: $support, allowSupport: true)
+            }
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                    .buttonStyle(GlassButtonStyle())
+                    .keyboardShortcut(.cancelAction)
+                Button("Import") {
+                    _ = store.importFolder(url, name: name, clientID: clientID, support: support)
+                    dismiss()
+                    done()
+                }
+                .buttonStyle(GradientButtonStyle())
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .frame(width: 520)
+        .onAppear {
+            guard !loaded else { return }
+            loaded = true
+            if let t = store.tasks.first(where: { $0.folderPath == url.path && $0.parentID == nil }) {
+                name = t.name
+                clientID = t.clientID
+                support = t.support == true
+            } else {
+                name = url.lastPathComponent
+                let guess = store.guessClient(for: url)
+                clientID = guess?.id
+                // A client of another team means this was support work.
+                if let g = guess, let team = CloudSync.shared.profile?.teamID, let gt = g.teamID, gt != team, !g.isPitch {
+                    support = true
+                }
+            }
+        }
+    }
 }
 
 // MARK: - Files dropped on a task
