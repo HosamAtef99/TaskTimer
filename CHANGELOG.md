@@ -3,22 +3,21 @@
 Newest first. The top section becomes the release notes shown in the app.
 
 ## 1.30
-- Importing a task folder now asks for its name and client (with Support), and guesses the client from where the folder is.
-- Organize puts every comp that was rendered (Done in the Render Queue) into a "Main Comps" folder, away from the other comps.
-- **TaskTimer is now Mongez**: new name, new logo and a new look — teal and coral frosted glass, in light or dark (Settings → General → Appearance). The running task sits in its own card with its amends (press one to switch the timer), its After Effects tools and Done; drop files on the card to add them to the task. Status tabs, search and month are together above the list, and task names show in full.
-- Collect AE Project organizes the project first (loose items into folders) when it's open in After Effects, so the collected project and its (Footage) folders come out tidy. Turn it off in Settings → Folders.
-- The task's folder button now only opens the project folder or the Render folder. Open AE Project, Set Render Outputs, Organize and Collect are their own buttons next to it. Check Render Folder… moved to the task's right-click menu.
-- Settings → General → Open Test Copy 2 / 3: another TaskTimer with its own sign-in, to be signed in as admin, leader and member at the same time (for testing).
-- Clients come from the admin only: Admin → Clients adds each team's clients and pitches, so everyone uses the same name and the admin sees the hours of every client and pitch. You pick from your team's list; there's no "add client" any more.
-- Support: in New Task (and Done), tick Support to search every other team's clients when you're helping another team.
+- **TaskTimer is now Mongez**: new name, new logo and a new look — teal and coral frosted glass, in light or dark (Settings → General → Appearance). The app installs itself as Mongez.app.
+- The running task sits in its own card with its amends (press one to switch the timer), its After Effects tools and Done. Drop files on the card to add them to the task.
+- Status tabs, search, month and Modhesh filters are together above the list, and task names show in full.
+- Every task has small buttons for Open AE Project, Set Render Outputs, Organize, Collect and its folders. Check Render Folder… is in the task's right-click menu.
+- Organize puts every comp that was rendered (Done in the Render Queue) into a "Main Comps" folder. Collect organizes the project first when it's open in After Effects (turn it off in Settings → Folders).
+- Clients come from the admin only: Admin → Clients adds each team's clients and pitches. You pick from your team's list; there's no "add client" any more.
+- Support: in New Task and Done, tick Support to search every other team's clients when you're helping another team.
 - Pitches: the admin adds a pitch to the team that handles it; it shows under Pitches in New Task.
-- Done has "Approver on Modhesh": your team leader is picked for you (the other team's leader for support), and you can choose any leader from the list. The extension sends the task to that person.
+- Done has "Approver on Modhesh": your team leader is picked for you (the other team's leader for support), and you can choose any leader.
 - The day you pick at Done becomes the Modhesh task's Start Date when the extension logs it.
-- The Chrome extension only reads Modhesh when you press Check now (it no longer checks every 5 minutes or when a Modhesh page opens).
-- Task folders are the same for everyone (no editing folder names), and each new task gets an empty After Effects project: pick your After Effects version (2024, 2025 or 2026) in Settings → Folders.
+- The Chrome extension only reads Modhesh when you press Check now.
+- Importing a task folder asks for its name and client, and guesses the client from where the folder is.
+- Task folders are the same for everyone, and each new task gets an empty After Effects project: pick your After Effects version (2024, 2025 or 2026) in Settings → Folders.
 - Auto-import downloads is gone. Dropping files on a task still asks whether to import them into After Effects.
 - Admin → Teams → Start Fresh deletes every task so the team can start clean.
-- Run the latest schema.sql in Supabase once (adds clients, pitches, approvers and Start Fresh).
 
 ## 1.29
 - Task folder menu → Set Render Outputs: puts everything queued in the Render Queue into the task's Render folder, named Task_v01, Task_v02… (never overwriting an older render). It runs only when you press it — nothing checks After Effects in the background.
