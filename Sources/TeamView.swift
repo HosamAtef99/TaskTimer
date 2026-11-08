@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 struct TeamView: View {
     @EnvironmentObject var store: Store
     @Environment(\.dismiss) var dismiss
+    @Environment(\.mainWindowSize) var windowSize
     @ObservedObject var cloud = CloudSync.shared
 
     @Local var month: Date = Calendar.current.dateInterval(of: .month, for: Date())?.start ?? Date()
@@ -27,7 +28,7 @@ struct TeamView: View {
 
     var body: some View {
         SheetFrame(title: cloud.teamName ?? "Team",
-                   subtitle: "Everyone's tasks and live timers", icon: "person.3.fill") {
+                   subtitle: "Everyone's tasks and live timers", icon: "person.3.fill", scrolls: false) {
             controls
             if let error {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
@@ -49,7 +50,7 @@ struct TeamView: View {
                     .keyboardShortcut(.defaultAction)
             }
         }
-        .frame(width: 900, height: 700)
+        .frame(width: 900, height: min(700, Room.sheetHeight(windowSize)))
         .onAppear {
             if store.teamReportRequest {
                 store.teamReportRequest = false

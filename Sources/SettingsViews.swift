@@ -9,6 +9,7 @@ import ServiceManagement
 struct ClientsView: View {
     @EnvironmentObject var store: Store
     @Environment(\.dismiss) var dismiss
+    @Environment(\.mainWindowSize) var windowSize
     @ObservedObject var cloud = CloudSync.shared
     var inSheet = false
 
@@ -29,7 +30,7 @@ struct ClientsView: View {
     var body: some View {
         SheetFrame(title: "Clients",
                    subtitle: "Added by the admin for your team. Give each one a folder on this Mac if you like.",
-                   icon: "person.2.fill") {
+                   icon: "person.2.fill", scrolls: false) {
             HStack(spacing: 8) {
                 Button {
                     Task { @MainActor in await cloud.loadClients() }
@@ -66,7 +67,7 @@ struct ClientsView: View {
                 }
             }
         }
-        .frame(width: 520, height: inSheet ? 560 : 520)
+        .frame(width: 520, height: inSheet ? min(560, Room.sheetHeight(windowSize)) : 520)
     }
 
     private func row(_ c: Client) -> some View {
@@ -167,9 +168,10 @@ struct SettingsView: View {
     @Local var testResult: String? = nil
     @Local var testOK = false
     @Local var launchAtLogin = SMAppService.mainApp.status == .enabled
+    @Environment(\.mainWindowSize) var windowSize
 
     var body: some View {
-        SheetFrame(title: "Settings", subtitle: Features.sheet ? "Your name, the team sheet, and folders" : "Folders and general options", icon: "gearshape.fill") {
+        SheetFrame(title: "Settings", subtitle: Features.sheet ? "Your name, the team sheet, and folders" : "Folders and general options", icon: "gearshape.fill", scrolls: false) {
             Picker("", selection: $tab) {
                 if Features.sheet { Text("Sheet").tag(0) }
                 Text("Team").tag(3)
@@ -183,10 +185,10 @@ struct SettingsView: View {
             Group {
                 switch tab {
                 case 0: sheetTab
-                case 3: AccountSection()
+                case 3: ScrollView { AccountSection() }
                 case 4: ModheshSettings()
                 case 1: foldersTab
-                default: generalTab
+                default: ScrollView { generalTab }
                 }
             }
             .padding(16)
@@ -204,7 +206,7 @@ struct SettingsView: View {
                 }
             }
         }
-        .frame(width: 580, height: 660)
+        .frame(width: 580, height: inSheet ? min(660, Room.sheetHeight(windowSize)) : 660)
     }
 
     private var sheetTab: some View {

@@ -139,32 +139,49 @@ struct FieldRow<Content: View>: View {
     }
 }
 
+/// Every sheet's frame: icon, title, the content, inside a 24 pt margin. A sheet is never taller
+/// than the main window: when its content doesn't fit, it scrolls instead of being cut off.
+/// Sheets that scroll inside themselves and set their own size pass `scrolls: false`.
 struct SheetFrame<Content: View>: View {
     var title: String
     var subtitle: String
     var icon: String
+    var scrolls = true
     @ViewBuilder var content: Content
+    @Environment(\.mainWindowSize) var windowSize
 
     var body: some View {
         ZStack {
             GlowBackground(animate: false)
-            VStack(alignment: .leading, spacing: 18) {
-                HStack(spacing: 12) {
-                    Image(systemName: icon)
-                        .font(.system(size: 18, weight: .bold))
-                        .foregroundStyle(Theme.buttonInk)
-                        .frame(width: 40, height: 40)
-                        .background(Theme.tealFill, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-                        .shadow(color: Theme.tealShadow, radius: 8, y: 3)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(title).font(.system(size: 18, weight: .bold, design: .rounded))
-                        Text(subtitle).font(.system(size: 12)).foregroundStyle(.secondary)
-                    }
+            if scrolls {
+                ViewThatFits(in: .vertical) {
+                    inner
+                    ScrollView { inner }
                 }
-                content
+            } else {
+                inner
             }
-            .padding(24)
         }
+        .frame(maxHeight: Room.sheetHeight(windowSize))
+    }
+
+    private var inner: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(Theme.buttonInk)
+                    .frame(width: 40, height: 40)
+                    .background(Theme.tealFill, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                    .shadow(color: Theme.tealShadow, radius: 8, y: 3)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(.system(size: 18, weight: .bold, design: .rounded))
+                    Text(subtitle).font(.system(size: 12)).foregroundStyle(.secondary)
+                }
+            }
+            content
+        }
+        .padding(24)
     }
 }
 

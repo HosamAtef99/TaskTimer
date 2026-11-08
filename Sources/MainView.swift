@@ -48,6 +48,7 @@ struct MainView: View {
             content
                 .frame(width: g.size.width, height: g.size.height)
                 .clipped()
+                .environment(\.mainWindowSize, g.size)
                 .onAppear { width = g.size.width }
                 .onChange(of: g.size.width) { width = $0 }
         }
@@ -74,9 +75,10 @@ struct MainView: View {
                     taskList
                 }
             }
-            .padding(.horizontal, narrow ? 12 : (compact ? 16 : 22))
-            .padding(.top, 2)   // the bar sits beside the window buttons
-            .padding(.bottom, 12)
+            // A safe margin all round, so buttons (and their glow) never touch the window's edge.
+            .padding(.horizontal, narrow ? 18 : (compact ? 20 : 24))
+            .padding(.top, 6)   // the bar sits beside the window buttons
+            .padding(.bottom, 14)
             .frame(maxWidth: .infinity)
 
             if let t = store.toast {
@@ -378,7 +380,8 @@ struct MainView: View {
                             TaskRow(task: t)
                         }
                     }
-                    .padding(.vertical, 4)
+                    .padding(.vertical, 6)
+                    .padding(.horizontal, 4)
                 }
             }
         }
@@ -563,9 +566,44 @@ struct NowCard: View {
 struct TaskTools: View {
     var task: TaskItem
     var size: CGFloat = 27
+    /// Narrow window: all the tools in one button's menu instead of a row of icons.
+    var grouped = false
 
     var body: some View {
         if let f = task.folderURL {
+            if grouped {
+                groupedMenu(f)
+            } else {
+                row(f)
+            }
+        }
+    }
+
+    private func groupedMenu(_ f: URL) -> some View {
+        let ae = FolderService.aeFile(in: f)
+        return Menu {
+            if let ae = ae {
+                Button("Open AE Project (\(ae.lastPathComponent))") { NSWorkspace.shared.open(ae) }
+                Button("Set Render Outputs") { AEProjectTools.renderToTask(ae, taskFolder: f) }
+                Button("Organize AE Project") { AEProjectTools.organize(ae) }
+                Button("Collect AE Project") { AEProjectTools.collect(ae, taskFolder: f, taskName: task.name) }
+                Divider()
+            }
+            Button("Open Project Folder") { NSWorkspace.shared.open(f) }
+            if let r = FolderService.folder(in: f, matching: ["render"]) {
+                Button("Open Render Folder") { NSWorkspace.shared.open(r) }
+            }
+        } label: {
+            Image(systemName: "wrench.and.screwdriver")
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .frame(width: size, height: size)
+        .glassChip()
+        .help("After Effects tools and the task's folders")
+    }
+
+    private func row(_ f: URL) -> some View {
             HStack(spacing: 4) {
                 if let ae = FolderService.aeFile(in: f) {
                     tool(help: "Open AE Project: \(ae.lastPathComponent)") { NSWorkspace.shared.open(ae) } label: {
@@ -595,7 +633,6 @@ struct TaskTools: View {
                 .glassChip()
                 .help("Open the task's folder or its Render folder")
             }
-        }
     }
 
     private func tool<L: View>(help: String, action: @escaping () -> Void, @ViewBuilder label: () -> L) -> some View {
@@ -737,6 +774,7 @@ struct StatsRow: View {
 
 struct TaskRow: View {
     @EnvironmentObject var store: Store
+    @Environment(\.mainWindowSize) var windowSize
     var task: TaskItem
     @Local var hovering = false
     @Local var dropping = false
@@ -797,20 +835,13 @@ struct TaskRow: View {
                     .font(.system(size: 14, weight: .semibold))
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
-                HStack(spacing: 6) {
-                    StatusPill(status: task.status).fixedSize()
-                    KindTag(task: task)
-                    clientMenu
-                    ModheshBadge(taskID: task.id)
-                    if task.pendingLog != nil {
-                        Image(systemName: "exclamationmark.icloud")
-                            .foregroundStyle(Theme.pink)
-                            .help(task.pendingLog?.error ?? "Waiting to be sent")
-                    }
-                    ViewThatFits(in: .horizontal) {
-                        Text("· " + Fmt.nice.string(from: task.createdAt)).fixedSize()
-                        EmptyView()
-                    }
+                // What doesn't fit leaves, least needed first (the date, the status, the tag),
+                // so the line never pushes the row out of the window.
+                ViewThatFits(in: .horizontal) {
+                    meta(status: true, kind: true, date: true)
+                    meta(status: true, kind: true, date: false)
+                    meta(status: false, kind: true, date: false)
+                    meta(status: false, kind: false, date: false)
                 }
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
@@ -819,14 +850,18 @@ struct TaskRow: View {
 
             Spacer(minLength: 6)
 
-            // Drops the render picture, then the tools, when the window is too narrow for them.
-            ViewThatFits(in: .horizontal) {
+            // By the window's width: the tools and the render picture, then the tools alone, then
+            // every tool folded into one button whose menu has them all.
+            let width = windowSize?.width ?? 900
+            if width >= 900 {
                 HStack(spacing: 8) {
                     if let f = task.folderURL { RenderThumb(folder: f) }
                     TaskTools(task: task, size: 27)
                 }
+            } else if width >= 760 {
                 TaskTools(task: task, size: 27)
-                EmptyView()
+            } else {
+                TaskTools(task: task, size: 27, grouped: true)
             }
 
             VStack(alignment: .trailing, spacing: 2) {
@@ -899,6 +934,28 @@ struct TaskRow: View {
         }
     }
 
+    private func meta(status: Bool, kind: Bool, date: Bool) -> some View {
+        HStack(spacing: 6) {
+            if status { StatusPill(status: task.status).fixedSize() }
+            if kind { KindTag(task: task) }
+            clientMenu
+            ModheshBadge(taskID: task.id)
+            if task.pendingLog != nil {
+                Image(systemName: "exclamationmark.icloud")
+                    .foregroundStyle(Theme.pink)
+                    .help(task.pendingLog?.error ?? "Waiting to be sent")
+            }
+            if date { Text("· " + Fmt.nice.string(from: task.createdAt)).fixedSize() }
+        }
+    }
+
+    /// The client's name, shortened when it's long so it can't push the row out of the window.
+    private var clientLabel: String {
+        let name = store.clientName(task.clientID)
+        if name.isEmpty { return "Choose client" }
+        return name.count > 22 ? String(name.prefix(21)) + "…" : name
+    }
+
     private var clientMenu: some View {
         let team = CloudSync.shared.profile?.teamID
         let list = store.hasCloudClients ? store.teamClients(team) : store.clients
@@ -915,7 +972,7 @@ struct TaskRow: View {
             Text("Support for another team: Done → Support")
             Button("No client") { store.setClient(task.id, nil) }
         } label: {
-            Text(store.clientName(task.clientID).isEmpty ? "Choose client" : store.clientName(task.clientID))
+            Text(clientLabel)
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)

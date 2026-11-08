@@ -9,6 +9,7 @@ import UniformTypeIdentifiers
 struct AdminView: View {
     @EnvironmentObject var store: Store
     @Environment(\.dismiss) var dismiss
+    @Environment(\.mainWindowSize) var windowSize
     @ObservedObject var cloud = CloudSync.shared
     var embedded = false
 
@@ -61,7 +62,7 @@ struct AdminView: View {
         if embedded {
             VStack(alignment: .leading, spacing: 14) { inner }
         } else {
-            SheetFrame(title: "Admin", subtitle: "Accounts, teams and hours for everyone", icon: "shield.lefthalf.filled") {
+            SheetFrame(title: "Admin", subtitle: "Accounts, teams and hours for everyone", icon: "shield.lefthalf.filled", scrolls: false) {
                 inner
                 HStack {
                     Spacer()
@@ -70,7 +71,9 @@ struct AdminView: View {
                         .keyboardShortcut(.defaultAction)
                 }
             }
-            .frame(minWidth: 640, idealWidth: 860, maxWidth: 1100, minHeight: 540, idealHeight: 700)
+            .frame(minWidth: 640, idealWidth: 860, maxWidth: 1100,
+                   minHeight: min(540, Room.sheetHeight(windowSize)), idealHeight: min(700, Room.sheetHeight(windowSize)),
+                   maxHeight: Room.sheetHeight(windowSize))
         }
     }
 

@@ -7,6 +7,7 @@ import AppKit
 struct ModheshView: View {
     @EnvironmentObject var store: Store
     @Environment(\.dismiss) var dismiss
+    @Environment(\.mainWindowSize) var windowSize
     @ObservedObject var cloud = CloudSync.shared
     @ObservedObject var monitor = ExtensionMonitor.shared
     @Local var showLinked = false
@@ -18,7 +19,7 @@ struct ModheshView: View {
         let unlinked = all.filter { $0.taskID == nil || store.task($0.taskID!) == nil }
         let linked = all.filter { $0.taskID != nil && store.task($0.taskID!) != nil }
 
-        SheetFrame(title: "Modhesh", subtitle: "Link each Modhesh task to the task you timed", icon: "link") {
+        SheetFrame(title: "Modhesh", subtitle: "Link each Modhesh task to the task you timed", icon: "link", scrolls: false) {
             if !cloud.extensionConnected && !monitor.installed {
                 ExtensionStatusRow()
             }
@@ -81,7 +82,9 @@ struct ModheshView: View {
                     .keyboardShortcut(.defaultAction)
             }
         }
-        .frame(minWidth: 520, idealWidth: 720, maxWidth: 760, minHeight: 480, idealHeight: 620)
+        .frame(minWidth: 520, idealWidth: 720, maxWidth: 760,
+               minHeight: min(480, Room.sheetHeight(windowSize)), idealHeight: min(620, Room.sheetHeight(windowSize)),
+               maxHeight: Room.sheetHeight(windowSize))
         .task {
             await cloud.loadModhesh()
             await cloud.loadSettings()

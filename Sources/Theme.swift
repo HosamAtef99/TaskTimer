@@ -362,6 +362,30 @@ struct CircleIconButtonStyle: ButtonStyle {
     }
 }
 
+// MARK: - Room in the window
+
+private struct MainWindowSizeKey: EnvironmentKey {
+    static let defaultValue: CGSize? = nil
+}
+
+extension EnvironmentValues {
+    /// Size of the main window (set by `MainView`, seen by its rows and sheets): rows fold their
+    /// tools when it's narrow, and sheets never grow taller than it (a taller sheet gets cut off).
+    var mainWindowSize: CGSize? {
+        get { self[MainWindowSizeKey.self] }
+        set { self[MainWindowSizeKey.self] = newValue }
+    }
+}
+
+enum Room {
+    /// Space a sheet may take: the main window's height less a margin, so its top and its
+    /// buttons stay inside the window.
+    static func sheetHeight(_ window: CGSize?) -> CGFloat {
+        let h = window?.height ?? NSApp.mainWindow?.contentLayoutRect.height ?? 800
+        return max(380, h - 40)
+    }
+}
+
 // MARK: - Timer ring
 
 struct TimerRing: View {

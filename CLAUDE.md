@@ -168,6 +168,16 @@ When you make a decision that the other person would need to know, add it here.
   only while the pointer is on it (nothing animates in the background); on press the button sinks,
   the glow flares and a gradient wave spreads from behind it.
 - The main window is never narrower than **600 px** (was 470; text ran into other text).
+- **Nothing may touch or leave the frame** (Mousab's call, 1.31): the main window keeps a safe
+  margin all round (18–24 pt sides, room above the top bar) so buttons and their glow stay inside.
+  `MainView` passes its size down as `\.mainWindowSize`. **Sheets are never taller than the main
+  window** (`Room.sheetHeight`): `SheetFrame` scrolls its content when it doesn't fit; sheets that
+  scroll inside themselves and set their own size (Settings, Team, Clients, Modhesh, Admin) pass
+  `scrolls: false` and cap their height with `Room.sheetHeight`. Task rows follow the window
+  width: ≥ 900 tools + render picture, ≥ 760 tools, narrower = all tools folded into one button
+  (`TaskTools(grouped: true)`, a menu). The line under a task's name drops the date, then the
+  status, then the tag when it doesn't fit, and long client names are shortened, so a row is
+  never wider than the window.
 - Logo: stopwatch whose hand is a check mark, stroke only (`MongezLogoShape` in `MainView.swift`,
   also the menu bar template icon `MenuBarIcon` and `Resources/AppIcon.iconset`).
 - Main window, top to bottom: one bar with the window buttons, logo, Modhesh / Team / Clients /
