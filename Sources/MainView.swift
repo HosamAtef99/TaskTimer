@@ -54,7 +54,7 @@ struct MainView: View {
         // One piece of glass: the content runs under the title bar, the window buttons sit on it.
         .ignoresSafeArea()
         .background(UnifiedWindow())
-        .frame(minWidth: 470, minHeight: 560)
+        .frame(minWidth: 600, minHeight: 560)   // narrower and text ran into other text
     }
 
     private var content: some View {
@@ -406,6 +406,7 @@ struct UnifiedWindow: NSViewRepresentable {
         w.isMovableByWindowBackground = true
         w.backgroundColor = .clear
         w.isOpaque = false
+        w.contentMinSize = NSSize(width: 600, height: 560)
     }
 }
 
@@ -513,14 +514,14 @@ struct NowCard: View {
             }
         }
         .padding(compact ? 14 : 18)
-        .glassCard(radius: 24, highlight: dropping)
+        .glassCard(radius: 24, highlight: true)
         .overlay(alignment: .topTrailing) {
             if p.folderURL != nil {
                 Label(dropping ? "Drop to add" : "Drop files here", systemImage: "arrow.down.to.line")
                     .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Theme.buttonInk)
                     .padding(.horizontal, 9).padding(.vertical, 3)
-                    .background(Theme.coral, in: Capsule())
+                    .background(Theme.coralFill, in: Capsule())
                     .offset(x: -18, y: -9)
                     .opacity(dropping ? 1 : 0.85)
             }
@@ -787,7 +788,7 @@ struct TaskRow: View {
             Button { store.toggle(task.id) } label: {
                 Image(systemName: task.isRunning ? "pause.fill" : "play.fill")
             }
-            .buttonStyle(CircleIconButtonStyle(filled: task.isRunning, size: 34))
+            .buttonStyle(CircleIconButtonStyle(filled: true, size: 34))
             .help(task.isRunning ? "Pause" : "Start")
 
             VStack(alignment: .leading, spacing: 4) {

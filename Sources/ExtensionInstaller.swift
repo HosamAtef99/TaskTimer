@@ -158,9 +158,9 @@ struct AddExtensionSheet: View {
         HStack(alignment: .top, spacing: 10) {
             Text("\(n)")
                 .font(.system(size: 12, weight: .bold))
-                .foregroundStyle(.white)
+                .foregroundStyle(Theme.buttonInk)
                 .frame(width: 22, height: 22)
-                .background(Theme.diagonal, in: Circle())
+                .background(Theme.coralFill, in: Circle())
             Text(text)
                 .font(.system(size: 12))
                 .fixedSize(horizontal: false, vertical: true)

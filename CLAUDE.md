@@ -152,13 +152,22 @@ When you make a decision that the other person would need to know, add it here.
   (drop), Set Render Outputs, Organize, the save before Collect. A DoScript while AE shows
   one of its own windows makes AE show "Cannot run a script while a modal dialog is waiting".
 
-## Look (1.30, Hosam's picks)
-- Liquid-Glass style, **teal + coral**, light and dark (Settings → General → Appearance: System /
-  Light / Dark, `Appearance.apply()` sets `NSApp.appearance`). `Theme.swift`: `teal`, `coral`,
-  `pitch`, `support`, `slate` are dynamic colours; the old names (`blue`, `purple`, `pink`…) map
-  onto them. Primary buttons (New Task, Done) are **plain coral, one colour**; the play/pause button
-  is teal. Glass = `.ultraThinMaterial` + white edge (`glassCard`, `glassChip`); macOS 26's real
-  `glassEffect` isn't used (CI SDK, macOS 13 support).
+## Look ("Mist", after 1.30: Mousab's design, Hosam approved it)
+- Liquid-Glass style, **teal + coral, softened** ("Mist"), light and dark (Settings → General →
+  Appearance: System / Light / Dark, `Appearance.apply()` sets `NSApp.appearance`). `Theme.swift`:
+  `teal`, `coral`, `ink`, `pitch`, `support`, `slate` are dynamic colours; the old names (`blue`,
+  `purple`, `pink`…) map onto them. Glass = `.ultraThinMaterial` + white edge (`glassCard`,
+  `glassChip`); macOS 26's real `glassEffect` isn't used (CI SDK, macOS 13 support).
+- **Loud vs quiet buttons.** Only the main action of a screen is loud: `GradientButtonStyle` (soft
+  coral gradient `Theme.coralFill`) and `CircleIconButtonStyle(filled: true)` (soft teal
+  `Theme.tealFill`: play / pause, + 30 min), with **near-black text** (`Theme.buttonInk`, never
+  white). Everything else is quiet: `GlassButtonStyle` / unfilled circles = a glass chip that
+  brightens on hover. Loud ones: New Task, Done, Complete, Create & Start, Assign Task, Add Account.
+- **Button motion** (`LoudButtonLook` in `Theme.swift`): on hover a gradient ring of light
+  (`Theme.ring`, teal → blue → coral → amber) turns behind the button, drawn with a `TimelineView`
+  only while the pointer is on it (nothing animates in the background); on press the button sinks,
+  the glow flares and a gradient wave spreads from behind it.
+- The main window is never narrower than **600 px** (was 470; text ran into other text).
 - Logo: stopwatch whose hand is a check mark, stroke only (`MongezLogoShape` in `MainView.swift`,
   also the menu bar template icon `MenuBarIcon` and `Resources/AppIcon.iconset`).
 - Main window, top to bottom: one bar with the window buttons, logo, Modhesh / Team / Clients /

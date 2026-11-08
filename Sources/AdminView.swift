@@ -1037,7 +1037,7 @@ struct AdminAddAccountSheet: View {
                         .keyboardShortcut(.cancelAction)
                     Button { send() } label: {
                         HStack(spacing: 6) {
-                            if sending { ProgressView().controlSize(.small).tint(.white) }
+                            if sending { ProgressView().controlSize(.small).tint(Theme.buttonInk) }
                             Text("Create Account")
                         }
                     }

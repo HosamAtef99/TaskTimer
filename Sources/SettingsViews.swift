@@ -257,7 +257,7 @@ struct SettingsView: View {
             HStack(spacing: 10) {
                 Button { Task { await sync.sync(silent: false) } } label: {
                     HStack(spacing: 6) {
-                        if sync.syncing { ProgressView().controlSize(.small).tint(.white) }
+                        if sync.syncing { ProgressView().controlSize(.small).tint(Theme.buttonInk) }
                         Label("Sync from Sheet", systemImage: "arrow.triangle.2.circlepath")
                     }
                 }
@@ -788,7 +788,7 @@ struct AccountSection: View {
             HStack(spacing: 10) {
                 Button(action: go) {
                     HStack(spacing: 6) {
-                        if auth.busy { ProgressView().controlSize(.small).tint(.white) }
+                        if auth.busy { ProgressView().controlSize(.small).tint(Theme.buttonInk) }
                         Text("Sign In")
                     }
                 }

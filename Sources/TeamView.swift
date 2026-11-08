@@ -449,7 +449,7 @@ struct AssignTaskSheet: View {
                     .keyboardShortcut(.cancelAction)
                 Button { send() } label: {
                     HStack(spacing: 6) {
-                        if sending { ProgressView().controlSize(.small).tint(.white) }
+                        if sending { ProgressView().controlSize(.small).tint(Theme.buttonInk) }
                         Text("Assign")
                     }
                 }
@@ -609,7 +609,7 @@ struct AddMemberSheet: View {
                         .keyboardShortcut(.cancelAction)
                     Button { send() } label: {
                         HStack(spacing: 6) {
-                            if sending { ProgressView().controlSize(.small).tint(.white) }
+                            if sending { ProgressView().controlSize(.small).tint(Theme.buttonInk) }
                             Text(mode == .new ? "Create Account" : "Add to Team")
                         }
                     }
@@ -685,7 +685,7 @@ struct ResetPasswordSheet: View {
                     .keyboardShortcut(.cancelAction)
                 Button { send() } label: {
                     HStack(spacing: 6) {
-                        if sending { ProgressView().controlSize(.small).tint(.white) }
+                        if sending { ProgressView().controlSize(.small).tint(Theme.buttonInk) }
                         Text("Reset & Copy")
                     }
                 }

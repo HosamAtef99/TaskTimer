@@ -152,10 +152,10 @@ struct SheetFrame<Content: View>: View {
                 HStack(spacing: 12) {
                     Image(systemName: icon)
                         .font(.system(size: 18, weight: .bold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Theme.buttonInk)
                         .frame(width: 40, height: 40)
-                        .background(Theme.diagonal, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-                        .shadow(color: Theme.teal.opacity(0.35), radius: 8, y: 3)
+                        .background(Theme.tealFill, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                        .shadow(color: Theme.tealShadow, radius: 8, y: 3)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(title).font(.system(size: 18, weight: .bold, design: .rounded))
                         Text(subtitle).font(.system(size: 12)).foregroundStyle(.secondary)
@@ -636,7 +636,7 @@ struct SheetDoneSheet: View {
                     .keyboardShortcut(.cancelAction)
                 Button { send() } label: {
                     HStack(spacing: 6) {
-                        if sending { ProgressView().controlSize(.small).tint(.white) }
+                        if sending { ProgressView().controlSize(.small).tint(Theme.buttonInk) }
                         Text(sending ? "Logging…" : "Log to Sheet")
                     }
                 }
