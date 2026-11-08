@@ -362,6 +362,51 @@ struct CircleIconButtonStyle: ButtonStyle {
     }
 }
 
+// MARK: - Hover label
+
+/// A name in a small glass label under a button, shown a moment after the pointer stops on it
+/// (sooner than a system tooltip, and in the app's style). It takes no room in the layout.
+struct HoverLabel: ViewModifier {
+    var text: String
+    @Local private var hovering = false
+    @Local private var shown = false
+
+    func body(content: Content) -> some View {
+        content
+            .onHover { inside in
+                hovering = inside
+                if inside {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                        guard hovering else { return }
+                        withAnimation(.spring(response: 0.28, dampingFraction: 0.75)) { shown = true }
+                    }
+                } else {
+                    withAnimation(.easeOut(duration: 0.12)) { shown = false }
+                }
+            }
+            .overlay(alignment: .bottom) {
+                if shown {
+                    Text(text)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Theme.ink)
+                        .lineLimit(1)
+                        .fixedSize()
+                        .padding(.horizontal, 9).padding(.vertical, 4)
+                        .background(.regularMaterial, in: Capsule())
+                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.35), lineWidth: 1))
+                        .shadow(color: .black.opacity(0.15), radius: 6, y: 2)
+                        .alignmentGuide(.bottom) { d in d[.top] - 6 }   // just under the button
+                        .transition(.opacity.combined(with: .scale(scale: 0.85, anchor: .top)))
+                        .allowsHitTesting(false)
+                }
+            }
+    }
+}
+
+extension View {
+    func hoverLabel(_ text: String) -> some View { modifier(HoverLabel(text: text)) }
+}
+
 // MARK: - Room in the window
 
 private struct MainWindowSizeKey: EnvironmentKey {

@@ -175,9 +175,19 @@ When you make a decision that the other person would need to know, add it here.
   scroll inside themselves and set their own size (Settings, Team, Clients, Modhesh, Admin) pass
   `scrolls: false` and cap their height with `Room.sheetHeight`. Task rows follow the window
   width: ≥ 900 tools + render picture, ≥ 760 tools, narrower = all tools folded into one button
-  (`TaskTools(grouped: true)`, a menu). The line under a task's name drops the date, then the
+  (`TaskTools(grouped: true)`). The line under a task's name drops the date, then the
   status, then the tag when it doesn't fit, and long client names are shortened, so a row is
   never wider than the window.
+- **Task tools** (`TaskTools` / `TaskTool` in `MainView.swift`, Mousab's call): each round icon
+  shows its short name in a glass label on hover (`.hoverLabel`, after 0.35 s; not `.help`); the
+  folder icon is a plain round button (not a `Menu`, whose padding pushed the icon off centre)
+  that opens the project folder, or a small panel when there's a Render folder too. Folded
+  (narrow window) they're one wrench button whose popover is a grid of every tool with its name;
+  the icons pop in one after another (`ToolGrid`). A hovered row gets `zIndex(1)` so its labels
+  show over the next row.
+- **Hours column:** a fixed width (`TaskRow.timeColumn`) and completed hours always as `00.0 h`
+  (`Fmt.hoursColumn`: 01.0, 02.5, 15.5); Done / Edit share one width, so the tools line up row
+  under row.
 - Logo: stopwatch whose hand is a check mark, stroke only (`MongezLogoShape` in `MainView.swift`,
   also the menu bar template icon `MenuBarIcon` and `Resources/AppIcon.iconset`).
 - Main window, top to bottom: one bar with the window buttons, logo, Modhesh / Team / Clients /

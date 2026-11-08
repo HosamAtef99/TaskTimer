@@ -71,6 +71,7 @@ struct MainView: View {
                 } else {
                     StatsRow(narrow: narrow)
                     NowCard(compact: compact)
+                        .zIndex(1)   // its tools' name labels show over the list
                     listControls
                     taskList
                 }
@@ -380,7 +381,8 @@ struct MainView: View {
                             TaskRow(task: t)
                         }
                     }
-                    .padding(.vertical, 6)
+                    .padding(.top, 6)
+                    .padding(.bottom, 28)   // room for the last row's tool names
                     .padding(.horizontal, 4)
                 }
             }
@@ -561,91 +563,192 @@ struct NowCard: View {
 
 // MARK: - Task tools (After Effects + folders)
 
-/// Open AE, Set Render Outputs, Organize, Collect and the folders, as small round icons.
-/// Hover one to see what it does.
+/// Open AE, Set Render Outputs, Organize, Collect and the folders, as small round icons. Each
+/// shows its name on hover. In a narrow window they fold into one button (`grouped`) that opens a
+/// glass panel with every tool in a grid.
 struct TaskTools: View {
     var task: TaskItem
     var size: CGFloat = 27
-    /// Narrow window: all the tools in one button's menu instead of a row of icons.
+    /// Narrow window: every tool in one button that opens them in a grid.
     var grouped = false
 
     var body: some View {
         if let f = task.folderURL {
+            let tools = TaskTool.all(for: task, folder: f)
             if grouped {
-                groupedMenu(f)
+                ToolGroupButton(tools: tools, size: size)
             } else {
-                row(f)
+                HStack(spacing: 4) {
+                    ForEach(tools.filter { !$0.isFolder }) { t in
+                        ToolIconButton(tool: t, size: size)
+                    }
+                    FolderButton(tools: tools.filter { $0.isFolder }, size: size)
+                }
             }
         }
     }
+}
 
-    private func groupedMenu(_ f: URL) -> some View {
-        let ae = FolderService.aeFile(in: f)
-        return Menu {
-            if let ae = ae {
-                Button("Open AE Project (\(ae.lastPathComponent))") { NSWorkspace.shared.open(ae) }
-                Button("Set Render Outputs") { AEProjectTools.renderToTask(ae, taskFolder: f) }
-                Button("Organize AE Project") { AEProjectTools.organize(ae) }
-                Button("Collect AE Project") { AEProjectTools.collect(ae, taskFolder: f, taskName: task.name) }
-                Divider()
+/// One of a task's tools: its name (shown on hover and in the grid), its icon and what it does.
+struct TaskTool: Identifiable {
+    let id: String
+    let name: String
+    let symbol: String?          // nil = the "Ae" mark
+    var isFolder = false
+    let action: () -> Void
+
+    static func all(for task: TaskItem, folder f: URL) -> [TaskTool] {
+        var list: [TaskTool] = []
+        if let ae = FolderService.aeFile(in: f) {
+            list.append(TaskTool(id: "ae", name: "Open AE Project", symbol: nil) { NSWorkspace.shared.open(ae) })
+            list.append(TaskTool(id: "outputs", name: "Set Render Outputs", symbol: "film.stack") {
+                AEProjectTools.renderToTask(ae, taskFolder: f)
+            })
+            list.append(TaskTool(id: "organize", name: "Organize", symbol: "square.grid.2x2") { AEProjectTools.organize(ae) })
+            list.append(TaskTool(id: "collect", name: "Collect", symbol: "shippingbox") {
+                AEProjectTools.collect(ae, taskFolder: f, taskName: task.name)
+            })
+        }
+        list.append(TaskTool(id: "folder", name: "Project Folder", symbol: "folder", isFolder: true) { NSWorkspace.shared.open(f) })
+        if let r = FolderService.folder(in: f, matching: ["render"]) {
+            list.append(TaskTool(id: "renderFolder", name: "Render Folder", symbol: "film", isFolder: true) { NSWorkspace.shared.open(r) })
+        }
+        return list
+    }
+}
+
+/// A tool's icon, teal: an SF Symbol, or the "Ae" mark for After Effects.
+private struct TaskToolIcon: View {
+    var tool: TaskTool
+    var size: CGFloat
+    var body: some View {
+        Group {
+            if let s = tool.symbol {
+                Image(systemName: s).font(.system(size: size * 0.45, weight: .semibold))
+            } else {
+                Text("Ae").font(.system(size: size * 0.36, weight: .heavy, design: .rounded))
             }
-            Button("Open Project Folder") { NSWorkspace.shared.open(f) }
-            if let r = FolderService.folder(in: f, matching: ["render"]) {
-                Button("Open Render Folder") { NSWorkspace.shared.open(r) }
-            }
+        }
+        .foregroundStyle(Theme.teal)
+    }
+}
+
+private struct ToolIconButton: View {
+    var tool: TaskTool
+    var size: CGFloat
+    var body: some View {
+        Button(action: tool.action) {
+            TaskToolIcon(tool: tool, size: size)
+        }
+        .buttonStyle(CircleIconButtonStyle(size: size))
+        .hoverLabel(tool.name)
+    }
+}
+
+/// The folder icon: opens the project folder, or (when there's a Render folder too) a small
+/// panel to pick one. A plain round button, so its icon sits in the middle like the others.
+private struct FolderButton: View {
+    var tools: [TaskTool]
+    var size: CGFloat
+    @Local private var open = false
+
+    var body: some View {
+        Button {
+            if tools.count == 1 { tools[0].action() } else { open.toggle() }
         } label: {
-            Image(systemName: "wrench.and.screwdriver")
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .frame(width: size, height: size)
-        .glassChip()
-        .help("After Effects tools and the task's folders")
-    }
-
-    private func row(_ f: URL) -> some View {
-            HStack(spacing: 4) {
-                if let ae = FolderService.aeFile(in: f) {
-                    tool(help: "Open AE Project: \(ae.lastPathComponent)") { NSWorkspace.shared.open(ae) } label: {
-                        Text("Ae").font(.system(size: size * 0.36, weight: .heavy, design: .rounded))
-                    }
-                    tool(help: "Set Render Outputs: the queued Render Queue items go to this task's Render folder, named \(FolderService.cleanName(f.lastPathComponent))_v01, _v02…") {
-                        AEProjectTools.renderToTask(ae, taskFolder: f)
-                    } label: { Image(systemName: "film.stack") }
-                    tool(help: "Organize AE Project: comps that were rendered go to Main Comps, loose items into numbered folders (⌘Z in After Effects undoes it)") {
-                        AEProjectTools.organize(ae)
-                    } label: { Image(systemName: "square.grid.2x2") }
-                    tool(help: "Collect AE Project: the project and every file it uses, into the task's Collect folder") {
-                        AEProjectTools.collect(ae, taskFolder: f, taskName: task.name)
-                    } label: { Image(systemName: "shippingbox") }
-                }
-                Menu {
-                    Button("Open Project Folder") { NSWorkspace.shared.open(f) }
-                    if let r = FolderService.folder(in: f, matching: ["render"]) {
-                        Button("Open Render Folder") { NSWorkspace.shared.open(r) }
-                    }
-                } label: {
-                    Image(systemName: "folder")
-                }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .frame(width: size, height: size)
-                .glassChip()
-                .help("Open the task's folder or its Render folder")
-            }
-    }
-
-    private func tool<L: View>(help: String, action: @escaping () -> Void, @ViewBuilder label: () -> L) -> some View {
-        Button(action: action) {
-            label()
+            Image(systemName: "folder")
                 .font(.system(size: size * 0.45, weight: .semibold))
                 .foregroundStyle(Theme.teal)
-                .frame(width: size, height: size)
-                .glassChip()
-                .contentShape(Circle())
+        }
+        .buttonStyle(CircleIconButtonStyle(size: size))
+        .hoverLabel(tools.count == 1 ? "Project Folder" : "Folders")
+        .popover(isPresented: $open, arrowEdge: .bottom) {
+            ToolGrid(tools: tools) { open = false }
+        }
+    }
+}
+
+/// Narrow window: all the tools behind one button.
+private struct ToolGroupButton: View {
+    var tools: [TaskTool]
+    var size: CGFloat
+    @Local private var open = false
+
+    var body: some View {
+        Button { open.toggle() } label: {
+            Image(systemName: "wrench.and.screwdriver")
+                .font(.system(size: size * 0.42, weight: .semibold))
+                .foregroundStyle(Theme.teal)
+        }
+        .buttonStyle(CircleIconButtonStyle(size: size))
+        .hoverLabel("Tools")
+        .popover(isPresented: $open, arrowEdge: .bottom) {
+            ToolGrid(tools: tools) { open = false }
+        }
+    }
+}
+
+/// The glass panel a folded tool button opens: every tool as an icon with its name, three to a
+/// row. The icons pop in one after another with a little spring.
+private struct ToolGrid: View {
+    var tools: [TaskTool]
+    var close: () -> Void
+    @Local private var shown = false
+
+    var body: some View {
+        let items = Array(tools.enumerated())
+        let rows = stride(from: 0, to: items.count, by: 3).map { Array(items[$0..<min($0 + 3, items.count)]) }
+        VStack(spacing: 8) {
+            ForEach(rows.indices, id: \.self) { r in
+                HStack(spacing: 6) {
+                    ForEach(rows[r], id: \.element.id) { item in
+                        ToolGridCell(tool: item.element) {
+                            close()
+                            DispatchQueue.main.async { item.element.action() }
+                        }
+                        .scaleEffect(shown ? 1 : 0.5)
+                        .opacity(shown ? 1 : 0)
+                        .offset(y: shown ? 0 : 8)
+                        .animation(.spring(response: 0.38, dampingFraction: 0.68)
+                                    .delay(0.03 + Double(item.offset) * 0.045), value: shown)
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .onAppear { shown = true }
+    }
+}
+
+private struct ToolGridCell: View {
+    var tool: TaskTool
+    var action: () -> Void
+    @Local private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 6) {
+                TaskToolIcon(tool: tool, size: 40)
+                    .frame(width: 40, height: 40)
+                    .glassChip()
+                    .scaleEffect(hovering ? 1.08 : 1)
+                Text(tool.name)
+                    .font(.system(size: 10.5, weight: .medium))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(width: 72)
+            }
+            .padding(.vertical, 6)
+            .frame(width: 78)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.primary.opacity(hovering ? 0.06 : 0)))
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(help)
+        .onHover { inside in
+            withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) { hovering = inside }
+        }
     }
 }
 
@@ -776,6 +879,9 @@ struct TaskRow: View {
     @EnvironmentObject var store: Store
     @Environment(\.mainWindowSize) var windowSize
     var task: TaskItem
+    /// Fixed widths of the time column and the Done / Edit button, shared with the amend rows.
+    static let timeColumn: CGFloat = 64
+    static let doneWidth: CGFloat = 34
     @Local var hovering = false
     @Local var dropping = false
     @Local var confirmDelete = false
@@ -796,6 +902,7 @@ struct TaskRow: View {
         .glassCard(radius: 18, highlight: task.isRunning || subs.contains(where: { $0.isRunning }) || dropping)
         .scaleEffect(hovering ? 1.005 : 1)
         .onHover { hovering = $0 }
+        .zIndex(hovering ? 1 : 0)   // a tool's name label shows over the next row
         .animation(.easeOut(duration: 0.15), value: hovering)
         .confirmationDialog("Delete “\(task.name)”?", isPresented: $confirmDelete) {
             Button("Delete", role: .destructive) { store.delete(task.id) }
@@ -864,25 +971,29 @@ struct TaskRow: View {
                 TaskTools(task: task, size: 27, grouped: true)
             }
 
+            // One width for every row (00.0 h / 00:00:00), so the icons beside it line up.
             VStack(alignment: .trailing, spacing: 2) {
-                Text(task.status == .complete ? "\(Fmt.hours(task.totalSeconds(at: store.now))) h" : Fmt.clock(task.totalSeconds(at: store.now)))
+                Text(task.status == .complete ? "\(Fmt.hoursColumn(task.totalSeconds(at: store.now))) h" : Fmt.clock(task.totalSeconds(at: store.now)))
                     .font(.system(size: 13.5, weight: .medium, design: .rounded).monospacedDigit())
                     .lineLimit(1)
                     .fixedSize()
                     .foregroundStyle(task.isRunning ? AnyShapeStyle(Theme.linear) : AnyShapeStyle(HierarchicalShapeStyle.secondary))
                 if hasSubs {
-                    Text("Total \(Fmt.hours(store.groupSeconds(task.id))) h")
-                        .font(.system(size: 10, weight: .medium))
+                    Text("Total \(Fmt.hoursColumn(store.groupSeconds(task.id))) h")
+                        .font(.system(size: 10, weight: .medium).monospacedDigit())
                         .foregroundStyle(.tertiary)
+                        .fixedSize()
                         .help("This task plus all its amends")
                 }
             }
+            .frame(minWidth: Self.timeColumn, alignment: .trailing)
 
             Button { addAmend() } label: { Image(systemName: "plus") }
                 .buttonStyle(CircleIconButtonStyle(size: 27))
                 .help("Add an amend. It gets its own timer and can be linked to its own Modhesh task.")
             Button { store.requestDone(task.id) } label: {
                 Text(doneLabel(task)).lineLimit(1).fixedSize().foregroundStyle(Theme.coral).fontWeight(.semibold)
+                    .frame(minWidth: Self.doneWidth)   // Done and Edit take the same room
             }
             .buttonStyle(GlassButtonStyle(compact: true))
         }
@@ -1017,13 +1128,15 @@ struct SubtaskRow: View {
 
             Spacer(minLength: 8)
 
-            Text(task.status == .complete ? "\(Fmt.hours(task.totalSeconds(at: store.now))) h" : Fmt.clock(task.totalSeconds(at: store.now)))
+            Text(task.status == .complete ? "\(Fmt.hoursColumn(task.totalSeconds(at: store.now))) h" : Fmt.clock(task.totalSeconds(at: store.now)))
                 .font(.system(size: 13, weight: .medium, design: .rounded).monospacedDigit())
                 .lineLimit(1)
                 .fixedSize()
                 .foregroundStyle(task.isRunning ? AnyShapeStyle(Theme.linear) : AnyShapeStyle(HierarchicalShapeStyle.secondary))
+                .frame(minWidth: TaskRow.timeColumn, alignment: .trailing)
             Button { store.requestDone(task.id) } label: {
                 Text(doneLabel(task)).lineLimit(1).fixedSize().foregroundStyle(Theme.coral).fontWeight(.semibold)
+                    .frame(minWidth: TaskRow.doneWidth)
             }
             .buttonStyle(GlassButtonStyle(compact: true))
         }

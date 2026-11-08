@@ -166,6 +166,11 @@ enum Fmt {
     }()
 
     /// Hours as a decimal, e.g. 3, 3.5, 0.75.
+    /// Hours for a column: always 00.0 (01.0, 02.5, 15.5), so every row's number takes the same width.
+    static func hoursColumn(_ s: TimeInterval) -> String {
+        String(format: "%04.1f", max(0, s) / 3600)
+    }
+
     static func hours(_ s: TimeInterval) -> String {
         let h = (max(0, s) / 3600 * 100).rounded() / 100
         var str = String(format: "%.2f", h)
