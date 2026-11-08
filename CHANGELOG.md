@@ -2,6 +2,11 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
+## 1.31.1
+- Nothing goes out of the window any more: Settings and the other windows fit inside Mongez's window, and scroll when they're too long, so their title and Done button always show.
+- More room around the edges of the main window, so the buttons at the top don't touch the edge.
+- In a narrow window, a task's After Effects tools fold into one button (press it for the menu), and the line under the name drops the date or status instead of cutting the row.
+
 ## 1.31
 - **A calmer look ("Mist")**: the same teal and coral, much softer, in light and dark.
 - The main button of each screen (New Task, Done, Complete, Assign Task…) stands out with a soft gradient and dark text. Hover over it and a ring of light turns behind it; click it and a wave spreads out. The other buttons stay quiet and light up a little on hover.
