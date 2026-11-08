@@ -2,6 +2,11 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
+## 1.31
+- **A calmer look ("Mist")**: the same teal and coral, much softer, in light and dark.
+- The main button of each screen (New Task, Done, Complete, Assign Task…) stands out with a soft gradient and dark text. Hover over it and a ring of light turns behind it; click it and a wave spreads out. The other buttons stay quiet and light up a little on hover.
+- The window can't get narrower than 600 px any more, so text no longer runs into other text.
+
 ## 1.30
 - **TaskTimer is now Mongez**: new name, new logo and a new look — teal and coral frosted glass, in light or dark (Settings → General → Appearance). The app installs itself as Mongez.app.
 - The running task sits in its own card with its amends (press one to switch the timer), its After Effects tools and Done. Drop files on the card to add them to the task.
