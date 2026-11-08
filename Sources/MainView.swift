@@ -595,8 +595,9 @@ struct TaskTool: Identifiable {
     let name: String
     let symbol: String?          // nil = the "Ae" mark
     var isFolder = false
-    let action: () -> Void
+    let action: @MainActor () -> Void
 
+    @MainActor
     static func all(for task: TaskItem, folder f: URL) -> [TaskTool] {
         var list: [TaskTool] = []
         if let ae = FolderService.aeFile(in: f) {
@@ -637,7 +638,7 @@ private struct ToolIconButton: View {
     var tool: TaskTool
     var size: CGFloat
     var body: some View {
-        Button(action: tool.action) {
+        Button { tool.action() } label: {
             TaskToolIcon(tool: tool, size: size)
         }
         .buttonStyle(CircleIconButtonStyle(size: size))
@@ -704,7 +705,8 @@ private struct ToolGrid: View {
                     ForEach(rows[r], id: \.element.id) { item in
                         ToolGridCell(tool: item.element) {
                             close()
-                            DispatchQueue.main.async { item.element.action() }
+                            let run = item.element.action
+                            Task { @MainActor in run() }
                         }
                         .scaleEffect(shown ? 1 : 0.5)
                         .opacity(shown ? 1 : 0)
