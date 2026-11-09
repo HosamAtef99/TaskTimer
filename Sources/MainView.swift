@@ -609,7 +609,7 @@ struct TaskTools: View {
                     tool(help: "Open AE Project: \(ae.lastPathComponent)") { NSWorkspace.shared.open(ae) } label: {
                         Text("Ae").font(.system(size: size * 0.36, weight: .heavy, design: .rounded))
                     }
-                    tool(help: "Set Render Outputs: the queued Render Queue items go to this task's Render folder, named \(FolderService.cleanName(f.lastPathComponent))_v01, _v02…") {
+                    tool(help: "Set Render Outputs: the queued Render Queue items go to this task's Render folder, named \(FolderService.cleanName(f.lastPathComponent))_v01, _v02…, then saves the project so they stay") {
                         AEProjectTools.renderToTask(ae, taskFolder: f)
                     } label: { Image(systemName: "film.stack") }
                     tool(help: "Organize AE Project: comps that were rendered go to Main Comps, loose items into numbered folders (⌘Z in After Effects undoes it)") {
