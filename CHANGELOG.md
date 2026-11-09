@@ -2,6 +2,9 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
+## Next (not released yet — rename to the version when VERSION is bumped)
+- Set Render Outputs saves the After Effects project after setting the paths, so they stay the same when you open another project and come back.
+
 ## 1.31.1
 - Nothing goes out of the window any more: Settings and the other windows fit inside Mongez's window, and scroll when they're too long, so their title and Done button always show.
 - More room around the edges of the main window, so the buttons at the top don't touch the edge.

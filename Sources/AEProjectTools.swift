@@ -127,7 +127,12 @@ enum AEProjectTools {
               changed++;
             }
           }
-          return "ok " + changed + " " + queued;
+          // Save, so the paths stay in this project's file when another project is opened.
+          var saved = 0;
+          if (queued > 0 && app.project.dirty) {
+            try { app.project.save(); saved = 1; } catch (e) { saved = -1; }
+          }
+          return "ok " + changed + " " + queued + " " + saved;
         })();
         """
         AfterEffects.doScript(script, activate: false) { result in
@@ -143,12 +148,16 @@ enum AEProjectTools {
                     let parts = text.split(separator: " ")
                     let changed = parts.count > 1 ? Int(parts[1]) ?? 0 : 0
                     let queued = parts.count > 2 ? Int(parts[2]) ?? 0 : 0
+                    let saved = parts.count > 3 ? Int(parts[3]) ?? 0 : 0
+                    if saved < 0 {
+                        alert("Couldn't save the project", "The render outputs are set, but After Effects couldn't save “\(aep.lastPathComponent)”. Save it yourself (File → Save) so they stay when you open another project.")
+                    }
                     if queued == 0 {
                         Store.shared.flash("Nothing queued in the Render Queue")
                     } else if changed == 0 {
-                        Store.shared.flash("Render outputs were already set to \(render.lastPathComponent)")
+                        Store.shared.flash("Render outputs were already set to \(render.lastPathComponent)\(saved > 0 ? " · project saved" : "")")
                     } else {
-                        Store.shared.flash("\(changed) render output\(changed == 1 ? "" : "s") → \(render.lastPathComponent), named \(base)…")
+                        Store.shared.flash("\(changed) render output\(changed == 1 ? "" : "s") → \(render.lastPathComponent), named \(base)…\(saved > 0 ? " · project saved" : "")")
                     }
                 }
             }
