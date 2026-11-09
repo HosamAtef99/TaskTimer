@@ -169,7 +169,8 @@ When you make a decision that the other person would need to know, add it here.
   the glow flares and a gradient wave spreads from behind it.
 - The main window is never narrower than **600 px** (was 470; text ran into other text).
 - **Nothing may touch or leave the frame** (Mousab's call, 1.31): the main window keeps a safe
-  margin all round (18–24 pt sides, room above the top bar) so buttons and their glow stay inside.
+  margin all round (18–24 pt sides; 14 pt above the top bar, the same as below the list and between
+  sections) so buttons and their glow stay inside.
   `MainView` passes its size down as `\.mainWindowSize`. **Sheets are never taller than the main
   window** (`Room.sheetHeight`): `SheetFrame` scrolls its content when it doesn't fit; sheets that
   scroll inside themselves and set their own size (Settings, Team, Clients, Modhesh, Admin) pass
@@ -184,7 +185,8 @@ When you make a decision that the other person would need to know, add it here.
   that opens the project folder, or a small panel when there's a Render folder too. Folded
   (narrow window) they're one wrench button whose popover is a grid of every tool with its name;
   the icons pop in one after another (`ToolGrid`). A hovered row gets `zIndex(1)` so its labels
-  show over the next row.
+  show over the next row; the list's last row shows them above the icons (`labelsAbove`), so the
+  list keeps the same 6 pt at both ends.
 - **Hours column:** a fixed width (`TaskRow.timeColumn`) and completed hours always as `00.0 h`
   (`Fmt.hoursColumn`: 01.0, 02.5, 15.5); Done / Edit share one width, so the tools line up row
   under row.

@@ -78,7 +78,7 @@ struct MainView: View {
             }
             // A safe margin all round, so buttons (and their glow) never touch the window's edge.
             .padding(.horizontal, narrow ? 18 : (compact ? 20 : 24))
-            .padding(.top, 6)   // the bar sits beside the window buttons
+            .padding(.top, 14)      // as much room above the top bar as below the list
             .padding(.bottom, 14)
             .frame(maxWidth: .infinity)
 
@@ -364,8 +364,9 @@ struct MainView: View {
     }
 
     private var taskList: some View {
-        Group {
-            if filtered.isEmpty {
+        let list = filtered
+        return Group {
+            if list.isEmpty {
                 VStack(spacing: 10) {
                     MongezLogo(lineWidth: 2)
                         .frame(width: 34, height: 34)
@@ -377,12 +378,13 @@ struct MainView: View {
             } else {
                 ScrollView {
                     LazyVStack(spacing: 8) {
-                        ForEach(filtered) { t in
-                            TaskRow(task: t)
+                        ForEach(list) { t in
+                            // The last row shows its tool names above the icons, so the list's
+                            // bottom edge doesn't cut them.
+                            TaskRow(task: t, labelsAbove: list.count > 1 && t.id == list.last?.id)
                         }
                     }
-                    .padding(.top, 6)
-                    .padding(.bottom, 28)   // room for the last row's tool names
+                    .padding(.vertical, 6)
                     .padding(.horizontal, 4)
                 }
             }
@@ -571,18 +573,20 @@ struct TaskTools: View {
     var size: CGFloat = 27
     /// Narrow window: every tool in one button that opens them in a grid.
     var grouped = false
+    /// Names show above the icons instead of below (the list's last row).
+    var labelsAbove = false
 
     var body: some View {
         if let f = task.folderURL {
             let tools = TaskTool.all(for: task, folder: f)
             if grouped {
-                ToolGroupButton(tools: tools, size: size)
+                ToolGroupButton(tools: tools, size: size, labelAbove: labelsAbove)
             } else {
                 HStack(spacing: 4) {
                     ForEach(tools.filter { !$0.isFolder }) { t in
-                        ToolIconButton(tool: t, size: size)
+                        ToolIconButton(tool: t, size: size, labelAbove: labelsAbove)
                     }
-                    FolderButton(tools: tools.filter { $0.isFolder }, size: size)
+                    FolderButton(tools: tools.filter { $0.isFolder }, size: size, labelAbove: labelsAbove)
                 }
             }
         }
@@ -637,12 +641,13 @@ private struct TaskToolIcon: View {
 private struct ToolIconButton: View {
     var tool: TaskTool
     var size: CGFloat
+    var labelAbove = false
     var body: some View {
         Button { tool.action() } label: {
             TaskToolIcon(tool: tool, size: size)
         }
         .buttonStyle(CircleIconButtonStyle(size: size))
-        .hoverLabel(tool.name)
+        .hoverLabel(tool.name, above: labelAbove)
     }
 }
 
@@ -651,6 +656,7 @@ private struct ToolIconButton: View {
 private struct FolderButton: View {
     var tools: [TaskTool]
     var size: CGFloat
+    var labelAbove = false
     @Local private var open = false
 
     var body: some View {
@@ -662,7 +668,7 @@ private struct FolderButton: View {
                 .foregroundStyle(Theme.teal)
         }
         .buttonStyle(CircleIconButtonStyle(size: size))
-        .hoverLabel(tools.count == 1 ? "Project Folder" : "Folders")
+        .hoverLabel(tools.count == 1 ? "Project Folder" : "Folders", above: labelAbove)
         .popover(isPresented: $open, arrowEdge: .bottom) {
             ToolGrid(tools: tools) { open = false }
         }
@@ -673,6 +679,7 @@ private struct FolderButton: View {
 private struct ToolGroupButton: View {
     var tools: [TaskTool]
     var size: CGFloat
+    var labelAbove = false
     @Local private var open = false
 
     var body: some View {
@@ -682,7 +689,7 @@ private struct ToolGroupButton: View {
                 .foregroundStyle(Theme.teal)
         }
         .buttonStyle(CircleIconButtonStyle(size: size))
-        .hoverLabel("Tools")
+        .hoverLabel("Tools", above: labelAbove)
         .popover(isPresented: $open, arrowEdge: .bottom) {
             ToolGrid(tools: tools) { open = false }
         }
@@ -881,6 +888,8 @@ struct TaskRow: View {
     @EnvironmentObject var store: Store
     @Environment(\.mainWindowSize) var windowSize
     var task: TaskItem
+    /// Tool names show above the icons (the list's last row) instead of below.
+    var labelsAbove = false
     /// Fixed widths of the time column and the Done / Edit button, shared with the amend rows.
     static let timeColumn: CGFloat = 64
     static let doneWidth: CGFloat = 34
@@ -965,12 +974,12 @@ struct TaskRow: View {
             if width >= 900 {
                 HStack(spacing: 8) {
                     if let f = task.folderURL { RenderThumb(folder: f) }
-                    TaskTools(task: task, size: 27)
+                    TaskTools(task: task, size: 27, labelsAbove: labelsAbove)
                 }
             } else if width >= 760 {
-                TaskTools(task: task, size: 27)
+                TaskTools(task: task, size: 27, labelsAbove: labelsAbove)
             } else {
-                TaskTools(task: task, size: 27, grouped: true)
+                TaskTools(task: task, size: 27, grouped: true, labelsAbove: labelsAbove)
             }
 
             // One width for every row (00.0 h / 00:00:00), so the icons beside it line up.

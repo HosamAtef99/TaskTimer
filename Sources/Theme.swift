@@ -368,6 +368,8 @@ struct CircleIconButtonStyle: ButtonStyle {
 /// (sooner than a system tooltip, and in the app's style). It takes no room in the layout.
 struct HoverLabel: ViewModifier {
     var text: String
+    /// Above the button instead of under it (where the space below is cut off).
+    var above = false
     @Local private var hovering = false
     @Local private var shown = false
 
@@ -384,7 +386,7 @@ struct HoverLabel: ViewModifier {
                     withAnimation(.easeOut(duration: 0.12)) { shown = false }
                 }
             }
-            .overlay(alignment: .bottom) {
+            .overlay(alignment: above ? .top : .bottom) {
                 if shown {
                     Text(text)
                         .font(.system(size: 11, weight: .semibold))
@@ -395,8 +397,9 @@ struct HoverLabel: ViewModifier {
                         .background(.regularMaterial, in: Capsule())
                         .overlay(Capsule().strokeBorder(Color.white.opacity(0.35), lineWidth: 1))
                         .shadow(color: .black.opacity(0.15), radius: 6, y: 2)
-                        .alignmentGuide(.bottom) { d in d[.top] - 6 }   // just under the button
-                        .transition(.opacity.combined(with: .scale(scale: 0.85, anchor: .top)))
+                        .alignmentGuide(.bottom) { d in d[.top] - 6 }       // just under the button…
+                        .alignmentGuide(.top) { d in d[.bottom] + 6 }       // …or just above it
+                        .transition(.opacity.combined(with: .scale(scale: 0.85, anchor: above ? .bottom : .top)))
                         .allowsHitTesting(false)
                 }
             }
@@ -404,7 +407,7 @@ struct HoverLabel: ViewModifier {
 }
 
 extension View {
-    func hoverLabel(_ text: String) -> some View { modifier(HoverLabel(text: text)) }
+    func hoverLabel(_ text: String, above: Bool = false) -> some View { modifier(HoverLabel(text: text, above: above)) }
 }
 
 // MARK: - Room in the window
