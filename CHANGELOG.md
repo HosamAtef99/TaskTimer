@@ -2,7 +2,11 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
-## Next (not released yet — rename to the version when VERSION is bumped)
+## 1.31.2
+- Hours line up: completed hours always show as 00.0 h (01.0, 02.5, 15.5), so the buttons beside them sit in one line, row under row.
+- Hover any task tool (Open AE Project, Set Render Outputs, Organize, Collect, folders) to see its name. The folder button is centred like the others.
+- In a narrow window, the tools button opens a panel with every tool and its name, in a grid.
+- The same room above the top bar as at the bottom of the window.
 - Set Render Outputs saves the After Effects project after setting the paths, so they stay the same when you open another project and come back.
 
 ## 1.31.1
