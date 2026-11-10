@@ -6,6 +6,7 @@ Newest first. The top section becomes the release notes shown in the app.
 - **Render Queue → the task's Render folder by itself again**: anything you add to the Render Queue in a task's project gets the task's Render folder and the next name (Task_v01, Task_v02…), and it stays that way when you open another project and come back. No button needed (Settings → Folders to turn it off). Mongez puts a small helper into After Effects once each time it starts; it only looks at the Render Queue.
 - Imports into After Effects don't get lost any more: when After Effects has a window or menu open, Mongez waits for it to close instead of getting "Cannot run a script while a modal dialog is waiting", and tries again if After Effects still says so.
 - **Groups**: put several tasks (an event's, say) in a group — right-click a task → Add to Group → New Group… The group's tasks show inside its card. Link the group to one Modhesh task and press Done on the group: the hours of all its tasks go there together.
+- Linking a Modhesh task: picking a task opens a card with its last render (and its hours), so you can check it's the right one before you press Confirm Link.
 - Right-click a task → **Mark as Linked to Modhesh** for work you entered on Modhesh yourself: it counts as closed there, and the extension never sends it.
 - The month filter starts on this month.
 - Admin → Clients: add many clients or pitches at once, one per line.

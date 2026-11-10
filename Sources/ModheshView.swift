@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import QuickLookThumbnailing
 
 /// Tasks read from Modhesh (by the TaskTimer Chrome extension) and the TaskTimer task each one
 /// is linked to. Linked tasks get their hours, deliverables and stars filled in on Modhesh by the
@@ -12,6 +13,8 @@ struct ModheshView: View {
     @ObservedObject var monitor = ExtensionMonitor.shared
     @Local var showLinked = false
     @Local var confirmReset = false
+    /// The link picked from the list, waiting to be confirmed (with the task's last render).
+    @Local var confirm: LinkRequest? = nil
 
     var body: some View {
         // Only what still needs work: Pending to Start and In Progress.
@@ -96,6 +99,9 @@ struct ModheshView: View {
                 await cloud.loadModhesh()
             }
         }
+        .sheet(item: $confirm) { req in
+            LinkConfirmSheet(request: req).environmentObject(store)
+        }
         .confirmationDialog("Clear Modhesh tasks and re-check?", isPresented: $confirmReset) {
             Button("Clear & re-check", role: .destructive) {
                 Task { @MainActor in await cloud.resetModhesh() }
@@ -131,7 +137,7 @@ struct ModheshView: View {
             Spacer(minLength: 8)
             if let best = suggestions.first, best.score >= 0.34 {
                 Button {
-                    Task { @MainActor in await cloud.linkModhesh(m.code, to: best.task.id) }
+                    confirm = LinkRequest(modhesh: m, taskID: best.task.id)
                 } label: {
                     Text("Link to “\(store.displayName(best.task))”").lineLimit(1)
                 }
@@ -142,7 +148,7 @@ struct ModheshView: View {
             Menu {
                 ForEach(suggestions.prefix(10), id: \.task.id) { c in
                     Button(store.displayName(c.task) + (store.clientName(c.task.clientID).isEmpty ? "" : "  — \(store.clientName(c.task.clientID))")) {
-                        Task { @MainActor in await cloud.linkModhesh(m.code, to: c.task.id) }
+                        confirm = LinkRequest(modhesh: m, taskID: c.task.id)
                     }
                 }
                 Divider()
@@ -150,7 +156,7 @@ struct ModheshView: View {
                     Menu("Groups") {
                         ForEach(store.groups) { g in
                             Button("\(g.name)  (\(store.members(of: g.id).count) tasks)") {
-                                Task { @MainActor in await cloud.linkModhesh(m.code, to: g.id) }
+                                confirm = LinkRequest(modhesh: m, taskID: g.id)
                             }
                         }
                     }
@@ -158,11 +164,11 @@ struct ModheshView: View {
                 Menu("All tasks and amends") {
                     ForEach(store.tasks.filter { $0.parentID == nil }) { t in
                         Button(t.isGroupItem ? "\(t.name)  (group of \(store.members(of: t.id).count))" : t.name) {
-                            Task { @MainActor in await cloud.linkModhesh(m.code, to: t.id) }
+                            confirm = LinkRequest(modhesh: m, taskID: t.id)
                         }
                         ForEach(store.subtasks(of: t.id)) { a in
                             Button("      ↳ \(a.name)") {
-                                Task { @MainActor in await cloud.linkModhesh(m.code, to: a.id) }
+                                confirm = LinkRequest(modhesh: m, taskID: a.id)
                             }
                         }
                     }
@@ -250,5 +256,178 @@ struct ModheshView: View {
                                start: false, incoming: true, wantsFolder: true)
         Task { @MainActor in await cloud.linkModhesh(m.code, to: id) }
         store.flash("Added “\(m.title)” to Incoming and linked it")
+    }
+}
+
+// MARK: - Confirm a link (Hosam's call, 1.32)
+
+/// A Modhesh task and the Mongez task (or amend, or group) picked for it.
+struct LinkRequest: Identifiable {
+    let id = UUID()
+    let modhesh: CloudSync.ModheshTask
+    let taskID: UUID
+}
+
+/// Picking a task in the Modhesh window opens this card first: the Modhesh task, the Mongez task
+/// with its hours, and its last render, so you can see it's the right one before linking.
+struct LinkConfirmSheet: View {
+    @EnvironmentObject var store: Store
+    @Environment(\.dismiss) var dismiss
+    @ObservedObject var cloud = CloudSync.shared
+    let request: LinkRequest
+    @Local var linking = false
+
+    var body: some View {
+        let t = store.task(request.taskID)
+        SheetFrame(title: "Link to Modhesh?", subtitle: "Check it's the right task, then confirm", icon: "link") {
+            // Modhesh's side
+            VStack(alignment: .leading, spacing: 3) {
+                SectionLabel(text: "On Modhesh")
+                Text(request.modhesh.title).font(.system(size: 13, weight: .semibold)).lineLimit(2)
+                Text([request.modhesh.client, request.modhesh.statusTitle].filter { !$0.isEmpty }.joined(separator: " · "))
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .glassCard(radius: 12)
+
+            if let t {
+                // Mongez's side
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            SectionLabel(text: t.isGroupItem ? "Group in Mongez" : "In Mongez")
+                            Text(store.displayName(t)).font(.system(size: 14, weight: .semibold)).lineLimit(2)
+                            Text(details(t)).font(.system(size: 11)).foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 8)
+                        Text("\(Fmt.hoursColumn(store.seconds(of: t))) h")
+                            .font(.system(size: 16, weight: .semibold, design: .rounded).monospacedDigit())
+                    }
+                    if t.isGroupItem {
+                        let members = store.members(of: t.id)
+                        if members.isEmpty {
+                            noRender("This group has no tasks yet.")
+                        } else {
+                            LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
+                                ForEach(members.prefix(6)) { m in
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        RenderPreview(folder: m.folderURL, height: 110)
+                                        Text(m.name).font(.system(size: 11, weight: .medium)).lineLimit(1)
+                                    }
+                                }
+                            }
+                            if members.count > 6 {
+                                Text("+ \(members.count - 6) more").font(.system(size: 11)).foregroundStyle(.secondary)
+                            }
+                        }
+                    } else {
+                        RenderPreview(folder: t.folderURL ?? store.parent(of: t)?.folderURL, height: 250)
+                    }
+                }
+                .padding(12)
+                .glassCard(radius: 12, highlight: true)
+            } else {
+                noRender("This task isn't in Mongez any more.")
+            }
+
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                    .buttonStyle(GlassButtonStyle())
+                    .keyboardShortcut(.cancelAction)
+                Button {
+                    linking = true
+                    Task { @MainActor in
+                        await cloud.linkModhesh(request.modhesh.code, to: request.taskID)
+                        if let t { store.flash("Linked “\(store.displayName(t))” to Modhesh") }
+                        dismiss()
+                    }
+                } label: {
+                    Label(linking ? "Linking…" : "Confirm Link", systemImage: "link")
+                }
+                .buttonStyle(GradientButtonStyle())
+                .keyboardShortcut(.defaultAction)
+                .disabled(t == nil || linking)
+            }
+        }
+        .frame(width: 560)
+    }
+
+    private func details(_ t: TaskItem) -> String {
+        var parts: [String] = []
+        if t.isGroupItem {
+            let n = store.members(of: t.id).count
+            parts.append("\(n) task\(n == 1 ? "" : "s")")
+        }
+        let client = store.clientName(t.clientID)
+        if !client.isEmpty { parts.append(client) }
+        parts.append(t.status.title)
+        parts.append("made " + Fmt.nice.string(from: t.createdAt))
+        return parts.joined(separator: " · ")
+    }
+
+    private func noRender(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 12)).foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, minHeight: 60)
+            .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+}
+
+/// A task's newest render, big (click to open it), or a note when there's none yet.
+struct RenderPreview: View {
+    let folder: URL?
+    var height: CGFloat = 220
+    @Local var image: NSImage? = nil
+    @Local var file: URL? = nil
+    @Local var looked = false
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.black.opacity(0.18))
+            if let image, let file {
+                Button { NSWorkspace.shared.open(file) } label: {
+                    Image(nsImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxWidth: .infinity, maxHeight: height)
+                }
+                .buttonStyle(.plain)
+                .help("\(file.lastPathComponent) — click to open it")
+                .overlay(alignment: .bottomLeading) {
+                    Text(file.lastPathComponent)
+                        .font(.system(size: 10, weight: .medium))
+                        .lineLimit(1)
+                        .padding(.horizontal, 7).padding(.vertical, 3)
+                        .background(.ultraThinMaterial, in: Capsule())
+                        .padding(6)
+                }
+            } else {
+                VStack(spacing: 6) {
+                    Image(systemName: looked ? "film" : "hourglass")
+                        .font(.system(size: 18))
+                    Text(looked ? (folder == nil ? "No folder for this task" : "No render yet") : "Looking for the last render…")
+                        .font(.system(size: 11))
+                }
+                .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: height)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Color.primary.opacity(0.12)))
+        .task(id: folder) {
+            defer { looked = true }
+            guard let folder, let found = await RenderThumb.newestRender(in: folder) else { return }
+            let url = found.0
+            let req = QLThumbnailGenerator.Request(fileAt: url, size: CGSize(width: 960, height: height * 2), scale: 2,
+                                                   representationTypes: .thumbnail)
+            if let rep = try? await QLThumbnailGenerator.shared.generateBestRepresentation(for: req) {
+                image = rep.nsImage
+                file = url
+            }
+        }
     }
 }

@@ -673,10 +673,23 @@ struct RenderThumb: View {
     }
 
     private func load() async {
-        guard let render = FolderService.folder(in: folder, matching: ["render", "renders", "output"]) else {
-            image = nil; file = nil; return
+        guard let found = await Self.newestRender(in: folder) else { image = nil; file = nil; key = ""; return }
+        let (url, date) = found
+        let k = url.path + "\(date.timeIntervalSince1970)"
+        if k == key && image != nil { return }
+        let req = QLThumbnailGenerator.Request(fileAt: url, size: CGSize(width: 192, height: 80), scale: 2,
+                                               representationTypes: .thumbnail)
+        if let rep = try? await QLThumbnailGenerator.shared.generateBestRepresentation(for: req) {
+            image = rep.nsImage
+            file = url
+            key = k
         }
-        let found = await Task.detached(priority: .utility) { () -> (URL, Date)? in
+    }
+
+    /// The newest render (video or still) in a task folder's Render folder, and when it was saved.
+    static func newestRender(in folder: URL) async -> (URL, Date)? {
+        guard let render = FolderService.folder(in: folder, matching: ["render", "renders", "output"]) else { return nil }
+        return await Task.detached(priority: .utility) { () -> (URL, Date)? in
             let keys: [URLResourceKey] = [.isRegularFileKey, .contentModificationDateKey]
             guard let e = FileManager.default.enumerator(at: render, includingPropertiesForKeys: keys,
                                                          options: [.skipsHiddenFiles, .skipsPackageDescendants]) else { return nil }
@@ -693,16 +706,5 @@ struct RenderThumb: View {
             }
             return best
         }.value
-        guard let found else { image = nil; file = nil; key = ""; return }
-        let (url, date) = found
-        let k = url.path + "\(date.timeIntervalSince1970)"
-        if k == key && image != nil { return }
-        let req = QLThumbnailGenerator.Request(fileAt: url, size: CGSize(width: 192, height: 80), scale: 2,
-                                               representationTypes: .thumbnail)
-        if let rep = try? await QLThumbnailGenerator.shared.generateBestRepresentation(for: req) {
-            image = rep.nsImage
-            file = url
-            key = k
-        }
     }
 }
