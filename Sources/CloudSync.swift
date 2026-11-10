@@ -606,8 +606,93 @@ final class CloudSync: ObservableObject {
             modheshMismatch = (r?["modhesh_mismatch"] as? Bool) ?? false
             modheshStatus = r?["modhesh_status"] as? String
             modheshReadAt = Cloud.date(r?["modhesh_read_at"])
+            approvalsStatus = r?["approvals_status"] as? String
+            approvalsReadAt = Cloud.date(r?["approvals_read_at"])
         } catch {
             // Table not created yet: treated as "extension not added".
+        }
+    }
+
+    // MARK: - Modhesh approvals (team leaders)
+
+    /// A task waiting for the leader's approval on Modhesh (read there by the Chrome extension).
+    struct Approval: Identifiable, Hashable {
+        var id: String { code }
+        let code: String
+        var client: String
+        var title: String
+        var assignee: String
+        var assignedBy: String
+        var startDate: String
+        var completedAt: String
+        var seconds: Double?
+        /// "approve" / "return" while the extension is doing it on Modhesh.
+        var action: String?
+        /// Why the last try didn't go through.
+        var note: String?
+    }
+
+    @Published private(set) var approvals: [Approval] = []
+    @Published private(set) var approvalsStatus: String?
+    @Published private(set) var approvalsReadAt: Date?
+    @Published private(set) var approvalsError: String?
+
+    func loadApprovals() async {
+        guard isLeader, let uid = CloudAuth.shared.session?.userID else { return }
+        do {
+            let rows = try await CloudAPI.select("modhesh_approvals", [
+                URLQueryItem(name: "select", value: "code,client,title,assignee,assigned_by,start_date,completed_at,seconds,action,note"),
+                URLQueryItem(name: "user_id", value: "eq.\(uid)"),
+                URLQueryItem(name: "pending", value: "eq.true"),
+                URLQueryItem(name: "order", value: "assignee.asc,completed_at.asc"),
+            ])
+            let list = rows.compactMap { r -> Approval? in
+                guard let code = r["code"] as? String else { return nil }
+                return Approval(code: code,
+                                client: r["client"] as? String ?? "",
+                                title: r["title"] as? String ?? "",
+                                assignee: r["assignee"] as? String ?? "",
+                                assignedBy: r["assigned_by"] as? String ?? "",
+                                startDate: r["start_date"] as? String ?? "",
+                                completedAt: r["completed_at"] as? String ?? "",
+                                seconds: (r["seconds"] as? Double) ?? (r["seconds"] as? Int).map(Double.init),
+                                action: r["action"] as? String,
+                                note: r["note"] as? String)
+            }
+            if list != approvals { approvals = list }
+            approvalsError = nil
+        } catch {
+            let m = error.localizedDescription
+            approvalsError = m.contains("modhesh_approvals")
+                ? "Run the latest schema.sql in Supabase first (it adds the approvals table)."
+                : m
+        }
+    }
+
+    /// Asks the Chrome extension (it looks every 30 s) to read Modhesh's approval list again and do
+    /// what was pressed here.
+    func requestApprovals() async {
+        guard let uid = CloudAuth.shared.session?.userID else { return }
+        do {
+            try await CloudAPI.upsert("user_settings", [["user_id": uid, "approvals_request": Cloud.iso(Date())]])
+        } catch {
+            approvalsError = error.localizedDescription
+        }
+    }
+
+    /// Approve or return these tasks on Modhesh (the extension does it in the leader's Chrome).
+    func decide(_ codes: [String], action: String, reason: String? = nil) async {
+        guard let uid = CloudAuth.shared.session?.userID, !codes.isEmpty else { return }
+        do {
+            let list = codes.map { "\"\($0)\"" }.joined(separator: ",")
+            try await CloudAPI.update("modhesh_approvals", [
+                URLQueryItem(name: "user_id", value: "eq.\(uid)"),
+                URLQueryItem(name: "code", value: "in.(\(list))"),
+            ], ["action": action, "reason": reason.map { $0 as Any } ?? NSNull(), "note": NSNull(), "done_at": NSNull()])
+            await requestApprovals()
+            await loadApprovals()
+        } catch {
+            approvalsError = error.localizedDescription
         }
     }
 

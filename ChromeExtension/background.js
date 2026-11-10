@@ -16,6 +16,7 @@ const ACTIVE = [1, 6]; // Pending to Start, In Progress
 function setup() {
   chrome.alarms.create('tick', { periodInMinutes: 2 });
   chrome.alarms.clear('modhesh');   // older versions read Modhesh every 5 minutes
+  chrome.alarms.create('approvals', { periodInMinutes: 0.5 });   // leaders only: see approvalsTick
 }
 chrome.runtime.onInstalled.addListener(() => {
   setup();
@@ -26,6 +27,7 @@ chrome.runtime.onInstalled.addListener(() => {
 chrome.runtime.onStartup.addListener(setup);
 chrome.alarms.onAlarm.addListener((a) => {
   if (a.name === 'tick') { reloadIfUpdated(); tick(); }
+  if (a.name === 'approvals') approvalsTick(false);
 });
 
 // ───────────── 0. read Modhesh when you press Check now (no tab needed) ─────────────
@@ -347,6 +349,167 @@ async function tick() {
   }
 }
 
+// ───────────── approvals (team leaders) ─────────────
+// A leader approves the team's tasks on Modhesh → Tasks → Approve Tasks. Mongez shows that list
+// and has Approve / Approve All / Return (with a reason). Nothing is approved by itself: only
+// rows the leader pressed in Mongez (modhesh_approvals.action). Mongez asks by writing a new time
+// in user_settings.approvals_request; every 30 s a leader's extension looks at that one value
+// (TaskTimer's database only) and reads Modhesh only when it changed.
+
+const APPROVALS = `${MODHESH}/timesheets/timesheetapproval-requests`;
+
+async function amLeader(uid) {
+  const { ttRole = {} } = await chrome.storage.local.get('ttRole');
+  if (ttRole.uid === uid && Date.now() - ttRole.at < 6 * 3600e3) return ttRole.role === 'leader';
+  let role = '';
+  try { role = ((await TT.rest('GET', `profiles?id=eq.${uid}&select=role`))[0] || {}).role || ''; } catch (e) { return false; }
+  await chrome.storage.local.set({ ttRole: { uid, role, at: Date.now() } });
+  return role === 'leader';
+}
+
+async function approvalsReport(uid, text) {
+  await TT.rest('POST', 'user_settings', [{ user_id: uid, approvals_status: text, approvals_read_at: new Date().toISOString() }],
+    'resolution=merge-duplicates,return=minimal').catch(() => {});
+}
+
+/// The rows of Modhesh's "Tasks Approval Requests" table, or null when Modhesh isn't signed in.
+async function fetchApprovals() {
+  const r = await fetch(`${APPROVALS}?draw=1&start=0&length=500&search%5Bvalue%5D=&is_weekend=`, {
+    credentials: 'include',
+    headers: { 'X-Requested-With': 'XMLHttpRequest', Accept: 'application/json' },
+  });
+  const type = r.headers.get('content-type') || '';
+  if (!r.ok || !type.includes('json')) return null;
+  const j = await r.json();
+  const out = [];
+  for (const d of j.data || []) {
+    const code = (String(d.actions || '').match(/request-complete\/([^"'\s<]+)/) || [])[1]
+      || (String(d.title || '').match(/data-post-task_id="([^"]+)"/) || [])[1];
+    if (!code) continue;
+    const m = decode(d.actual_spent).match(/(\d+)\s*Hours?\s*(\d+)\s*mins?/i);
+    out.push({
+      code,
+      client: decode(d.client),
+      title: decode(d.title),
+      assignee: decode(String(d.requested_by || '').replace(/<span[\s\S]*?<\/span>/g, '')),
+      assigned_by: decode(String(d.created_by || '').split(/<br\s*\/?>/i)[0]),
+      start_date: decode(d.start_date),
+      completed_at: decode(d.task_completed_at),
+      seconds: m ? Number(m[1]) * 3600 + Number(m[2]) * 60 : null,
+    });
+  }
+  return out;
+}
+
+/// Return (with a reason): Modhesh's own Return window is a form loaded from /tasks/return-time.
+/// It's read here and sent with the reason in its text box(es).
+async function returnOnModhesh(code, reason) {
+  const page = await fetch(APPROVALS, { credentials: 'include' }).then((r) => r.text());
+  const csrf = (page.match(/<meta name="csrf-token" content="([^"]+)"/) || [])[1];
+  if (!csrf) return 'Not signed in to Modhesh in Chrome.';
+  const head = { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-TOKEN': csrf, 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' };
+  const modal = await fetch(`${MODHESH}/tasks/return-time`, {
+    method: 'POST', credentials: 'include', headers: head,
+    body: new URLSearchParams({ ajaxModal: '1', task_id: code }).toString(),
+  }).then((r) => r.text());
+  const action = (modal.match(/<form[^>]*\saction="([^"]+)"/i) || [])[1];
+  if (!action) return 'Modhesh\'s Return window wasn\'t understood (no form). Return it on Modhesh.';
+  const attr = (tag, name) => (tag.match(new RegExp(`\\s${name}="([^"]*)"`, 'i')) || [])[1];
+  const body = new URLSearchParams();
+  const names = [];
+  let filled = 0;
+  for (const tag of modal.match(/<input[^>]*>/gi) || []) {
+    const name = attr(tag, 'name'); if (!name) continue;
+    const type = (attr(tag, 'type') || 'text').toLowerCase();
+    names.push(`${name}:${type}`);
+    if (type === 'hidden') body.set(name, decode(attr(tag, 'value') || ''));
+    else if (type === 'text') { body.set(name, reason); filled++; }
+  }
+  for (const tag of modal.match(/<textarea[^>]*>/gi) || []) {
+    const name = attr(tag, 'name'); if (!name) continue;
+    names.push(`${name}:textarea`);
+    body.set(name, reason); filled++;
+  }
+  if (!body.has('_token')) body.set('_token', csrf);
+  if (!body.has('task_id')) body.set('task_id', code);
+  if (!filled) return `Modhesh's Return window has no reason box (${names.join(', ') || 'no fields'}). Return it on Modhesh.`;
+  const url = action.startsWith('http') ? action : MODHESH + (action.startsWith('/') ? '' : '/') + action;
+  const r = await fetch(url, { method: 'POST', credentials: 'include', headers: head, body: body.toString() });
+  return r.ok ? '' : `Modhesh answered ${r.status} to Return (${names.join(', ')}).`;
+}
+
+let approvalsBusy = false;
+async function approvalsTick(force) {
+  if (approvalsBusy) return;
+  approvalsBusy = true;
+  try {
+    if (!(await TT.session())) return;
+    const uid = await TT.userId();
+    if (!(await amLeader(uid))) return;
+    const st = await TT.settings(true);
+    const key = `approvalsRequest_${uid}`;
+    const { [key]: seen } = await chrome.storage.local.get(key);
+    if (!force && (!st.approvals_request || st.approvals_request === seen)) return;
+    await chrome.storage.local.set({ [key]: st.approvals_request || '' });
+    if (st.modhesh_mismatch) { await approvalsReport(uid, 'Modhesh in Chrome isn\'t this account\'s — nothing read.'); return; }
+
+    let list = await fetchApprovals();
+    if (!list) { await approvalsReport(uid, 'Not signed in to Modhesh in Chrome — open Modhesh and sign in.'); return; }
+
+    // What the leader pressed in Mongez.
+    const asked = await TT.rest('GET', `modhesh_approvals?user_id=eq.${uid}&action=not.is.null&done_at=is.null&select=code,action,reason,title`);
+    const notes = {};
+    let did = 0;
+    for (const a of asked) {
+      if (!list.some((t) => t.code === a.code)) continue;   // not waiting any more
+      try {
+        if (a.action === 'approve') {
+          const r = await fetch(`${MODHESH}/timesheets/request-complete/${encodeURIComponent(a.code)}`, { credentials: 'include' });
+          if (!r.ok) notes[a.code] = `Modhesh answered ${r.status}.`;
+        } else if (a.action === 'return') {
+          if (!String(a.reason || '').trim()) notes[a.code] = 'A reason is needed to return a task.';
+          else { const err = await returnOnModhesh(a.code, a.reason.trim()); if (err) notes[a.code] = err; }
+        }
+        did++;
+      } catch (e) { notes[a.code] = e.message || 'Failed'; }
+    }
+    if (did) list = (await fetchApprovals()) || list;
+
+    // Results: gone from Modhesh's list = done.
+    const now = new Date().toISOString();
+    let ok = 0, failed = 0;
+    for (const a of asked) {
+      const still = list.some((t) => t.code === a.code);
+      const patch = still
+        ? { action: null, note: notes[a.code] || 'Still waiting on Modhesh — try again, or do it there.' }
+        : { pending: false, done_at: now, note: a.action === 'return' ? 'Returned' : 'Approved' };
+      still ? failed++ : ok++;
+      await TT.rest('PATCH', `modhesh_approvals?user_id=eq.${uid}&code=eq.${encodeURIComponent(a.code)}`, patch, 'return=minimal').catch(() => {});
+    }
+    // The list as it is now.
+    await TT.rest('PATCH', `modhesh_approvals?user_id=eq.${uid}&pending=eq.true`, { pending: false }, 'return=minimal').catch(() => {});
+    if (list.length) {
+      await TT.rest('POST', 'modhesh_approvals', list.map((t) => ({ ...t, user_id: uid, pending: true, updated_at: now })),
+        'resolution=merge-duplicates,return=minimal');
+    }
+    const parts = [`${list.length} waiting for your approval`];
+    if (ok) parts.unshift(`${ok} done on Modhesh`);
+    if (failed) parts.unshift(`${failed} didn't go through`);
+    await approvalsReport(uid, parts.join(' · '));
+    if (ok || failed) {
+      chrome.notifications.create(`tt-approvals-${Date.now()}`, {
+        type: 'basic', iconUrl: 'icons/128.png',
+        title: failed ? 'Some approvals didn\'t go through' : 'Approved on Modhesh ✓',
+        message: parts.join(' · '),
+      });
+    }
+  } catch (e) {
+    console.log('[TaskTimer] approvals failed', e.message);
+  } finally {
+    approvalsBusy = false;
+  }
+}
+
 // ───────────── messages from the Modhesh page ─────────────
 
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
@@ -398,7 +561,7 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   }
   if (msg.type === 'readNow') {
     // "Check now" in the extension: read Modhesh, then log anything finished.
-    readModhesh(true).then(() => tick()).then(() => reply({ ok: true }));
+    readModhesh(true).then(() => tick()).then(() => approvalsTick(true)).then(() => reply({ ok: true }));
     return true;
   }
   if (msg.type === 'signedIn') {

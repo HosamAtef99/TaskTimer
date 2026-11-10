@@ -32,7 +32,7 @@ struct ModheshView: View {
                     .font(.system(size: 12)).foregroundStyle(Theme.pink)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            if all.isEmpty && cloud.modheshError == nil {
+            if all.isEmpty && cloud.modheshError == nil && !cloud.isLeader {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("No Modhesh tasks pending or in progress.").font(.system(size: 13, weight: .semibold))
                     Text("Install the Mongez extension in Chrome and sign in to it, then press Check now in the extension (Chrome's toolbar) — your Modhesh tasks show up here.")
@@ -46,6 +46,7 @@ struct ModheshView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
+                    if cloud.isLeader { ApprovalsSection().padding(.bottom, 6) }
                     if !unlinked.isEmpty {
                         SectionLabel(text: "Not linked (\(unlinked.count))")
                         ForEach(unlinked) { m in unlinkedRow(m) }

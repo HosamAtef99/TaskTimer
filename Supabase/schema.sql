@@ -341,3 +341,33 @@ begin
 end $$;
 revoke execute on function public.admin_start_fresh() from public, anon;
 grant execute on function public.admin_start_fresh() to authenticated;
+
+-- 1.33: Modhesh approvals for team leaders. The Chrome extension reads the leader's
+-- "Tasks Approval Requests" page into this table (pending = still waiting there); Mongez sets
+-- action ('approve' / 'return' + reason) and the extension does it on Modhesh, then fills note / done_at.
+create table if not exists public.modhesh_approvals (
+  user_id      uuid not null default auth.uid() references public.profiles(id) on delete cascade,
+  code         text not null,                 -- TSK-SE-…
+  client       text not null default '',
+  title        text not null default '',
+  assignee     text,
+  assigned_by  text,
+  start_date   text,
+  completed_at text,
+  seconds      double precision,
+  pending      boolean not null default true,
+  action       text,
+  reason       text,
+  note         text,
+  done_at      timestamptz,
+  updated_at   timestamptz not null default now(),
+  primary key (user_id, code)
+);
+alter table public.modhesh_approvals enable row level security;
+drop policy if exists modhesh_approvals_own on public.modhesh_approvals;
+create policy modhesh_approvals_own on public.modhesh_approvals for all to authenticated
+  using (user_id = auth.uid()) with check (user_id = auth.uid());
+-- Mongez asks the extension to read / act (a new time = a new request); the extension answers in words.
+alter table public.user_settings add column if not exists approvals_request timestamptz;
+alter table public.user_settings add column if not exists approvals_status  text;
+alter table public.user_settings add column if not exists approvals_read_at timestamptz;
