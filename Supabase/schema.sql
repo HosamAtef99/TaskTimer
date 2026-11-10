@@ -265,6 +265,16 @@ alter table public.tasks add column if not exists support       boolean not null
 alter table public.tasks add column if not exists approver_id   uuid;
 alter table public.tasks add column if not exists approver_name text;
 
+-- 1.32: groups of tasks (an event's tasks → one Modhesh task) and "Linked to Modhesh" by hand.
+-- A group is a row with is_group = true and seconds = 0 (its time is in its tasks, so team hours
+-- never count it twice); group_seconds is its tasks' total, which the Chrome extension sends.
+-- Its tasks have group_id = the group's id. modhesh_manual = entered on Modhesh by hand (counts as
+-- closed there; the extension never sends it).
+alter table public.tasks add column if not exists is_group       boolean not null default false;
+alter table public.tasks add column if not exists group_id       uuid;
+alter table public.tasks add column if not exists group_seconds  double precision;
+alter table public.tasks add column if not exists modhesh_manual boolean not null default false;
+
 -- Every team leader, for the Approver list at Done (members can't read other teams' profiles).
 create or replace function public.leaders()
 returns table (id uuid, full_name text, email text, team_id uuid, team_name text)

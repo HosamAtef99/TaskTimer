@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NotificationHandler.shared.install()
             RenderWatcher.shared.start()
             AEHelperRemoval.run()
+            AERenderHelper.start()
             if !TestCopies.isCopy { ExtensionInstaller.refresh() }
             _ = ExtensionMonitor.shared
             if Features.sheet { SheetSync.shared.start() }
@@ -148,7 +149,7 @@ struct MenuBarPanel: View {
     @Environment(\.openWindow) var openWindow
 
     private var recent: [TaskItem] {
-        Array(store.tasks.filter { $0.status != .complete && !$0.isRunning }.prefix(6))
+        Array(store.tasks.filter { $0.status != .complete && !$0.isRunning && !$0.isGroupItem }.prefix(6))
     }
 
     var body: some View {

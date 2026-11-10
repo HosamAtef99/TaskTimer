@@ -451,27 +451,57 @@ struct AdminView: View {
         }
     }
 
+    /// The names typed in the add box: one per line, trimmed, without empty lines or repeats.
+    private var newClientNames: [String] {
+        var seen = Set<String>()
+        return newClientName
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty && seen.insert($0.lowercased()).inserted }
+    }
+
+    /// One client per line, so a whole team's clients go in at once.
     private var addClientBar: some View {
-        HStack(spacing: 8) {
-            TextField("New client or pitch", text: $newClientName)
-                .textFieldStyle(.roundedBorder)
-                .onSubmit(addClient)
-            Picker("", selection: $newClientKind) {
-                Text("Client").tag("client")
-                Text("Pitch").tag("pitch")
+        let count = newClientNames.count
+        return VStack(alignment: .leading, spacing: 8) {
+            ZStack(alignment: .topLeading) {
+                TextEditor(text: $newClientName)
+                    .font(.system(size: 13))
+                    .scrollContentBackground(.hidden)
+                    .padding(.horizontal, 4).padding(.vertical, 5)
+                if newClientName.isEmpty {
+                    Text("New clients or pitches — one per line (paste a whole team's list)")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.tertiary)
+                        .padding(.horizontal, 9).padding(.vertical, 6)
+                        .allowsHitTesting(false)
+                }
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(width: 130)
-            Picker("", selection: $newClientTeam) {
-                Text("— Team —").tag(String?.none)
-                ForEach(teams) { t in Text(t.name).tag(String?.some(t.id)) }
-            }
-            .labelsHidden()
-            .frame(maxWidth: 170)
-            Button { addClient() } label: { Label("Add", systemImage: "plus") }
+            .frame(height: count > 3 ? 120 : 64)
+            .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 9))
+            .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Color.primary.opacity(0.12)))
+            HStack(spacing: 8) {
+                Picker("", selection: $newClientKind) {
+                    Text("Client").tag("client")
+                    Text("Pitch").tag("pitch")
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 130)
+                Picker("", selection: $newClientTeam) {
+                    Text("— Team —").tag(String?.none)
+                    ForEach(teams) { t in Text(t.name).tag(String?.some(t.id)) }
+                }
+                .labelsHidden()
+                .frame(maxWidth: 170)
+                Spacer(minLength: 0)
+                Button { addClient() } label: {
+                    Label(count > 1 ? "Add \(count)" : "Add", systemImage: "plus")
+                }
                 .buttonStyle(GradientButtonStyle(compact: true))
-                .disabled(newClientName.trimmingCharacters(in: .whitespaces).isEmpty || newClientTeam == nil)
+                .disabled(count == 0 || newClientTeam == nil)
+                .help(newClientTeam == nil ? "Pick the team first" : "Each line becomes one \(newClientKind)")
+            }
         }
     }
 
@@ -525,7 +555,10 @@ struct AdminView: View {
                         Text(s.name).font(.system(size: 12))
                         Spacer()
                         Text("\(Fmt.hours(s.seconds)) h").font(.system(size: 12).monospacedDigit())
-                        Button("Use this name") { newClientName = s.name }
+                        Button("Use this name") {
+                            newClientName = newClientName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                ? s.name : newClientName.trimmingCharacters(in: .newlines) + "\n" + s.name
+                        }
                             .buttonStyle(GlassButtonStyle(compact: true))
                     }
                 }
@@ -607,13 +640,31 @@ struct AdminView: View {
         .opacity(c.active ? 1 : 0.6)
     }
 
+    /// Adds every line as a client (or pitch) of the picked team. Names already in the list are
+    /// skipped (names are unique), and the lines that couldn't be added stay in the box.
     private func addClient() {
-        let n = newClientName.trimmingCharacters(in: .whitespaces)
-        guard !n.isEmpty, let team = newClientTeam else { return }
+        let names = newClientNames
+        guard !names.isEmpty, let team = newClientTeam else { return }
         let kind = newClientKind
-        clientAction("Added “\(n)”") {
-            try await cloud.saveClient(id: nil, name: n, teamID: team, kind: kind)
-            newClientName = ""
+        let known = Set(clientRows.map { $0.name.lowercased() })
+        let existing = names.filter { known.contains($0.lowercased()) }
+        let fresh = names.filter { !known.contains($0.lowercased()) }
+        error = nil
+        Task { @MainActor in
+            var failed: [String] = []
+            if !fresh.isEmpty {
+                failed = await cloud.addClients(fresh, teamID: team, kind: kind)
+            }
+            clientRows = await cloud.loadClients()
+            let added = fresh.count - failed.count
+            newClientName = failed.joined(separator: "\n")
+            var parts: [String] = []
+            if added > 0 { parts.append(added == 1 ? "Added “\(fresh.first { !failed.contains($0) } ?? "")”" : "Added \(added) \(kind == "pitch" ? "pitches" : "clients")") }
+            if !existing.isEmpty { parts.append("\(existing.count) already in the list") }
+            if !failed.isEmpty {
+                self.error = "Couldn't add: " + failed.joined(separator: ", ") + " (left in the box to try again)"
+            }
+            if !parts.isEmpty { store.flash(parts.joined(separator: " · ")) }
         }
     }
 

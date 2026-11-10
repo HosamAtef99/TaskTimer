@@ -36,6 +36,7 @@ enum Pref {
     static let openAEOnCreate = "openAEOnCreate"
     static let appearance = "appearance"   // "system" | "light" | "dark"
     static let organizeBeforeCollect = "organizeBeforeCollect"  // Collect organizes the open project first (1.30)
+    static let autoRenderOutputs = "autoRenderOutputs2"  // Render Queue → task's Render folder by itself (helper inside AE, 1.32)
 
     // Read from the sheet (Settings → Sheet → Sync from Sheet)
     static let tabMode = "tabMode"                     // "auto" | "manual"
@@ -84,6 +85,7 @@ enum Pref {
             openAEOnCreate: false,
             appearance: "system",
             organizeBeforeCollect: true,
+            autoRenderOutputs: true,
             tabMode: "auto",
             folderMode: "location",
             timeFormatFromSheet: true,
@@ -114,6 +116,9 @@ enum Pref {
 // MARK: - Formatting
 
 enum Fmt {
+    /// The first moment of the current month (the month filter's default).
+    static var thisMonth: Date? { Calendar.current.dateInterval(of: .month, for: Date())?.start }
+
     static func clock(_ s: TimeInterval) -> String {
         let t = Int(max(0, s))
         return String(format: "%02d:%02d:%02d", t / 3600, (t % 3600) / 60, t % 60)

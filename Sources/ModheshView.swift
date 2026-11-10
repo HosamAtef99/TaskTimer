@@ -146,9 +146,18 @@ struct ModheshView: View {
                     }
                 }
                 Divider()
+                if !store.groups.isEmpty {
+                    Menu("Groups") {
+                        ForEach(store.groups) { g in
+                            Button("\(g.name)  (\(store.members(of: g.id).count) tasks)") {
+                                Task { @MainActor in await cloud.linkModhesh(m.code, to: g.id) }
+                            }
+                        }
+                    }
+                }
                 Menu("All tasks and amends") {
                     ForEach(store.tasks.filter { $0.parentID == nil }) { t in
-                        Button(t.name) {
+                        Button(t.isGroupItem ? "\(t.name)  (group of \(store.members(of: t.id).count))" : t.name) {
                             Task { @MainActor in await cloud.linkModhesh(m.code, to: t.id) }
                         }
                         ForEach(store.subtasks(of: t.id)) { a in
@@ -177,7 +186,7 @@ struct ModheshView: View {
             if let id = m.taskID, let t = store.task(id) {
                 VStack(alignment: .trailing, spacing: 2) {
                     Text(store.displayName(t)).font(.system(size: 12, weight: .medium)).lineLimit(1)
-                    Text("\(Fmt.hours(t.totalSeconds(at: store.now))) h in Mongez" + (m.autoLinked ? " · linked by name" : ""))
+                    Text("\(Fmt.hours(store.seconds(of: t))) h in Mongez" + (t.isGroupItem ? " · group" : "") + (m.autoLinked ? " · linked by name" : ""))
                         .font(.system(size: 10)).foregroundStyle(.secondary)
                     if let at = m.submittedAt {
                         Text("Sent to approver \(Fmt.relative(at)) · \(Fmt.hours(m.submittedSeconds ?? 0)) h")

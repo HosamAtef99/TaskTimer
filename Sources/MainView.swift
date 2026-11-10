@@ -27,7 +27,7 @@ enum ModheshFilter: String, CaseIterable, Identifiable {
 struct MainView: View {
     @EnvironmentObject var store: Store
     @Local var filter: TaskFilter = .inProgress
-    @Local var month: Date? = nil      // nil = all months
+    @Local var month: Date? = Fmt.thisMonth   // nil = all months; starts on this month (Hosam's call)
     @Local var modhesh: ModheshFilter = .any
     @Local var search = ""
     @Local var showClients = false
@@ -233,9 +233,22 @@ struct MainView: View {
 
     // MARK: List
 
+    /// What the list shows: tasks and groups (a group's tasks show inside it, amends inside their task).
+    private var topLevel: [TaskItem] {
+        store.tasks.filter { $0.parentID == nil && store.group(of: $0) == nil }
+    }
+
+    /// An item with everything shown inside it: a task and its amends; a group, its tasks and theirs.
+    private func family(_ t: TaskItem) -> [TaskItem] {
+        if t.isGroupItem {
+            return [t] + store.members(of: t.id).flatMap { [$0] + store.subtasks(of: $0.id) }
+        }
+        return [t] + store.subtasks(of: t.id)
+    }
+
     private func count(_ f: TaskFilter) -> Int {
-        store.tasks.filter { $0.parentID == nil }.filter { t in
-            ([t] + store.subtasks(of: t.id)).contains { s in
+        topLevel.filter { t in
+            family(t).contains { s in
                 switch f {
                 case .incoming: return s.status == .incoming
                 case .inProgress: return s.status.isInProgress
@@ -334,12 +347,12 @@ struct MainView: View {
         return list
     }
 
-    /// Top-level tasks; a task shows when it or any of its amends matches.
+    /// Tasks and groups; one shows when it or anything inside it (amends, a group's tasks) matches.
     private var filtered: [TaskItem] {
         let q = search.trimmingCharacters(in: .whitespaces)
         let cal = Calendar.current
-        return store.tasks.filter { $0.parentID == nil }.filter { t in
-            let group = [t] + store.subtasks(of: t.id)
+        return topLevel.filter { t in
+            let group = family(t)
             if let m = month {
                 guard group.contains(where: { cal.isDate($0.createdAt, equalTo: m, toGranularity: .month) }) else { return false }
             }
@@ -353,7 +366,7 @@ struct MainView: View {
             }
             guard passFilter else { return false }
             if modhesh != .any && cloud.profile != nil {
-                guard group.contains(where: { modhesh.matches(cloud.modheshLinks[$0.id]) }) else { return false }
+                guard group.contains(where: { modhesh.matches(cloud.modheshState($0)) }) else { return false }
             }
             if q.isEmpty { return true }
             return group.contains { s in
@@ -381,7 +394,11 @@ struct MainView: View {
                         ForEach(list) { t in
                             // The last row shows its tool names above the icons, so the list's
                             // bottom edge doesn't cut them.
-                            TaskRow(task: t, labelsAbove: list.count > 1 && t.id == list.last?.id)
+                            if t.isGroupItem {
+                                GroupRow(group: t, labelsAbove: list.count > 1 && t.id == list.last?.id)
+                            } else {
+                                TaskRow(task: t, labelsAbove: list.count > 1 && t.id == list.last?.id)
+                            }
                         }
                     }
                     .padding(.vertical, 6)
@@ -480,7 +497,7 @@ struct NowCard: View {
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
-                    ModheshBadge(taskID: r.id)
+                    ModheshBadge(task: r)
                 }
                 // Main task and its amends: press one to time it.
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -818,17 +835,19 @@ struct MongezLogo: View {
 
 // MARK: - Modhesh badge
 
-/// Green "Modhesh" tag on tasks linked to a Modhesh task; ✓ once the time was sent there.
+/// Green "Modhesh" tag on tasks linked to a Modhesh task; ✓ once the time was sent there, or
+/// when the task was marked "Linked to Modhesh" by hand (entered there by the person).
 struct ModheshBadge: View {
     @ObservedObject var cloud = CloudSync.shared
-    let taskID: UUID
+    let task: TaskItem
 
     var body: some View {
-        if let link = cloud.modheshLinks[taskID] {
+        if let link = cloud.modheshState(task) {
+            let byHand = cloud.modheshLinks[task.id] == nil
             HStack(spacing: 3) {
                 Image(systemName: link.sent ? "checkmark.seal.fill" : "link")
                     .font(.system(size: 9, weight: .bold))
-                Text(link.sent ? "Modhesh ✓" : "Modhesh")
+                Text(link.sent ? (byHand ? "Modhesh ✓ by hand" : "Modhesh ✓") : "Modhesh")
                     .font(.system(size: 10, weight: .semibold))
             }
             .padding(.horizontal, 7).padding(.vertical, 3)
@@ -836,8 +855,9 @@ struct ModheshBadge: View {
             .background(Theme.green.opacity(0.15), in: Capsule())
             .overlay(Capsule().strokeBorder(Theme.green.opacity(link.sent ? 0.5 : 0.25)))
             .fixedSize()
-            .help(link.sent ? "Linked to Modhesh — time sent there" + (link.status == 5 ? " (waiting for approval)" : "")
-                            : "Linked to a Modhesh task")
+            .help(byHand ? "Marked as Linked to Modhesh: entered on Modhesh by hand, so Mongez doesn't send it"
+                  : link.sent ? "Linked to Modhesh — time sent there" + (link.status == 5 ? " (waiting for approval)" : "")
+                  : "Linked to a Modhesh task")
         }
     }
 }
@@ -852,7 +872,7 @@ struct StatsRow: View {
         let cal = Calendar.current
         let now = Date()
         let done = store.tasks.filter { t in
-            t.status == .complete && cal.isDate(t.workDate ?? t.createdAt, equalTo: now, toGranularity: .month)
+            !t.isGroupItem && t.status == .complete && cal.isDate(t.workDate ?? t.createdAt, equalTo: now, toGranularity: .month)
         }
         let month = DateFormatter()
         month.dateFormat = "MMM"
@@ -890,6 +910,8 @@ struct TaskRow: View {
     var task: TaskItem
     /// Tool names show above the icons (the list's last row) instead of below.
     var labelsAbove = false
+    /// Inside a group's card: a lighter background instead of its own glass card.
+    var nested = false
     /// Fixed widths of the time column and the Done / Edit button, shared with the amend rows.
     static let timeColumn: CGFloat = 64
     static let doneWidth: CGFloat = 34
@@ -898,6 +920,7 @@ struct TaskRow: View {
     @Local var confirmDelete = false
     @Local var dropped: [URL] = []
     @Local var askDrop = false
+    @Local var newGroup = false
 
     var body: some View {
         let subs = store.subtasks(of: task.id)
@@ -910,8 +933,8 @@ struct TaskRow: View {
             }
         }
         .padding(.horizontal, 12).padding(.vertical, 10)
-        .glassCard(radius: 18, highlight: task.isRunning || subs.contains(where: { $0.isRunning }) || dropping)
-        .scaleEffect(hovering ? 1.005 : 1)
+        .modifier(RowCard(nested: nested, highlight: task.isRunning || subs.contains(where: { $0.isRunning }) || dropping))
+        .scaleEffect(hovering && !nested ? 1.005 : 1)
         .onHover { hovering = $0 }
         .zIndex(hovering ? 1 : 0)   // a tool's name label shows over the next row
         .animation(.easeOut(duration: 0.15), value: hovering)
@@ -936,6 +959,9 @@ struct TaskRow: View {
             if let f = task.folderURL {
                 DropFilesSheet(files: dropped, project: f, taskName: task.name).environmentObject(store)
             }
+        }
+        .sheet(isPresented: $newGroup) {
+            GroupSheet(groupID: nil, preselect: [task.id]).environmentObject(store)
         }
     }
 
@@ -969,8 +995,9 @@ struct TaskRow: View {
             Spacer(minLength: 6)
 
             // By the window's width: the tools and the render picture, then the tools alone, then
-            // every tool folded into one button whose menu has them all.
-            let width = windowSize?.width ?? 900
+            // every tool folded into one button whose menu has them all. (Inside a group's card
+            // there's a little less room.)
+            let width = (windowSize?.width ?? 900) - (nested ? 40 : 0)
             if width >= 900 {
                 HStack(spacing: 8) {
                     if let f = task.folderURL { RenderThumb(folder: f) }
@@ -1016,6 +1043,8 @@ struct TaskRow: View {
                 Button("Check Render Folder…") { checkRender() }
             }
             Button("Add Amend") { addAmend() }
+            groupMenu
+            ModheshManualButton(task: task)
             Divider()
             Button("Copy Task Name") {
                 NSPasteboard.general.clearContents()
@@ -1031,6 +1060,26 @@ struct TaskRow: View {
             }
             Divider()
             Button("Delete Task", role: .destructive) { confirmDelete = true }
+        }
+    }
+
+    /// Add to Group ▸ the open groups, New Group… — or Remove from Group.
+    @ViewBuilder
+    private var groupMenu: some View {
+        if let g = store.group(of: task) {
+            Button("Remove from “\(g.name)”") { store.removeFromGroup(task.id) }
+        } else {
+            Menu("Add to Group") {
+                Button("New Group…") { newGroup = true }
+                let open = store.groups.filter { $0.status != .complete }
+                if !open.isEmpty { Divider() }
+                ForEach(open) { g in
+                    Button(g.name) {
+                        store.setMembers(g.id, store.members(of: g.id).map(\.id) + [task.id])
+                        store.flash("“\(task.name)” added to “\(g.name)”")
+                    }
+                }
+            }
         }
     }
 
@@ -1061,7 +1110,7 @@ struct TaskRow: View {
             if status { StatusPill(status: task.status).fixedSize() }
             if kind { KindTag(task: task) }
             clientMenu
-            ModheshBadge(taskID: task.id)
+            ModheshBadge(task: task)
             if task.pendingLog != nil {
                 Image(systemName: "exclamationmark.icloud")
                     .foregroundStyle(Theme.pink)
@@ -1102,6 +1151,43 @@ struct TaskRow: View {
     }
 }
 
+/// A task row's background: its own glass card, or (inside a group's card) a light fill.
+struct RowCard: ViewModifier {
+    let nested: Bool
+    let highlight: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if nested {
+            content.background(highlight ? Theme.coral.opacity(0.10) : Color.primary.opacity(0.04),
+                               in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        } else {
+            content.glassCard(radius: 18, highlight: highlight)
+        }
+    }
+}
+
+/// Right-click → "Mark as Linked to Modhesh": for work entered on Modhesh by hand. It then counts
+/// as closed on Modhesh (filter, badge) and the Chrome extension never sends it.
+struct ModheshManualButton: View {
+    @EnvironmentObject var store: Store
+    @ObservedObject var cloud = CloudSync.shared
+    let task: TaskItem
+
+    var body: some View {
+        if cloud.modheshLinks[task.id] == nil {
+            if task.modheshManual == true {
+                Button("Unmark Linked to Modhesh") { store.update(task.id) { $0.modheshManual = nil } }
+            } else {
+                Button("Mark as Linked to Modhesh (entered there by hand)") {
+                    store.update(task.id) { $0.modheshManual = true }
+                    store.flash("“\(store.displayName(task))” counts as closed on Modhesh")
+                }
+            }
+        }
+    }
+}
+
 // MARK: - Amend row (inside its task's card)
 
 struct SubtaskRow: View {
@@ -1125,7 +1211,7 @@ struct SubtaskRow: View {
                 .font(.system(size: 12, weight: .semibold))
                 .lineLimit(1)
             StatusPill(status: task.status)
-            ModheshBadge(taskID: task.id)
+            ModheshBadge(task: task)
             if task.pendingLog != nil {
                 Image(systemName: "exclamationmark.icloud")
                     .foregroundStyle(Theme.pink)
@@ -1158,6 +1244,7 @@ struct SubtaskRow: View {
             Button(task.isRunning ? "Pause" : "Start") { store.toggle(task.id) }
             Button(Features.sheet ? "Done / Log to Sheet…" : "Done…") { store.requestDone(task.id) }
             Divider()
+            ModheshManualButton(task: task)
             Button("Copy Name") {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(store.displayName(task), forType: .string)

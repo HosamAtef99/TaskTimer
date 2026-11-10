@@ -108,8 +108,17 @@ struct TaskItem: Identifiable, Codable, Hashable {
     /// Who approves it on Modhesh (picked at Done; the team leader of the client's team by default).
     var approverID: String?
     var approverName: String?
+    /// Marked "Linked to Modhesh" by hand: entered on Modhesh by the person, so it counts as closed
+    /// there and the Chrome extension never sends it.
+    var modheshManual: Bool?
+    /// A group of tasks (an event, say) that goes to ONE Modhesh task with their hours added up.
+    /// It has no timer of its own; its tasks point to it with `groupID`.
+    var isGroup: Bool?
+    /// The group this task is in.
+    var groupID: UUID?
 
     var isSubtask: Bool { parentID != nil }
+    var isGroupItem: Bool { isGroup == true }
 
     var isRunning: Bool {
         guard let last = sessions.last else { return false }
@@ -143,6 +152,7 @@ struct TaskItem: Identifiable, Codable, Hashable {
         case manualAdjust, loggedSeconds, sheetRow, lastLoggedAt, pendingLog
         case parentID, sheetTab, workDate, wantsFolder, folderBase, deliverables, rating, challenge
         case support, approverID, approverName
+        case modheshManual, isGroup, groupID
     }
 
     init(from decoder: Decoder) throws {
@@ -170,6 +180,9 @@ struct TaskItem: Identifiable, Codable, Hashable {
         support = try c.decodeIfPresent(Bool.self, forKey: .support)
         approverID = try c.decodeIfPresent(String.self, forKey: .approverID)
         approverName = try c.decodeIfPresent(String.self, forKey: .approverName)
+        modheshManual = try c.decodeIfPresent(Bool.self, forKey: .modheshManual)
+        isGroup = try c.decodeIfPresent(Bool.self, forKey: .isGroup)
+        groupID = try c.decodeIfPresent(UUID.self, forKey: .groupID)
     }
 }
 

@@ -278,7 +278,9 @@ function jobsFrom({ rows, byId }, st = {}) {
     const t = r.task_id && byId[r.task_id];
     // Pending to Start tasks are moved to In Progress first, then logged.
     if (!t || t.status !== 'complete' || !ACTIVE.includes(r.status)) continue;
-    const total = liveSeconds(t);
+    if (t.modhesh_manual) continue;   // marked "Linked to Modhesh" by hand: entered there already
+    // A group (several tasks → one Modhesh task): its tasks' hours added up, from Mongez.
+    const total = t.is_group ? Math.max(0, Number(t.group_seconds) || 0) : liveSeconds(t);
     const already = Math.max(Number(r.submitted_seconds) || 0, Number(r.logged_seconds) || 0);
     const toLog = total - already;
     if (toLog < 60) continue;

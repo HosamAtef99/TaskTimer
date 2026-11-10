@@ -153,6 +153,7 @@ struct SettingsView: View {
     @AppStorage(Pref.openFinderOnCreate) var openFinder = true
     @AppStorage(Pref.openAEOnCreate) var openAE = false
     @AppStorage(Pref.organizeBeforeCollect) var organizeFirst = true
+    @AppStorage(Pref.autoRenderOutputs) var autoRender = true
     @AppStorage(Pref.tabMode) var tabMode = "auto"
     @AppStorage(Pref.tabName) var tabName = ""
     @AppStorage(Pref.statusComplete) var statusComplete = ""
@@ -453,6 +454,16 @@ struct SettingsView: View {
                 .fixedSize(horizontal: false, vertical: true)
             Toggle("Open the folder in Finder after creating", isOn: $openFinder)
             Toggle("Open the AE project after creating", isOn: $openAE)
+            Toggle("Render Queue items go to the task's Render folder by themselves", isOn: Binding(
+                get: { autoRender },
+                set: { on in
+                    autoRender = on
+                    if !on { AERenderHelper.stop() }
+                }))
+            Text("Anything you add to the Render Queue in a task's project gets the task's Render folder and the next name (Task_v01, Task_v02…), and stays that way in that project. Mongez puts a small helper into After Effects once each time it starts; the helper only looks at the Render Queue. An output you change by hand is left alone. Set Render Outputs on the task still does it by hand (and saves the project).")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             Toggle("Organize the AE project before Collect", isOn: $organizeFirst)
             Text("When the task's project is open in After Effects, Collect first sorts its loose items into folders (like Organize AE Project) and saves it, then collects. A project that isn't open is collected as it is.")
                 .font(.system(size: 11))

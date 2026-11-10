@@ -177,15 +177,57 @@ enum AfterEffects {
         }
     }
 
+    /// Whether After Effects shows one of its own windows above its normal ones right now: a
+    /// dialog, an alert or an open menu. A script sent then makes After Effects say "Cannot run a
+    /// script while a modal dialog is waiting for response" (and it doesn't run), so scripts wait
+    /// for that window to close. Window levels need no permission to read.
+    static func hasOpenDialog(pid: pid_t) -> Bool {
+        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+                as? [[String: Any]] else { return false }
+        return list.contains { w in
+            guard (w[kCGWindowOwnerPID as String] as? Int32) == pid else { return false }
+            let layer = w[kCGWindowLayer as String] as? Int ?? 0
+            // 8…18: dialogs and alerts. 100…199: menus. Floating panels (3), utility windows
+            // (19) and tooltips (200) don't count.
+            return (8..<19).contains(layer) || (100..<200).contains(layer)
+        }
+    }
+
+    /// Waits (on the background queue) until After Effects has no dialog or menu open, up to
+    /// `limit` seconds. Says once that it's waiting. False when it's still open after `limit`.
+    private static func waitForDialogs(pid: pid_t, limit: TimeInterval, quiet: Bool) -> Bool {
+        guard hasOpenDialog(pid: pid) else { return true }
+        if !quiet {
+            Task { @MainActor in
+                Store.shared.flash("Waiting for After Effects — close the window it has open")
+            }
+        }
+        let end = Date().addingTimeInterval(limit)
+        while Date() < end {
+            Thread.sleep(forTimeInterval: 0.3)
+            if !hasOpenDialog(pid: pid) {
+                // Give After Effects a moment after the window closes.
+                Thread.sleep(forTimeInterval: 0.6)
+                if !hasOpenDialog(pid: pid) { return true }
+            }
+        }
+        return false
+    }
+
     /// Runs ExtendScript in the running After Effects. `done` gets the script's result (a
-    /// string) or an error, on the main thread. AppleScript DoScript makes After Effects show an
-    /// error if one of its own windows is open — so only for things the person just asked for.
-    static func doScript(_ js: String, timeout: Int = 600, activate: Bool = false,
-                         done: @escaping (Result<String, Error>) -> Void) {
+    /// string) or an error, on the main thread. Scripts go one at a time, wait while After Effects
+    /// shows a window of its own (`waitLimit` seconds at most), and are sent again (up to 3 times)
+    /// when After Effects still answers that a dialog is open.
+    static func doScript(_ js: String, timeout: Int = 600, activate: Bool = false, waitLimit: TimeInterval = 600,
+                         quiet: Bool = false, done: @escaping (Result<String, Error>) -> Void) {
         guard let app = running, let id = app.bundleIdentifier else {
             done(.failure(Err("After Effects isn't open.")))
             return
         }
+        let pid = app.processIdentifier
+        // The Render Queue helper goes in with the first script After Effects gets (once per launch).
+        let helper = AERenderHelper.prelude(pid: pid)
+        let js = helper + js
         // After Effects 2026 doesn't always hand the script's result back through AppleScript, so
         // the script also writes it to a file that's read afterwards.
         let resultFile = URL(fileURLWithPath: NSTemporaryDirectory())
@@ -213,24 +255,47 @@ enum AfterEffects {
         end tell
         """
         queue.async {
-            var err: NSDictionary?
-            let result = NSAppleScript(source: source)?.executeAndReturnError(&err)
-            var text = result?.stringValue ?? ""
-            if let fromFile = try? String(contentsOf: resultFile, encoding: .utf8) { text = fromFile }
-            try? FileManager.default.removeItem(at: resultFile)
-            text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            if text.count >= 2, text.hasPrefix("\""), text.hasSuffix("\"") { text = String(text.dropFirst().dropLast()) }
-            let code = err?[NSAppleScript.errorNumber] as? Int
-            let msg = err?[NSAppleScript.errorMessage] as? String
-            DispatchQueue.main.async {
-                if err == nil { done(.success(text)); return }
-                if code == -1743 {
-                    done(.failure(Err("Mongez isn't allowed to control After Effects. Turn it on in System Settings → Privacy & Security → Automation → Mongez.")))
-                } else if code == -1712 {
-                    done(.failure(Err("After Effects didn't answer in time.")))
-                } else {
-                    done(.failure(Err(msg ?? "After Effects didn't answer.")))
+            var attempt = 0
+            while true {
+                attempt += 1
+                guard waitForDialogs(pid: pid, limit: waitLimit, quiet: quiet) else {
+                    DispatchQueue.main.async {
+                        done(.failure(Err("After Effects has a window open (a dialog or a menu). Close it and try again.")))
+                    }
+                    return
                 }
+                var err: NSDictionary?
+                let result = NSAppleScript(source: source)?.executeAndReturnError(&err)
+                var text = result?.stringValue ?? ""
+                if let fromFile = try? String(contentsOf: resultFile, encoding: .utf8) { text = fromFile }
+                try? FileManager.default.removeItem(at: resultFile)
+                text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                if text.count >= 2, text.hasPrefix("\""), text.hasSuffix("\"") { text = String(text.dropFirst().dropLast()) }
+                let code = err?[NSAppleScript.errorNumber] as? Int
+                let msg = err?[NSAppleScript.errorMessage] as? String
+                // After Effects had a dialog open after all: the script didn't run. It shows its own
+                // alert about it; wait for that to close and send the script again.
+                let blocked = (msg ?? "").lowercased().contains("modal dialog")
+                    || text.lowercased().contains("modal dialog is waiting")
+                if blocked && attempt < 3 {
+                    Thread.sleep(forTimeInterval: 1)
+                    continue
+                }
+                if err == nil && !blocked && !helper.isEmpty { AERenderHelper.installed(pid: pid) }
+                DispatchQueue.main.async {
+                    if blocked {
+                        done(.failure(Err("After Effects had a dialog open, so it didn't run this. Close After Effects' open windows and try again.")))
+                    } else if err == nil {
+                        done(.success(text))
+                    } else if code == -1743 {
+                        done(.failure(Err("Mongez isn't allowed to control After Effects. Turn it on in System Settings → Privacy & Security → Automation → Mongez.")))
+                    } else if code == -1712 {
+                        done(.failure(Err("After Effects didn't answer in time.")))
+                    } else {
+                        done(.failure(Err(msg ?? "After Effects didn't answer.")))
+                    }
+                }
+                return
             }
         }
     }

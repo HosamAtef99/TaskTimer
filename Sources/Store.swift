@@ -132,6 +132,10 @@ final class Store: ObservableObject {
             t.parentID = r.parentID.flatMap { UUID(uuidString: $0) }
             t.deliverables = r.deliverables
             t.rating = r.rating
+            t.isGroup = r.isGroup ? true : nil
+            t.groupID = r.groupID.flatMap { UUID(uuidString: $0) }
+            t.modheshManual = r.modheshManual ? true : nil
+            if r.isGroup { t.manualAdjust = 0 }   // its time comes from its tasks
             list.append(t)
         }
         tasks = list
@@ -204,10 +208,72 @@ final class Store: ObservableObject {
         return subtasks(of: id).reduce(own) { $0 + $1.totalSeconds(at: now) }
     }
 
+    // MARK: - Groups (several tasks → one Modhesh task)
+
+    /// Groups, newest first.
+    var groups: [TaskItem] { tasks.filter(\.isGroupItem).sorted { $0.createdAt > $1.createdAt } }
+
+    /// The tasks in a group (top-level tasks; their amends count with them).
+    func members(of groupID: UUID) -> [TaskItem] {
+        tasks.filter { $0.groupID == groupID && $0.parentID == nil && !$0.isGroupItem }
+            .sorted { $0.createdAt < $1.createdAt }
+    }
+
+    /// The group a task is shown in (nil when it has none, or the group was deleted).
+    func group(of t: TaskItem) -> TaskItem? {
+        guard let g = t.groupID, let item = task(g), item.isGroupItem else { return nil }
+        return item
+    }
+
+    /// Time of a group's tasks and their amends, before the group's own correction at Done.
+    func membersSeconds(_ groupID: UUID, at date: Date? = nil) -> TimeInterval {
+        members(of: groupID).reduce(0) { sum, m in
+            subtasks(of: m.id).reduce(sum + m.totalSeconds(at: date ?? now)) { $0 + $1.totalSeconds(at: date ?? now) }
+        }
+    }
+
+    /// A task's time; for a group, its tasks' time added up (and corrected at Done).
+    func seconds(of t: TaskItem) -> TimeInterval {
+        guard t.isGroupItem else { return t.totalSeconds(at: now) }
+        return max(0, membersSeconds(t.id) + t.manualAdjust)
+    }
+
+    /// Makes a group of these tasks (named, e.g., after the event). The client is the one most of
+    /// them have. Returns the group's id.
+    @discardableResult
+    func makeGroup(name: String, members ids: [UUID]) -> UUID {
+        var g = TaskItem(name: name, clientID: nil, folderPath: nil)
+        g.isGroup = true
+        g.status = .active
+        let picked = ids.compactMap { task($0) }
+        let counts = Dictionary(grouping: picked.compactMap(\.clientID), by: { $0 }).mapValues(\.count)
+        g.clientID = counts.max { $0.value < $1.value }?.key
+        g.support = picked.contains { $0.support == true } ? true : nil
+        tasks.insert(g, at: 0)
+        setMembers(g.id, ids)
+        return g.id
+    }
+
+    /// The group's tasks are exactly these (others leave it).
+    func setMembers(_ groupID: UUID, _ ids: [UUID]) {
+        let want = Set(ids)
+        for i in tasks.indices where tasks[i].parentID == nil && !tasks[i].isGroupItem {
+            if want.contains(tasks[i].id) {
+                if tasks[i].groupID != groupID { tasks[i].groupID = groupID }
+            } else if tasks[i].groupID == groupID {
+                tasks[i].groupID = nil
+            }
+        }
+    }
+
+    func removeFromGroup(_ id: UUID) {
+        update(id) { $0.groupID = nil }
+    }
+
     /// Adds "Amend N" under a task (same client and folder) and starts its timer.
     @discardableResult
     func addAmend(to parentID: UUID, start: Bool = true) -> UUID? {
-        guard let p = task(parentID), p.parentID == nil else { return nil }
+        guard let p = task(parentID), p.parentID == nil, !p.isGroupItem else { return nil }
         let used = subtasks(of: parentID).compactMap { s -> Int? in
             let parts = s.name.split(separator: " ")
             guard parts.count == 2, parts[0].lowercased() == "amend" else { return nil }
@@ -479,6 +545,7 @@ final class Store: ObservableObject {
     }
 
     func start(_ id: UUID) {
+        guard task(id)?.isGroupItem != true else { return }
         stopAll()
         update(id) { t in
             t.sessions.append(WorkSession(start: Date()))
@@ -516,13 +583,14 @@ final class Store: ObservableObject {
     }
 
     func toggle(_ id: UUID) {
-        guard let t = task(id) else { return }
+        guard let t = task(id), !t.isGroupItem else { return }   // a group has no timer of its own
         t.isRunning ? pause(id) : start(id)
     }
 
-    /// Deleting a task also deletes its amends.
+    /// Deleting a task also deletes its amends. Deleting a group keeps its tasks (out of the group).
     func delete(_ id: UUID) {
         tasks.removeAll { $0.id == id || $0.parentID == id }
+        for i in tasks.indices where tasks[i].groupID == id { tasks[i].groupID = nil }
     }
 
     func requestDone(_ id: UUID) {
@@ -535,7 +603,18 @@ final class Store: ObservableObject {
                   challenge: Int? = nil, support: Bool? = nil, approver: (id: String, name: String)? = nil) {
         pause(id)
         guard let t = task(id) else { return }
-        let raw = t.rawSeconds()
+        var raw = t.rawSeconds()
+        if t.isGroupItem {
+            // A group's time is its tasks' time: stop them, and finishing the group finishes them.
+            for m in members(of: id) {
+                pause(m.id)
+                for a in subtasks(of: m.id) where a.isRunning { pause(a.id) }
+                if status == .complete && m.status != .complete {
+                    update(m.id) { $0.status = .complete; if $0.workDate == nil { $0.workDate = date } }
+                }
+            }
+            raw = membersSeconds(id)
+        }
         update(id) { t in
             t.name = name
             t.clientID = clientID

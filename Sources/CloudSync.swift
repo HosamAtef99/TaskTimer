@@ -47,6 +47,11 @@ struct TeamTask: Identifiable, Hashable {
     var clientID: String?
     var support: Bool
     var approverName: String?
+    /// A group of tasks (its own seconds are 0: the time is in its tasks; `groupSeconds` is the
+    /// total sent to Modhesh). Leaders' and admins' lists leave groups out.
+    var isGroup: Bool
+    var groupID: String?
+    var modheshManual: Bool
 
     var isRunning: Bool { runningSince != nil }
 
@@ -84,6 +89,9 @@ struct TeamTask: Identifiable, Hashable {
         clientID = (row["client_id"] as? String)?.lowercased()
         support = (row["support"] as? Bool) ?? false
         approverName = row["approver_name"] as? String
+        isGroup = (row["is_group"] as? Bool) ?? false
+        groupID = (row["group_id"] as? String)?.lowercased()
+        modheshManual = (row["modhesh_manual"] as? Bool) ?? false
     }
 }
 
@@ -315,6 +323,21 @@ final class CloudSync: ObservableObject {
         default: status = "active"
         }
         let runningSince: Any = t.isRunning ? Cloud.iso(t.sessions[t.sessions.count - 1].start) : NSNull()
+        // A group has no time of its own (so nothing is counted twice in hours): its tasks' time,
+        // added up, goes in group_seconds, which the Chrome extension sends to Modhesh.
+        var groupTotal: Any = NSNull()
+        if t.isGroupItem {
+            let store = Store.shared
+            var sum = t.manualAdjust
+            for m in store.members(of: t.id) {
+                for x in [m] + store.subtasks(of: m.id) {
+                    sum += x.manualAdjust
+                    for s in x.sessions { if let e = s.end { sum += max(0, e.timeIntervalSince(s.start)) } }
+                }
+            }
+            groupTotal = (max(0, sum) * 10).rounded() / 10
+            secs = 0
+        }
         return [
             "id": t.id.uuidString.lowercased(),
             "user_id": userID,
@@ -335,15 +358,24 @@ final class CloudSync: ObservableObject {
             "support": t.support ?? false,
             "approver_id": t.approverID.map { $0 as Any } ?? NSNull(),
             "approver_name": t.approverName.map { $0 as Any } ?? NSNull(),
+            "is_group": t.isGroupItem,
+            "group_id": t.groupID.map { $0.uuidString.lowercased() as Any } ?? NSNull(),
+            "group_seconds": groupTotal,
+            "modhesh_manual": t.modheshManual == true,
         ]
     }
 
     private static let newColumns = ["deliverables", "rating", "started_at", "challenge",
                                      "client_id", "support", "approver_id", "approver_name"]
+    /// Added in 1.32 (groups, "Linked to Modhesh" by hand).
+    private static let groupColumns = ["is_group", "group_id", "group_seconds", "modhesh_manual"]
 
     /// Set when the database doesn't have the deliverables / rating columns yet
     /// (schema.sql not re-run), so syncing keeps working without them.
     private var skipNewColumns = false
+    /// The same for the 1.32 columns. Groups then can't send their hours to Modhesh: the app says
+    /// to run schema.sql.
+    @Published private(set) var missingGroupColumns = false
 
     private func fingerprint(_ row: [String: Any]) -> String {
         guard let data = try? JSONSerialization.data(withJSONObject: row, options: [.sortedKeys]) else { return UUID().uuidString }
@@ -371,21 +403,33 @@ final class CloudSync: ObservableObject {
 
         do {
             if !rows.isEmpty {
-                var send = rows
+                // Columns the database doesn't have yet are left out (schema.sql not run again).
                 func stripped(_ rows: [[String: Any]]) -> [[String: Any]] {
-                    rows.map { r in r.filter { !Self.newColumns.contains($0.key) } }
+                    rows.map { r in r.filter {
+                        !(skipNewColumns && Self.newColumns.contains($0.key))
+                            && !(missingGroupColumns && Self.groupColumns.contains($0.key))
+                    } }
                 }
-                if skipNewColumns { send = stripped(rows) }
-                do {
-                    try await CloudAPI.upsert("tasks", send)
-                } catch let e as Cloud.CloudError where !skipNewColumns
-                            && Self.newColumns.contains(where: { e.message.contains($0) }) {
-                    skipNewColumns = true
-                    send = stripped(rows)
-                    try await CloudAPI.upsert("tasks", send)
+                var tries = 0
+                while true {
+                    tries += 1
+                    do {
+                        try await CloudAPI.upsert("tasks", stripped(rows))
+                        break
+                    } catch let e as Cloud.CloudError where tries < 3 {
+                        if !missingGroupColumns && Self.groupColumns.contains(where: { e.message.contains($0) }) {
+                            missingGroupColumns = true
+                        } else if !skipNewColumns && Self.newColumns.contains(where: { e.message.contains($0) }) {
+                            skipNewColumns = true
+                        } else {
+                            throw e
+                        }
+                    }
                 }
                 for r in rows {
-                    if let id = r["id"] as? String { pushed[id] = prints[id] }
+                    // Sent without the 1.32 columns: marked, so they're sent again in full once
+                    // the database has them.
+                    if let id = r["id"] as? String, let fp = prints[id] { pushed[id] = (missingGroupColumns ? "partial:" : "") + fp }
                 }
             }
             for id in gone {
@@ -640,6 +684,14 @@ final class CloudSync: ObservableObject {
         modheshLinks[taskID] != nil || modheshTasks.contains { $0.taskID == taskID }
     }
 
+    /// Where a task stands on Modhesh: linked (and whether its time was sent), or marked "Linked
+    /// to Modhesh" by hand (entered there by the person: counts as closed).
+    func modheshState(_ t: TaskItem) -> ModheshLink? {
+        if let l = modheshLinks[t.id] { return l }
+        if t.modheshManual == true { return ModheshLink(status: nil, sent: true) }
+        return nil
+    }
+
     func loadModheshLinks() async {
         guard let uid = CloudAuth.shared.session?.userID else { return }
         let since = Calendar.current.date(byAdding: .day, value: -365, to: Date()) ?? Date()
@@ -740,6 +792,27 @@ final class CloudSync: ObservableObject {
         await loadClients()
     }
 
+    /// Admin: adds several clients (or pitches) of one team in one request. If that fails (a name
+    /// taken in the meantime), they're added one by one. Returns the names that couldn't be added.
+    func addClients(_ names: [String], teamID: String, kind: String) async -> [String] {
+        func row(_ n: String) -> [String: Any] {
+            ["id": UUID().uuidString.lowercased(), "name": n, "team_id": teamID,
+             "kind": kind, "active": true, "updated_at": Cloud.iso(Date())]
+        }
+        do {
+            try await CloudAPI.insert("clients", names.map(row))
+            await loadClients()
+            return []
+        } catch {
+            var failed: [String] = []
+            for n in names {
+                do { try await CloudAPI.insert("clients", [row(n)]) } catch { failed.append(n) }
+            }
+            await loadClients()
+            return failed
+        }
+    }
+
     func deleteClient(_ id: String) async throws {
         try await CloudAPI.delete("clients", [URLQueryItem(name: "id", value: "eq.\(id)")])
         await loadClients()
@@ -805,7 +878,7 @@ final class CloudSync: ObservableObject {
         ])
         var byID: [String: TeamTask] = [:]
         for r in inMonth + running {
-            if let t = TeamTask(r) { byID[t.id] = t }
+            if let t = TeamTask(r), !t.isGroup { byID[t.id] = t }   // a group's time is in its tasks
         }
         let tasks = byID.values.sorted { $0.createdAt > $1.createdAt }
         return (members, tasks)
@@ -819,7 +892,7 @@ final class CloudSync: ObservableObject {
             URLQueryItem(name: "select", value: "*"),
             URLQueryItem(name: "team_id", value: "eq.\(team)"),
             URLQueryItem(name: "updated_at", value: "gt.\(Cloud.iso(since))"),
-        ]).compactMap { TeamTask($0) }
+        ]).compactMap { TeamTask($0) }.filter { !$0.isGroup }
     }
 
     /// Team tasks done (by day) or created in [from, to).
@@ -838,7 +911,7 @@ final class CloudSync: ObservableObject {
             URLQueryItem(name: "deleted", value: "eq.false"),
             URLQueryItem(name: "or", value: "(and(work_date.gte.\(d1),work_date.lt.\(d2)),and(work_date.is.null,created_at.gte.\(t1),created_at.lt.\(t2)))"),
         ])
-        return (members, rows.compactMap { TeamTask($0) })
+        return (members, rows.compactMap { TeamTask($0) }.filter { !$0.isGroup })
     }
 
     /// Admins: every team's tasks worked in [from, to) (by work day, or creation day when there's
@@ -847,6 +920,7 @@ final class CloudSync: ObservableObject {
         guard isAdmin else { throw Cloud.CloudError("Only an admin can see every team.") }
         var cols = "id,user_id,team_id,parent_id,name,client,status,seconds,running_since,work_date,created_at,owner_name,deleted"
         if !skipNewColumns { cols += ",client_id,support" }
+        if !missingGroupColumns { cols += ",is_group" }
         let d1 = Fmt.isoDay.string(from: from), d2 = Fmt.isoDay.string(from: to)
         let t1 = Cloud.iso(from), t2 = Cloud.iso(to)
         let rows: [[String: Any]]
@@ -857,6 +931,9 @@ final class CloudSync: ObservableObject {
                 URLQueryItem(name: "or", value: "(and(work_date.gte.\(d1),work_date.lt.\(d2)),and(work_date.is.null,created_at.gte.\(t1),created_at.lt.\(t2)))"),
                 URLQueryItem(name: "limit", value: "10000"),
             ])
+        } catch let e as Cloud.CloudError where !missingGroupColumns && e.message.contains("is_group") {
+            missingGroupColumns = true   // schema.sql not run again yet
+            return try await loadAllTasks(from: from, to: to)
         } catch let e as Cloud.CloudError where e.message.contains("client_id") || e.message.contains("support") {
             skipNewColumns = true   // schema.sql not run again yet
             return try await loadAllTasks(from: from, to: to)
@@ -866,7 +943,8 @@ final class CloudSync: ObservableObject {
             URLQueryItem(name: "deleted", value: "eq.false"),
             URLQueryItem(name: "running_since", value: "not.is.null"),
         ])
-        return (rows.compactMap { TeamTask($0) }, running.compactMap { TeamTask($0) })
+        // Groups have no time of their own (it's in their tasks), so they're left out.
+        return (rows.compactMap { TeamTask($0) }.filter { !$0.isGroup }, running.compactMap { TeamTask($0) })
     }
 
     // MARK: - Weekly report (leaders)

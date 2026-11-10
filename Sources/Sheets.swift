@@ -348,12 +348,14 @@ struct DoneSheet: View {
 
     private var task: TaskItem? { store.task(taskID) }
     private var parent: TaskItem? { task.flatMap { store.parent(of: $0) } }
+    private var isGroup: Bool { task?.isGroupItem == true }
     private var totalMinutes: Int { max(0, hours * 60 + minutes) }
 
     var body: some View {
-        SheetFrame(title: parent == nil ? "Finish Task" : "Finish Amend",
-                   subtitle: "Time, day and how it went", icon: "checkmark") {
-            FieldRow(label: parent == nil ? "Task name" : "Amend name") {
+        SheetFrame(title: isGroup ? "Finish Group" : (parent == nil ? "Finish Task" : "Finish Amend"),
+                   subtitle: isGroup ? "Its tasks' time added up, the day and how it went" : "Time, day and how it went",
+                   icon: isGroup ? "square.stack.3d.up" : "checkmark") {
+            FieldRow(label: isGroup ? "Group name" : (parent == nil ? "Task name" : "Amend name")) {
                 TextField(parent == nil ? "Task" : "Amend 1", text: $name).textFieldStyle(.roundedBorder)
                 if let p = parent {
                     Text("Under “\(p.name)” · shown as “\(p.name) - \(name)”")
@@ -380,7 +382,13 @@ struct DoneSheet: View {
                         .help("+ 30 min")
                     Spacer(minLength: 0)
                 }
-                if let t = task {
+                if let t = task, t.isGroupItem {
+                    let n = store.members(of: t.id).count
+                    Text("Its \(n) task\(n == 1 ? "" : "s"), added up: \(Fmt.clock(store.membersSeconds(t.id))) — rounded to the nearest half hour. Change it if needed. Completing the group completes its tasks too.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else if let t = task {
                     Text("Timer: \(Fmt.clock(t.totalSeconds(at: store.now))) — rounded to the nearest half hour. Change it if needed.")
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
@@ -518,7 +526,8 @@ struct DoneSheet: View {
         date = t.workDate ?? Date()
         approverID = t.approverID ?? defaultApprover
         if t.approverID != nil { approverTouched = true }   // picked before: keep it
-        let secs = t.totalSeconds(at: Date())
+        // A group: its tasks' time added up (a previous Done's correction stays).
+        let secs = t.isGroupItem ? store.seconds(of: t) : t.totalSeconds(at: Date())
         var m = Int((secs / 1800).rounded()) * 30          // nearest half hour
         if secs > 0 && m == 0 { m = 30 }
         hours = m / 60
