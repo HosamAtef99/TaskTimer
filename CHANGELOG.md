@@ -2,6 +2,10 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
+## Next (not released yet — rename to the version when VERSION is bumped)
+- Imports into After Effects really try again now: when After Effects says "Cannot run a script while a modal dialog is waiting", Mongez waits until you close that message (and any other After Effects window) and sends the import again, up to 3 more times.
+- Admin → Hours: an amend shows its task's name ("Task - Amend 1").
+
 ## 1.32.2
 - Groups show folded: just the group's card. Click it to see its tasks.
 

@@ -334,7 +334,7 @@ struct AdminView: View {
                 ForEach(p.tasks.sorted { ($0.workDate ?? $0.createdAt) > ($1.workDate ?? $1.createdAt) }) { t in
                     HStack(spacing: 8) {
                         Text(Fmt.nice.string(from: t.workDate ?? t.createdAt)).frame(width: 60, alignment: .leading)
-                        Text((t.parentID == nil ? "" : "↳ ") + t.name).lineLimit(1)
+                        Text(t.parentID == nil ? t.name : "↳ " + (t.parentName.map { "\($0) - " } ?? "") + t.name).lineLimit(1)
                         if !t.client.isEmpty { Text("· \(t.client)").foregroundStyle(.secondary).lineLimit(1) }
                         Spacer()
                         Text(t.statusTitle).foregroundStyle(.secondary)

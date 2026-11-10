@@ -193,6 +193,18 @@ enum AfterEffects {
         }
     }
 
+    /// How many windows After Effects shows right now (its own error alert adds one).
+    static func windowCount(pid: pid_t) -> Int {
+        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+                as? [[String: Any]] else { return 0 }
+        return list.filter { w in
+            guard (w[kCGWindowOwnerPID as String] as? Int32) == pid else { return false }
+            let b = w[kCGWindowBounds as String] as? [String: Any]
+            let width = (b?["Width"] as? Double) ?? Double(b?["Width"] as? Int ?? 0)
+            return width > 60
+        }.count
+    }
+
     /// Waits (on the background queue) until After Effects has no dialog or menu open, up to
     /// `limit` seconds. Says once that it's waiting. False when it's still open after `limit`.
     private static func waitForDialogs(pid: pid_t, limit: TimeInterval, quiet: Bool) -> Bool {
@@ -235,10 +247,11 @@ enum AfterEffects {
         let wrapped = """
         (function () {
           var __r = eval(\(jsString(js)));
+          __r = "\(Self.ranMark)" + (__r === undefined || __r === null ? "" : String(__r));
           try {
             var __f = new File(\(jsString(resultFile.path)));
             __f.encoding = "UTF-8";
-            if (__f.open("w")) { __f.write(__r === undefined || __r === null ? "" : String(__r)); __f.close(); }
+            if (__f.open("w")) { __f.write(__r); __f.close(); }
           } catch (__e) {}
           return __r;
         })();
@@ -258,6 +271,7 @@ enum AfterEffects {
             var attempt = 0
             while true {
                 attempt += 1
+                let windowsBefore = windowCount(pid: pid)
                 guard waitForDialogs(pid: pid, limit: waitLimit, quiet: quiet) else {
                     DispatchQueue.main.async {
                         done(.failure(Err("After Effects has a window open (a dialog or a menu). Close it and try again.")))
@@ -273,12 +287,25 @@ enum AfterEffects {
                 if text.count >= 2, text.hasPrefix("\""), text.hasSuffix("\"") { text = String(text.dropFirst().dropLast()) }
                 let code = err?[NSAppleScript.errorNumber] as? Int
                 let msg = err?[NSAppleScript.errorMessage] as? String
-                // After Effects had a dialog open after all: the script didn't run. It shows its own
-                // alert about it; wait for that to close and send the script again.
+                // Every script Mongez sends starts its answer with a mark. No mark = After Effects
+                // didn't run it (it said "Cannot run a script while a modal dialog is waiting").
+                let ran = text.hasPrefix(Self.ranMark)
+                if ran { text = String(text.dropFirst(Self.ranMark.count)) }
                 let blocked = (msg ?? "").lowercased().contains("modal dialog")
                     || text.lowercased().contains("modal dialog is waiting")
-                if blocked && attempt < 3 {
+                    || (err == nil && !ran)
+                if blocked && attempt < 4 {
+                    // After Effects shows its own alert about it: wait until that's closed (its window
+                    // count is back) and nothing else is open, then send the same script again.
+                    if !quiet {
+                        Task { @MainActor in Store.shared.flash("After Effects was busy — trying again when it's free") }
+                    }
+                    let end = Date().addingTimeInterval(waitLimit)
                     Thread.sleep(forTimeInterval: 1)
+                    while Date() < end && (windowCount(pid: pid) > windowsBefore || hasOpenDialog(pid: pid)) {
+                        Thread.sleep(forTimeInterval: 0.4)
+                    }
+                    Thread.sleep(forTimeInterval: 1.2)
                     continue
                 }
                 if err == nil && !blocked && !helper.isEmpty { AERenderHelper.installed(pid: pid) }
@@ -301,6 +328,9 @@ enum AfterEffects {
     }
 
     /// A JavaScript string literal for `s`.
+    /// Starts the answer of every script that really ran in After Effects.
+    static let ranMark = "§mongez-ran§"
+
     static func jsString(_ s: String) -> String {
         let data = try? JSONSerialization.data(withJSONObject: [s], options: [])
         let arr = data.flatMap { String(data: $0, encoding: .utf8) } ?? "[\"\"]"

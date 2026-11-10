@@ -52,6 +52,8 @@ struct TeamTask: Identifiable, Hashable {
     var isGroup: Bool
     var groupID: String?
     var modheshManual: Bool
+    /// An amend's task name (filled in for the Admin lists, so "Amend 1" says whose amend it is).
+    var parentName: String? = nil
 
     var isRunning: Bool { runningSince != nil }
 
@@ -944,7 +946,24 @@ final class CloudSync: ObservableObject {
             URLQueryItem(name: "running_since", value: "not.is.null"),
         ])
         // Groups have no time of their own (it's in their tasks), so they're left out.
-        return (rows.compactMap { TeamTask($0) }.filter { !$0.isGroup }, running.compactMap { TeamTask($0) })
+        var inRange = rows.compactMap { TeamTask($0) }.filter { !$0.isGroup }
+        var live = running.compactMap { TeamTask($0) }
+        // Amends show with their task's name: look up the tasks that aren't in this list.
+        var names: [String: String] = [:]
+        for t in inRange + live where t.parentID == nil { names[t.id] = t.name }
+        let missing = Set((inRange + live).compactMap(\.parentID)).subtracting(names.keys)
+        if !missing.isEmpty {
+            let parents = (try? await CloudAPI.select("tasks", [
+                URLQueryItem(name: "select", value: "id,name"),
+                URLQueryItem(name: "id", value: "in.(\(missing.joined(separator: ",")))"),
+            ])) ?? []
+            for r in parents {
+                if let id = (r["id"] as? String)?.lowercased(), let n = r["name"] as? String { names[id] = n }
+            }
+        }
+        for i in inRange.indices { inRange[i].parentName = inRange[i].parentID.flatMap { names[$0] } }
+        for i in live.indices { live[i].parentName = live[i].parentID.flatMap { names[$0] } }
+        return (inRange, live)
     }
 
     // MARK: - Weekly report (leaders)
