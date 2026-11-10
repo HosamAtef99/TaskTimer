@@ -22,6 +22,20 @@ final class Store: ObservableObject {
     @Published var windowRequest = 0
     /// Set when the leader opens the weekly report notification.
     @Published var teamReportRequest = false
+    /// Picking tasks in the list (Select) to put them in a group together.
+    @Published var selecting = false
+    @Published var selection: Set<UUID> = []
+
+    /// Picks or un-picks a task (and starts picking).
+    func toggleSelect(_ id: UUID) {
+        selecting = true
+        if selection.contains(id) { selection.remove(id) } else { selection.insert(id) }
+    }
+
+    func endSelecting() {
+        selecting = false
+        selection = []
+    }
 
     private var ticker: Timer?
     /// Tasks whose row is being sent right now (stops a retry from sending the same row twice).

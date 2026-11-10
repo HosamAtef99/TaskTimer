@@ -82,12 +82,18 @@ struct MainView: View {
             .padding(.bottom, 14)
             .frame(maxWidth: .infinity)
 
+            if store.selecting && !cloud.isAdmin {
+                SelectionBar(shown: filtered.filter { !$0.isGroupItem }.map(\.id), narrow: narrow)
+                    .padding(.horizontal, narrow ? 18 : 24)
+                    .padding(.bottom, 16)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
             if let t = store.toast {
                 Text(t)
                     .font(.system(size: 12, weight: .semibold))
                     .padding(.horizontal, 16).padding(.vertical, 10)
                     .glassCard(radius: 20, highlight: true)
-                    .padding(.bottom, 18)
+                    .padding(.bottom, store.selecting ? 84 : 18)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
@@ -308,6 +314,17 @@ struct MainView: View {
         .glassChip()
     }
 
+    /// Select: pick tasks in the list, then put them in a group together (bar at the bottom).
+    private var selectButton: some View {
+        Button {
+            if store.selecting { store.endSelecting() } else { store.selecting = true }
+        } label: {
+            Image(systemName: store.selecting ? "checkmark.circle.fill" : "checkmark.circle")
+        }
+        .buttonStyle(CircleIconButtonStyle(filled: store.selecting, size: 30))
+        .help(store.selecting ? "Stop selecting" : "Select tasks to put them in a group")
+    }
+
     /// Status tabs, search, month and Modhesh filters, in one bar above the list.
     @ViewBuilder
     private var listControls: some View {
@@ -324,6 +341,7 @@ struct MainView: View {
                     monthPicker
                     if hasCloud { modheshPicker }
                     if !narrow { Spacer(minLength: 0) }
+                    selectButton
                 }
             }
         } else {
@@ -332,6 +350,7 @@ struct MainView: View {
                 searchField.frame(minWidth: 140, maxWidth: .infinity)
                 monthPicker
                 if hasCloud { modheshPicker }
+                selectButton
             }
         }
     }
@@ -401,10 +420,89 @@ struct MainView: View {
                             }
                         }
                     }
-                    .padding(.vertical, 6)
+                    .padding(.top, 6)
+                    .padding(.bottom, store.selecting ? 76 : 6)   // room for the selection bar
                     .padding(.horizontal, 4)
                 }
             }
+        }
+    }
+}
+
+// MARK: - Picking tasks for a group
+
+/// At the bottom while selecting: how many are picked, and what to do with them — a new group,
+/// an existing group, or out of their group.
+struct SelectionBar: View {
+    @EnvironmentObject var store: Store
+    /// The tasks the list shows now (for Select All).
+    let shown: [UUID]
+    var narrow = false
+    @Local var newGroup = false
+
+    var body: some View {
+        let picked = store.selection.compactMap { store.task($0) }
+        let total = picked.reduce(0) { $0 + store.groupSeconds($1.id) }
+        let inGroup = picked.filter { store.group(of: $0) != nil }
+        let openGroups = store.groups.filter { $0.status != .complete }
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(picked.isEmpty ? "Select tasks" : "\(picked.count) selected")
+                    .font(.system(size: 13, weight: .semibold))
+                Text(picked.isEmpty ? "Click tasks in the list" : "\(Fmt.hours(total)) h together")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+            }
+            .fixedSize()
+            if !narrow {
+                Button(Set(shown).isSubset(of: store.selection) && !shown.isEmpty ? "Select None" : "Select All") {
+                    if Set(shown).isSubset(of: store.selection) { store.selection.subtract(shown) } else { store.selection.formUnion(shown) }
+                }
+                .buttonStyle(GlassButtonStyle(compact: true))
+                .disabled(shown.isEmpty)
+            }
+            Spacer(minLength: 6)
+            if !inGroup.isEmpty {
+                Button {
+                    for t in inGroup { store.removeFromGroup(t.id) }
+                    store.flash("\(inGroup.count) task\(inGroup.count == 1 ? "" : "s") out of their group")
+                    store.endSelecting()
+                } label: {
+                    Image(systemName: "rectangle.stack.badge.minus")
+                }
+                .buttonStyle(CircleIconButtonStyle(size: 30))
+                .help("Take the selected tasks out of their group")
+            }
+            if !openGroups.isEmpty {
+                Menu {
+                    ForEach(openGroups) { g in
+                        Button("\(g.name)  (\(store.members(of: g.id).count))") {
+                            store.setMembers(g.id, store.members(of: g.id).map(\.id) + picked.map(\.id))
+                            store.flash("\(picked.count) task\(picked.count == 1 ? "" : "s") added to “\(g.name)”")
+                            store.endSelecting()
+                        }
+                    }
+                } label: {
+                    Label(narrow ? "Add to" : "Add to Group", systemImage: "plus.square.on.square")
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .disabled(picked.isEmpty)
+            }
+            Button { newGroup = true } label: {
+                Label("New Group", systemImage: "square.stack.3d.up")
+            }
+            .buttonStyle(GradientButtonStyle(compact: true))
+            .disabled(picked.isEmpty)
+            Button { store.endSelecting() } label: { Image(systemName: "xmark") }
+                .buttonStyle(CircleIconButtonStyle(size: 30))
+                .keyboardShortcut(.cancelAction)
+                .help("Stop selecting (Esc)")
+        }
+        .padding(.horizontal, 14).padding(.vertical, 10)
+        .glassCard(radius: 20, highlight: true)
+        .sheet(isPresented: $newGroup) {
+            GroupSheet(groupID: nil, preselect: Array(store.selection), onSaved: { store.endSelecting() })
+                .environmentObject(store)
         }
     }
 }
@@ -934,6 +1032,16 @@ struct TaskRow: View {
         }
         .padding(.horizontal, 12).padding(.vertical, 10)
         .modifier(RowCard(nested: nested, highlight: task.isRunning || subs.contains(where: { $0.isRunning }) || dropping))
+        // Picking tasks: the whole row is one tick box (its buttons rest), the picked ones get a teal edge.
+        .overlay {
+            if store.selecting {
+                RoundedRectangle(cornerRadius: nested ? 14 : 18, style: .continuous)
+                    .strokeBorder(Theme.teal, lineWidth: store.selection.contains(task.id) ? 2 : 0)
+                    .background(Color.white.opacity(0.001))
+                    .contentShape(Rectangle())
+                    .onTapGesture { store.toggleSelect(task.id) }
+            }
+        }
         .scaleEffect(hovering && !nested ? 1.005 : 1)
         .onHover { hovering = $0 }
         .zIndex(hovering ? 1 : 0)   // a tool's name label shows over the next row
@@ -967,11 +1075,20 @@ struct TaskRow: View {
 
     private func mainRow(hasSubs: Bool) -> some View {
         HStack(spacing: 12) {
-            Button { store.toggle(task.id) } label: {
-                Image(systemName: task.isRunning ? "pause.fill" : "play.fill")
+            if store.selecting {
+                // Picking tasks for a group: the play button becomes a tick.
+                let on = store.selection.contains(task.id)
+                Image(systemName: on ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(on ? AnyShapeStyle(Theme.teal) : AnyShapeStyle(HierarchicalShapeStyle.tertiary))
+                    .frame(width: 34, height: 34)
+            } else {
+                Button { store.toggle(task.id) } label: {
+                    Image(systemName: task.isRunning ? "pause.fill" : "play.fill")
+                }
+                .buttonStyle(CircleIconButtonStyle(filled: true, size: 34))
+                .help(task.isRunning ? "Pause" : "Start")
             }
-            .buttonStyle(CircleIconButtonStyle(filled: true, size: 34))
-            .help(task.isRunning ? "Pause" : "Start")
 
             VStack(alignment: .leading, spacing: 4) {
                 // The whole name, on two lines if it needs them, so tasks are easy to find.
@@ -1043,6 +1160,7 @@ struct TaskRow: View {
                 Button("Check Render Folder…") { checkRender() }
             }
             Button("Add Amend") { addAmend() }
+            Button(store.selection.contains(task.id) ? "Unselect" : "Select (to group several tasks)") { store.toggleSelect(task.id) }
             groupMenu
             ModheshManualButton(task: task)
             Divider()

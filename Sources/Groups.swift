@@ -27,7 +27,7 @@ struct GroupRow: View {
             header(count: members.count)
             if !folded {
                 if members.isEmpty {
-                    Text("No tasks in this group yet. Right-click a task → Add to Group, or press the pencil.")
+                    Text("No tasks in this group yet. Select tasks (✓ above the list) → Add to Group, or press the pencil.")
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .padding(.leading, 46)
@@ -144,6 +144,8 @@ struct GroupSheet: View {
     @Environment(\.dismiss) var dismiss
     let groupID: UUID?
     var preselect: [UUID] = []
+    /// Called after Make Group / Save (the list's selection ends).
+    var onSaved: (() -> Void)? = nil
 
     @Local var name = ""
     @Local var picked: Set<UUID> = []
@@ -290,5 +292,6 @@ struct GroupSheet: View {
             store.flash("Group “\(n)” made — link it to its Modhesh task in Modhesh")
         }
         dismiss()
+        if let onSaved { DispatchQueue.main.async { onSaved() } }
     }
 }
