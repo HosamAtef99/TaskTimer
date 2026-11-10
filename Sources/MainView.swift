@@ -1071,9 +1071,9 @@ struct TaskRow: View {
         } else {
             Menu("Add to Group") {
                 Button("New Group…") { newGroup = true }
-                let open = store.groups.filter { $0.status != .complete }
-                if !open.isEmpty { Divider() }
-                ForEach(open) { g in
+                let openGroups = store.groups.filter { $0.status != .complete }
+                if !openGroups.isEmpty { Divider() }
+                ForEach(openGroups) { g in
                     Button(g.name) {
                         store.setMembers(g.id, store.members(of: g.id).map(\.id) + [task.id])
                         store.flash("“\(task.name)” added to “\(g.name)”")

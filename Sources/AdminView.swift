@@ -656,10 +656,14 @@ struct AdminView: View {
                 failed = await cloud.addClients(fresh, teamID: team, kind: kind)
             }
             clientRows = await cloud.loadClients()
-            let added = fresh.count - failed.count
+            let addedNames = fresh.filter { !failed.contains($0) }
             newClientName = failed.joined(separator: "\n")
             var parts: [String] = []
-            if added > 0 { parts.append(added == 1 ? "Added “\(fresh.first { !failed.contains($0) } ?? "")”" : "Added \(added) \(kind == "pitch" ? "pitches" : "clients")") }
+            if addedNames.count == 1 {
+                parts.append("Added “\(addedNames[0])”")
+            } else if addedNames.count > 1 {
+                parts.append("Added \(addedNames.count) " + (kind == "pitch" ? "pitches" : "clients"))
+            }
             if !existing.isEmpty { parts.append("\(existing.count) already in the list") }
             if !failed.isEmpty {
                 self.error = "Couldn't add: " + failed.joined(separator: ", ") + " (left in the box to try again)"
