@@ -2,7 +2,7 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
-## Next (not released yet — rename to the version when VERSION is bumped)
+## 1.32.2
 - Groups show folded: just the group's card. Click it to see its tasks.
 
 ## 1.32.1
