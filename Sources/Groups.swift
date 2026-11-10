@@ -18,7 +18,13 @@ struct GroupRow: View {
     var labelsAbove = false
     @Local var editing = false
     @Local var confirmDelete = false
-    @Local var folded = false
+    /// Folded by default: only the group's card shows; click it to see its tasks (Hosam's call).
+    private var folded: Bool { !store.openGroups.contains(group.id) }
+    private func toggleFold() {
+        withAnimation(.easeOut(duration: 0.18)) {
+            if folded { store.openGroups.insert(group.id) } else { store.openGroups.remove(group.id) }
+        }
+    }
 
     var body: some View {
         let members = store.members(of: group.id)
@@ -55,10 +61,8 @@ struct GroupRow: View {
     private func header(count: Int) -> some View {
         let secs = store.seconds(of: group)
         return HStack(spacing: 12) {
-            Button {
-                withAnimation(.easeOut(duration: 0.18)) { folded.toggle() }
-            } label: {
-                Image(systemName: folded ? "square.stack.3d.up" : "square.stack.3d.up.fill")
+            Button { toggleFold() } label: {
+                Image(systemName: folded ? "chevron.right" : "chevron.down")
             }
             .buttonStyle(CircleIconButtonStyle(size: 34))
             .help(folded ? "Show the group's tasks" : "Fold the group")
@@ -77,6 +81,8 @@ struct GroupRow: View {
                 .foregroundStyle(.secondary)
             }
             .layoutPriority(1)
+            .contentShape(Rectangle())
+            .onTapGesture { toggleFold() }
 
             Spacer(minLength: 6)
 

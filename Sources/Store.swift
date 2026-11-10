@@ -25,6 +25,8 @@ final class Store: ObservableObject {
     /// Picking tasks in the list (Select) to put them in a group together.
     @Published var selecting = false
     @Published var selection: Set<UUID> = []
+    /// Groups shown open in the list (folded otherwise).
+    @Published var openGroups: Set<UUID> = []
 
     /// Picks or un-picks a task (and starts picking).
     func toggleSelect(_ id: UUID) {
