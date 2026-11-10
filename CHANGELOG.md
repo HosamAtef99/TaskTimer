@@ -2,7 +2,7 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
-## Next (not released yet — rename to the version when VERSION is bumped)
+## 1.32.1
 - Grouping is quicker: press the ✓ button next to the filters (or right-click a task → Select), click the tasks you want, then New Group or Add to Group from the bar at the bottom. The same bar can take tasks out of their group.
 
 ## 1.32
