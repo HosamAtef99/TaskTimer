@@ -30,6 +30,16 @@ jobs:
       - name: Build TaskTimer.app (Apple Silicon + Intel)
         run: TT_CI=1 bash "Build TaskTimer.command"
 
+      # Mongez.dmg (Hosam's call, 1.33): drag Mongez to Applications, no Terminal. The app isn't
+      # notarized (no Apple developer account), so the first open is right-click → Open.
+      - name: Make Mongez.dmg
+        run: |
+          rm -rf build/dmg && mkdir -p build/dmg
+          ditto build/TaskTimer.app build/dmg/Mongez.app
+          ln -s /Applications build/dmg/Applications
+          hdiutil create -volname "Mongez" -srcfolder build/dmg -ov -format UDZO build/Mongez.dmg
+          rm -rf build/dmg
+
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -44,12 +54,14 @@ jobs:
               gh release create dev-build --prerelease --latest=false --title "Test build (not an update)" \
                 --notes "Latest build of main, for testing. Not offered as an update."
             (cd ChromeExtension && zip -qr ../build/TaskTimer-Chrome.zip .)
-            gh release upload dev-build build/TaskTimer.app.zip build/TaskTimer-Chrome.zip --clobber
+            gh release upload dev-build build/TaskTimer.app.zip build/TaskTimer-Chrome.zip build/Mongez.dmg --clobber
+            # A release made before the dmg existed gets one (once; never replaced).
+            gh release upload "v$V" build/Mongez.dmg 2>/dev/null || true
             exit 0
           fi
           # Notes = the newest section of CHANGELOG.md
           awk '/^## /{n++} n==1' CHANGELOG.md > build/NOTES.txt
           [ -s build/NOTES.txt ] || echo "TaskTimer $V" > build/NOTES.txt
           (cd ChromeExtension && zip -qr ../build/TaskTimer-Chrome.zip .)
-          gh release create "v$V" build/TaskTimer.app.zip build/VERSION build/NOTES.txt build/TaskTimer-Chrome.zip \
+          gh release create "v$V" build/TaskTimer.app.zip build/VERSION build/NOTES.txt build/TaskTimer-Chrome.zip build/Mongez.dmg \
             --title "TaskTimer $V" --notes-file build/NOTES.txt --latest

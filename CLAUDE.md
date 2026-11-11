@@ -30,6 +30,7 @@ When you make a decision that the other person would need to know, add it here.
   (`Sources/Updater.swift`, repo `HosamAtef99/TaskTimer`) then offers it to *everyone*.
   So bump VERSION only when you mean to ship, agree on it first, and add a section at the
   top of `CHANGELOG.md`: its top section becomes the release notes.
+- Every release also has **`Mongez.dmg`** (Hosam's call, 1.33: install without Terminal — open it, drag Mongez to Applications; link `releases/latest/download/Mongez.dmg`). Not notarized: the first open needs right-click → Open (or System Settings → Privacy & Security → Open Anyway).
 - The release also ships `TaskTimer-Chrome.zip`, and the app bundles `ChromeExtension/`
   in its Resources.
 - Pushes that don't change VERSION upload the build to the **`dev-build` pre-release** (Hosam's
