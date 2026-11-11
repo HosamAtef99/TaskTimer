@@ -2,7 +2,7 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
-## Next (not released yet — rename to the version when VERSION is bumped)
+## 1.33
 - Team leaders: the Modhesh window shows the tasks waiting for your approval on Modhesh, with Approve, Approve All and Return (with a reason). It's done in your Chrome by the extension, so Chrome has to be open and signed in to your Modhesh.
 
 ## 1.32.3

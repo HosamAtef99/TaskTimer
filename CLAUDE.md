@@ -102,6 +102,7 @@ When you make a decision that the other person would need to know, add it here.
 - **1.32 columns** (`tasks.is_group`, `group_id`, `group_seconds`, `modhesh_manual`): schema.sql was run on
   the live database on 2026-11-10 (Hosam's session), so they exist. Where schema.sql hasn't been run, pushes leave them out (`CloudSync.missingGroupColumns`, rows marked `partial:` so they're
   sent in full later) and group cards show a warning: groups can't send their hours to Modhesh yet.
+- **1.33 approvals** (table `modhesh_approvals`, `user_settings.approvals_request` / `approvals_status` / `approvals_read_at`): schema.sql was run on the live database on 2026-11-11 (Hosam's session). Approve and Return had not been tried on the real Modhesh when 1.33 shipped.
 - Free tier budget: about 40 users and 1000+ tasks a month have to fit in 5 GB of egress a month.
   Keep polling slow and queries incremental and filtered (select only the needed columns,
   `updated_at=gt.`). Current timers: sync every 120 s; Modhesh links every 3rd tick; weekly
