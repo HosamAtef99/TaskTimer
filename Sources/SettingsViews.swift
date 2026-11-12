@@ -175,7 +175,6 @@ struct SettingsView: View {
         SheetFrame(title: "Settings", subtitle: Features.sheet ? "Your name, the team sheet, and folders" : "Folders and general options", icon: "gearshape.fill", scrolls: false) {
             Picker("", selection: $tab) {
                 if Features.sheet { Text("Sheet").tag(0) }
-                Text("Team").tag(3)
                 Text("Modhesh").tag(4)
                 Text("Folders").tag(1)
                 Text("General").tag(2)
@@ -186,7 +185,6 @@ struct SettingsView: View {
             Group {
                 switch tab {
                 case 0: sheetTab
-                case 3: ScrollView { AccountSection() }
                 case 4: ModheshSettings()
                 case 1: foldersTab
                 default: ScrollView { generalTab }
@@ -597,7 +595,7 @@ struct ModheshSettings: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 if !auth.signedIn {
-                    Label("Sign in under Settings → Team first — Modhesh works through your Mongez account.",
+                    Label("Sign in first (the Sign In button at the top) — Modhesh works through your Mongez account.",
                           systemImage: "person.crop.circle.badge.exclamationmark")
                         .font(.system(size: 12)).foregroundStyle(Theme.orange)
                         .fixedSize(horizontal: false, vertical: true)

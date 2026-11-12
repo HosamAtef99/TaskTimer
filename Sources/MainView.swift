@@ -182,6 +182,7 @@ struct MainView: View {
                         .help("Import an existing task folder")
                 }
             }
+            AccountButton(compact: compact)
             Button { store.showSettings = true } label: { Image(systemName: "gearshape") }
                 .buttonStyle(CircleIconButtonStyle())
                 .help("Settings")
@@ -426,6 +427,89 @@ struct MainView: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - Account (top bar)
+
+/// Signed out: a Sign In button. Signed in: your name; click it for your team, role, name,
+/// password and Sign Out (Hosam's call, 1.34 — this used to be the Sign In button at the top of Mongez).
+struct AccountButton: View {
+    @ObservedObject var auth = CloudAuth.shared
+    @ObservedObject var cloud = CloudSync.shared
+    var compact = false
+    @Local var open = false
+
+    var body: some View {
+        Group {
+            if let s = auth.session {
+                let name = cloud.profile?.name ?? s.email
+                Button { open = true } label: {
+                    HStack(spacing: 6) {
+                        Text(initials(name))
+                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .foregroundStyle(Theme.buttonInk)
+                            .frame(width: 22, height: 22)
+                            .background(Theme.tealFill, in: Circle())
+                        if !compact {
+                            Text(firstName(name)).lineLimit(1)
+                        }
+                    }
+                }
+                .buttonStyle(GlassButtonStyle(compact: true))
+                .help(helpText(name))
+            } else {
+                Button { open = true } label: {
+                    if compact { Image(systemName: "person.crop.circle") } else { Label("Sign In", systemImage: "person.crop.circle") }
+                }
+                .buttonStyle(GlassButtonStyle(compact: true))
+                .help("Sign in to your team account")
+            }
+        }
+        .sheet(isPresented: $open) { AccountSheet() }
+    }
+
+    private func helpText(_ name: String) -> String {
+        var t = name
+        if let p = cloud.profile {
+            if p.isAdmin { t += " · Admin" }
+            else if let team = cloud.teamName { t += " · \(team)" + (p.isLeader ? " (Leader)" : "") }
+        }
+        return t
+    }
+
+    private func firstName(_ n: String) -> String {
+        let f = n.split(separator: " ").first.map(String.init) ?? n
+        return f.contains("@") ? String(f.split(separator: "@").first ?? "") : f
+    }
+
+    private func initials(_ n: String) -> String {
+        let parts = n.split(whereSeparator: { $0 == " " || $0 == "." || $0 == "@" }).prefix(2)
+        let s = parts.compactMap { $0.first.map(String.init) }.joined().uppercased()
+        return s.isEmpty ? "?" : s
+    }
+}
+
+/// The account window: sign in, or who you are (team, role), your name, password, Sign Out.
+struct AccountSheet: View {
+    @Environment(\.dismiss) var dismiss
+    @Environment(\.mainWindowSize) var windowSize
+    @ObservedObject var auth = CloudAuth.shared
+
+    var body: some View {
+        SheetFrame(title: auth.signedIn ? "Your Account" : "Sign In",
+                   subtitle: auth.signedIn ? "Your team, your name and password" : "Your team account",
+                   icon: "person.crop.circle.fill", scrolls: false) {
+            ScrollView { AccountSection().padding(2) }
+            HStack {
+                Spacer()
+                Button("Done") { dismiss() }
+                    .buttonStyle(GradientButtonStyle())
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .frame(width: 520)
+        .frame(maxHeight: Room.sheetHeight(windowSize))
     }
 }
 

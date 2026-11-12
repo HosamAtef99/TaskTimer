@@ -67,7 +67,7 @@ When you make a decision that the other person would need to know, add it here.
 | `ExtensionInstaller.swift` | Copies the bundled extension to `~/Library/Application Support/TaskTimer Dev/…`, opens `chrome://extensions` through AppleScript, detects the installed extension from Chrome's prefs |
 | `RenderWatcher.swift` | "Render finished" notification with Stop/Done. Watches a task's Render folder while the task or an amend is in progress / Incoming / timing, or was timed in the last 3 days (`RenderWatcher.watched`); new **or overwritten** files (size + modified date), finished after 45 s with no change |
 | `TestCopies.swift` | **Temporary** (Hosam's call): Settings → General → Open Test Copy 2 / 3 copies the app to `~/Applications/Mongez Test N.app` with bundle id `com.hosam.tasktimer.dev.testN` (own UserDefaults), re-signs it ad hoc and opens it, so admin, leader and member can be signed in at once. `TestCopies.supportDir` (`TaskTimer Dev Test N` in Application Support) holds a copy's session and data; copies don't run the updater or install the Chrome extension. Remove when no longer needed |
-| `Settings*.swift` | Tabs: Team, Modhesh, Folders, General |
+| `Settings*.swift` | Tabs: Modhesh, Folders, General. **The account is in the top bar** (Hosam's call, 1.34): `AccountButton` in `MainView.swift` = Sign In when signed out, your initials + first name when signed in (tooltip: team / role); it opens `AccountSheet` = `AccountSection` (team, role, name, Sync Now, password, Sign Out) |
 | `SheetSync.swift`, `SheetService.swift`, `GoogleSheet/` | Old Google Sheet logging. **Switched off** (`Features.sheet = false`), kept on purpose |
 
 ## Supabase

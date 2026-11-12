@@ -197,7 +197,7 @@
       const s = await TT.session();
       body.replaceChildren(
         `No TaskTimer tasks found for ${(s && s.email) || 'this account'}. ` +
-        'Sign in to the TaskTimer app (Settings → Team) with the same account — your tasks appear here a few seconds later.');
+        'Sign in to the TaskTimer app (the Sign In button at the top of Mongez) with the same account — your tasks appear here a few seconds later.');
       return;
     }
     const ranked = tasks
