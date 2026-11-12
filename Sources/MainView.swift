@@ -433,7 +433,7 @@ struct MainView: View {
 // MARK: - Account (top bar)
 
 /// Signed out: a Sign In button. Signed in: your name; click it for your team, role, name,
-/// password and Sign Out (Hosam's call, 1.34 — this used to be the Sign In button at the top of Mongez).
+/// password and Sign Out (Hosam's call, 1.34 — this used to be Settings → Team).
 struct AccountButton: View {
     @ObservedObject var auth = CloudAuth.shared
     @ObservedObject var cloud = CloudSync.shared
