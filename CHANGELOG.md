@@ -2,7 +2,7 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
-## Next (not released yet — rename to the version when VERSION is bumped)
+## 1.34
 - Your account is in the top bar: Sign In there, then your name shows. Click your name to see your team, change your name or password, or sign out. (It used to be Settings → Team.)
 
 ## 1.33
