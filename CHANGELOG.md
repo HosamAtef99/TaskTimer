@@ -2,6 +2,9 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
+## Next (not released yet — rename to the version when VERSION is bumped)
+- Admin → Now: every team with its people, and who's free or busy right now (busy = a timer is running).
+
 ## 1.34
 - Your account is in the top bar: Sign In there, then your name shows. Click your name to see your team, change your name or password, or sign out. (It used to be Settings → Team.)
 
