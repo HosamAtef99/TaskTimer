@@ -2,7 +2,7 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
-## Next (not released yet — rename to the version when VERSION is bumped)
+## 1.35
 - Admin → Now: every team with its people, and who's free or busy right now (busy = a timer is running).
 
 ## 1.34
