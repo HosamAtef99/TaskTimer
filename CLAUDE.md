@@ -6,11 +6,15 @@ When you make a decision that the other person would need to know, add it here.
 
 ## What this is
 - **Mongez** (منجز; called TaskTimer Dev until 1.30, Hosam's call): macOS menu-bar + window time
-  tracker for an animation team (bundle id still `com.hosam.tasktimer.dev`; the Application
-  Support folder is still `TaskTimer Dev`, the release zip is still `TaskTimer.app.zip`, and the
-  updater installs it as `Mongez.app`, replacing `TaskTimer Dev.app`; the Chrome extension is
-  "Mongez for Modhesh" since 2.10 / app 1.36, still loaded from the folder `TaskTimer Chrome Extension`; internal names —
-  `TT`, `tasktimer.js`, `[data-tt]`, folders, zip names — stay as they are on purpose). It's Hosam's test fork of
+  tracker for an animation team. Since 1.36 (Hosam's call: everything says Mongez; people
+  reinstall the Chrome extension once): the Application Support folder is `Mongez` (the old
+  `TaskTimer Dev` is moved there on first launch, `TestCopies.supportDir`), the extension is
+  "Mongez for Modhesh" loaded from `Mongez/Mongez Chrome Extension`, releases are titled
+  "Mongez <version>" with `Mongez-Chrome.zip` and `Mongez.dmg`. Still old names on purpose:
+  bundle id `com.hosam.tasktimer.dev` (changing it would drop everyone's settings, sign-in and
+  the After Effects permission), the update zip `TaskTimer.app.zip` with `TaskTimer.app` inside
+  (what installed updaters look for; they install it as `Mongez.app`), the repo name, and code
+  names (`TT`, `tasktimer.js`, `.tasktimer.json` in task folders). It's Hosam's test fork of
   [mo-animation/TaskTimer](https://github.com/mo-animation/TaskTimer) (Mousab's original).
 - People time tasks and amends ("Task - Amend N"). Statuses: Incoming → In Progress → Completed.
 - Team leaders see their team's tasks and live timers on Supabase.
@@ -32,7 +36,7 @@ When you make a decision that the other person would need to know, add it here.
   So bump VERSION only when you mean to ship, agree on it first, and add a section at the
   top of `CHANGELOG.md`: its top section becomes the release notes.
 - Every release also has **`Mongez.dmg`** (Hosam's call, 1.33: install without Terminal — open it, drag Mongez to Applications; link `releases/latest/download/Mongez.dmg`). Not notarized: the first open needs right-click → Open (or System Settings → Privacy & Security → Open Anyway).
-- The release also ships `TaskTimer-Chrome.zip`, and the app bundles `ChromeExtension/`
+- The release also ships `Mongez-Chrome.zip`, and the app bundles `ChromeExtension/`
   in its Resources.
 - Pushes that don't change VERSION upload the build to the **`dev-build` pre-release** (Hosam's
   call), for testing with Settings → General → Install from File…. The updater never offers it.

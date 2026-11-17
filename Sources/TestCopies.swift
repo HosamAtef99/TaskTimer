@@ -19,13 +19,21 @@ enum TestCopies {
     /// "TaskTimer Dev", or "TaskTimer Test 2" in a copy.
     static var appTitle: String { number.map { "Mongez Test \($0)" } ?? "Mongez" }
 
-    /// Application Support folder for this app's sign-in and data.
-    static var supportDir: URL {
-        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent(number.map { "TaskTimer Dev Test \($0)" } ?? "TaskTimer Dev", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    /// Application Support folder for this app's sign-in and data: "Mongez" (1.36; it was
+    /// "TaskTimer Dev" — moved over once, the first time it's needed, so nothing is lost).
+    static let supportDir: URL = {
+        let fm = FileManager.default
+        let base = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let dir = base.appendingPathComponent(number.map { "Mongez Test \($0)" } ?? "Mongez", isDirectory: true)
+        let old = base.appendingPathComponent(number.map { "TaskTimer Dev Test \($0)" } ?? "TaskTimer Dev", isDirectory: true)
+        if !fm.fileExists(atPath: dir.path), fm.fileExists(atPath: old.path) {
+            if (try? fm.moveItem(at: old, to: dir)) == nil {
+                try? fm.copyItem(at: old, to: dir)   // couldn't move: copy, the old one stays
+            }
+        }
+        try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
-    }
+    }()
 
     static func copyURL(_ n: Int) -> URL {
         FileManager.default.homeDirectoryForCurrentUser

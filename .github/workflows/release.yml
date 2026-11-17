@@ -53,15 +53,15 @@ jobs:
             gh release view dev-build >/dev/null 2>&1 || \
               gh release create dev-build --prerelease --latest=false --title "Test build (not an update)" \
                 --notes "Latest build of main, for testing. Not offered as an update."
-            (cd ChromeExtension && zip -qr ../build/TaskTimer-Chrome.zip .)
-            gh release upload dev-build build/TaskTimer.app.zip build/TaskTimer-Chrome.zip build/Mongez.dmg --clobber
+            (cd ChromeExtension && zip -qr ../build/Mongez-Chrome.zip .)
+            gh release upload dev-build build/TaskTimer.app.zip build/Mongez-Chrome.zip build/Mongez.dmg --clobber
             # A release made before the dmg existed gets one (once; never replaced).
             gh release upload "v$V" build/Mongez.dmg 2>/dev/null || true
             exit 0
           fi
           # Notes = the newest section of CHANGELOG.md
           awk '/^## /{n++} n==1' CHANGELOG.md > build/NOTES.txt
-          [ -s build/NOTES.txt ] || echo "TaskTimer $V" > build/NOTES.txt
-          (cd ChromeExtension && zip -qr ../build/TaskTimer-Chrome.zip .)
-          gh release create "v$V" build/TaskTimer.app.zip build/VERSION build/NOTES.txt build/TaskTimer-Chrome.zip build/Mongez.dmg \
-            --title "TaskTimer $V" --notes-file build/NOTES.txt --latest
+          [ -s build/NOTES.txt ] || echo "Mongez $V" > build/NOTES.txt
+          (cd ChromeExtension && zip -qr ../build/Mongez-Chrome.zip .)
+          gh release create "v$V" build/TaskTimer.app.zip build/VERSION build/NOTES.txt build/Mongez-Chrome.zip build/Mongez.dmg \
+            --title "Mongez $V" --notes-file build/NOTES.txt --latest

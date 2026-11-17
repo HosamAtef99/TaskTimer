@@ -188,7 +188,7 @@ final class UpdateManager: ObservableObject {
 
     nonisolated private static func workDir() -> URL {
         let d = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("TaskTimer Dev/update", isDirectory: true)
+            .appendingPathComponent("Mongez/update", isDirectory: true)
         try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
         return d
     }
@@ -196,7 +196,7 @@ final class UpdateManager: ObservableObject {
     nonisolated private static var logURL: URL {
         let logs = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs", isDirectory: true)
         try? FileManager.default.createDirectory(at: logs, withIntermediateDirectories: true)
-        return logs.appendingPathComponent("TaskTimer Dev-update.log")
+        return logs.appendingPathComponent("Mongez-update.log")
     }
 
     /// Unpacks a ready-built app, checks it, then quits and lets a tiny helper swap it in.

@@ -12,6 +12,8 @@ enum AEHelperRemoval {
             home.appendingPathComponent("Library/Application Support/Adobe/CEP/extensions/com.tasktimer.aehelper"),
             home.appendingPathComponent("Library/Application Support/TaskTimer Dev/AE"),
             home.appendingPathComponent("Library/Application Support/TaskTimer Dev/ae-open-project.txt"),
+            home.appendingPathComponent("Library/Application Support/Mongez/AE"),
+            home.appendingPathComponent("Library/Application Support/Mongez/ae-open-project.txt"),
         ]
         for p in paths where fm.fileExists(atPath: p.path) {
             try? fm.removeItem(at: p)

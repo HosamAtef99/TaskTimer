@@ -7,9 +7,10 @@ import SwiftUI
 /// notices the new files and reloads itself, so it never needs to be downloaded by hand.
 enum ExtensionInstaller {
     static var folder: URL {
+        // Inside Mongez's own folder (TestCopies.supportDir, which was "TaskTimer Dev" before 1.36).
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("TaskTimer Dev", isDirectory: true)
-            .appendingPathComponent("TaskTimer Chrome Extension", isDirectory: true)
+            .appendingPathComponent("Mongez", isDirectory: true)
+            .appendingPathComponent("Mongez Chrome Extension", isDirectory: true)
     }
 
     static var bundled: URL? {
@@ -114,7 +115,7 @@ struct AddExtensionSheet: View {
             }
             VStack(alignment: .leading, spacing: 12) {
                 step(1, "In the Chrome tab that just opened (chrome://extensions), turn on **Developer mode** — top right.")
-                step(2, "Drag the **TaskTimer Chrome Extension** folder from the Finder window onto that Chrome page.\nOr press **Load unpacked**, then ⌘⇧G, paste the path (**Copy Path** below) and press Select.")
+                step(2, "Drag the **Mongez Chrome Extension** folder from the Finder window onto that Chrome page.\nOr press **Load unpacked**, then ⌘⇧G, paste the path (**Copy Path** below) and press Select.")
                 step(3, "Click the puzzle icon 🧩 in Chrome's toolbar → **Mongez for Modhesh**, and sign in with the same account as Mongez.")
                 step(4, "Stay signed in to Modhesh in Chrome. That's it — Mongez shows “Extension connected” within a few minutes.")
             }
@@ -236,7 +237,8 @@ final class ExtensionMonitor: ObservableObject {
                         let full = URL(fileURLWithPath: path).standardizedFileURL.path
                         if full == target { return (true, nil) }
                         // An old copy: a folder with our extension's files (or its old name).
-                        if path.hasSuffix("/TaskTimer Chrome Extension") || path.contains("TaskTimer-Chrome")
+                        if path.hasSuffix("/TaskTimer Chrome Extension") || path.hasSuffix("/Mongez Chrome Extension")
+                            || path.contains("TaskTimer-Chrome") || path.contains("Mongez-Chrome")
                             || fm.fileExists(atPath: URL(fileURLWithPath: path).appendingPathComponent("tasktimer.js").path) {
                             other = path
                         }
