@@ -1063,37 +1063,65 @@ struct AdminView: View {
 
 // MARK: - Add account (admin)
 
+/// Add one account, or many at once: emails one per line and names in the same order (Hosam's
+/// call, 1.36). Every new account gets the same starting password — the default the admin sets
+/// here once; it's kept on this Mac only (never in the code: the repo is public).
 struct AdminAddAccountSheet: View {
     @EnvironmentObject var store: Store
     @Environment(\.dismiss) var dismiss
     let teams: [AdminView.Team]
     let onDone: () async -> Void
 
+    static let defaultPasswordKey = "adminDefaultPassword"
+
+    @Local var many = false
     @Local var name = ""
     @Local var email = ""
-    @Local var password = suggestedPassword()
+    @Local var emailsText = ""
+    @Local var namesText = ""
+    @Local var password = UserDefaults.standard.string(forKey: AdminAddAccountSheet.defaultPasswordKey) ?? ""
     @Local var teamID: String? = nil
     @Local var role = "member"
     @Local var sending = false
+    @Local var progress = ""
     @Local var error: String? = nil
     @Local var created: String? = nil
 
+    private func lines(_ t: String) -> [String] {
+        t.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+    }
+    private var emails: [String] { lines(emailsText).map { $0.lowercased() } }
+    private var names: [String] { lines(namesText) }
+
+    /// What's wrong with the list, if anything.
+    private var listProblem: String? {
+        if emails.isEmpty { return nil }
+        if emails.count != names.count { return "\(emails.count) emails but \(names.count) names — one name per email, same order." }
+        if let bad = emails.first(where: { !isValidEmail($0) }) { return "“\(bad)” isn't a valid email." }
+        if Set(emails).count != emails.count { return "An email is there twice." }
+        return nil
+    }
+
     private var canSend: Bool {
-        !sending && isValidEmail(email) && password.count >= 6
-            && !name.trimmingCharacters(in: .whitespaces).isEmpty
+        guard !sending, password.count >= 6 else { return false }
+        if many { return !emails.isEmpty && listProblem == nil }
+        return isValidEmail(email) && !name.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
     var body: some View {
-        SheetFrame(title: "Add Account", subtitle: "A member or leader in any team, or an admin", icon: "person.badge.plus") {
+        SheetFrame(title: "Add Account", subtitle: "A member or leader in any team, or an admin — one or many", icon: "person.badge.plus") {
             if let created {
-                Label("Account created ✓", systemImage: "checkmark.circle.fill")
+                Label("Done", systemImage: "checkmark.circle.fill")
                     .font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.green)
-                Text(created)
-                    .font(.system(size: 12, design: .monospaced))
-                    .textSelection(.enabled)
-                    .padding(10)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
+                ScrollView {
+                    Text(created)
+                        .font(.system(size: 12, design: .monospaced))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxHeight: 260)
+                .padding(10)
+                .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
                 HStack {
                     Button("Copy") {
                         NSPasteboard.general.clearContents()
@@ -1102,9 +1130,9 @@ struct AdminAddAccountSheet: View {
                     }
                     .buttonStyle(GlassButtonStyle(compact: true))
                     Spacer()
-                    Button("Add Another") {
+                    Button("Add More") {
                         self.created = nil
-                        name = ""; email = ""; password = suggestedPassword()
+                        name = ""; email = ""; emailsText = ""; namesText = ""
                     }
                     .buttonStyle(GlassButtonStyle())
                     Button("Done") { dismiss() }
@@ -1112,22 +1140,43 @@ struct AdminAddAccountSheet: View {
                         .keyboardShortcut(.defaultAction)
                 }
             } else {
-                FieldRow(label: "Name") {
-                    TextField("Full name", text: $name).textFieldStyle(.roundedBorder)
+                Picker("", selection: $many) {
+                    Text("One person").tag(false)
+                    Text("Many at once").tag(true)
                 }
-                FieldRow(label: "Email") {
-                    TextField("name@company.com", text: $email).textFieldStyle(.roundedBorder)
-                        .font(.system(size: 15)).controlSize(.large)
-                    EmailHint(email: email)
-                }
-                FieldRow(label: "Starting password") {
-                    HStack {
-                        TextField("", text: $password)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(size: 12, design: .monospaced))
-                        Button { password = suggestedPassword() } label: { Image(systemName: "arrow.triangle.2.circlepath") }
-                            .buttonStyle(CircleIconButtonStyle(size: 26))
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 260)
+
+                if many {
+                    HStack(alignment: .top, spacing: 12) {
+                        FieldRow(label: "Emails — one per line") { box($emailsText, placeholder: "ahmed@socialeyez.com\nsara@socialeyez.com") }
+                        FieldRow(label: "Names — same order") { box($namesText, placeholder: "Ahmed Ali\nSara Hassan") }
                     }
+                    if let p = listProblem {
+                        Label(p, systemImage: "exclamationmark.triangle.fill")
+                            .font(.system(size: 11)).foregroundStyle(Theme.orange)
+                    } else if !emails.isEmpty {
+                        Text("\(emails.count) account\(emails.count == 1 ? "" : "s"): " + zip(names, emails).prefix(3).map { "\($0) → \($1)" }.joined(separator: " · ") + (emails.count > 3 ? " …" : ""))
+                            .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(2)
+                    }
+                } else {
+                    FieldRow(label: "Name") {
+                        TextField("Full name", text: $name).textFieldStyle(.roundedBorder)
+                    }
+                    FieldRow(label: "Email") {
+                        TextField("name@company.com", text: $email).textFieldStyle(.roundedBorder)
+                            .font(.system(size: 15)).controlSize(.large)
+                        EmailHint(email: email)
+                    }
+                }
+                FieldRow(label: "Starting password (the same for everyone you add)") {
+                    TextField("At least 6 characters", text: $password)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 12, design: .monospaced))
+                    Text("Kept on this Mac as your default for new accounts. Ask people to change it after they sign in (their name at the top → Your Account).")
+                        .font(.system(size: 10)).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 HStack(alignment: .top, spacing: 16) {
                     FieldRow(label: "Role") {
@@ -1159,6 +1208,7 @@ struct AdminAddAccountSheet: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 HStack {
+                    if sending { Text(progress).font(.system(size: 11)).foregroundStyle(.secondary) }
                     Spacer()
                     Button("Cancel") { dismiss() }
                         .buttonStyle(GlassButtonStyle())
@@ -1166,7 +1216,7 @@ struct AdminAddAccountSheet: View {
                     Button { send() } label: {
                         HStack(spacing: 6) {
                             if sending { ProgressView().controlSize(.small).tint(Theme.buttonInk) }
-                            Text("Create Account")
+                            Text(many && emails.count > 1 ? "Create \(emails.count) Accounts" : "Create Account")
                         }
                     }
                     .buttonStyle(GradientButtonStyle())
@@ -1175,31 +1225,62 @@ struct AdminAddAccountSheet: View {
                 }
             }
         }
-        .frame(width: 480)
+        .frame(width: many ? 600 : 480)
+    }
+
+    private func box(_ text: Binding<String>, placeholder: String) -> some View {
+        ZStack(alignment: .topLeading) {
+            TextEditor(text: text)
+                .font(.system(size: 12, design: .monospaced))
+                .scrollContentBackground(.hidden)
+                .padding(4)
+            if text.wrappedValue.isEmpty {
+                Text(placeholder)
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+                    .padding(.horizontal, 9).padding(.vertical, 5)
+                    .allowsHitTesting(false)
+            }
+        }
+        .frame(height: 150)
+        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 9))
+        .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Color.primary.opacity(0.12)))
     }
 
     private func send() {
+        let list: [(name: String, email: String)] = many
+            ? Array(zip(names, emails))
+            : [(name.trimmingCharacters(in: .whitespaces), email.trimmingCharacters(in: .whitespaces).lowercased())]
+        let p = password
+        UserDefaults.standard.set(p, forKey: Self.defaultPasswordKey)   // the default next time
         sending = true
         error = nil
-        let e = email.trimmingCharacters(in: .whitespaces).lowercased()
-        let p = password
-        var body: [String: Any] = [
-            "action": "admin_create_user",
-            "name": name.trimmingCharacters(in: .whitespaces),
-            "email": e,
-            "password": p,
-            "role": role,
-        ]
-        if let teamID, role != "admin" { body["team_id"] = teamID }
         Task { @MainActor in
             defer { sending = false }
-            do {
-                try await CloudSync.shared.teamAdmin(body)
-                created = "Mongez account\nEmail: \(e)\nPassword: \(p)"
-                await onDone()
-            } catch {
-                self.error = error.localizedDescription
+            var ok: [String] = []
+            var failed: [String] = []
+            for (i, person) in list.enumerated() {
+                progress = "\(i + 1) of \(list.count)…"
+                var body: [String: Any] = [
+                    "action": "admin_create_user", "name": person.name, "email": person.email,
+                    "password": p, "role": role,
+                ]
+                if let teamID, role != "admin" { body["team_id"] = teamID }
+                do {
+                    try await CloudSync.shared.teamAdmin(body)
+                    ok.append("\(person.name) — \(person.email)")
+                } catch {
+                    failed.append("\(person.name) — \(person.email): \(error.localizedDescription)")
+                }
             }
+            await onDone()
+            if ok.isEmpty {
+                self.error = failed.joined(separator: "\n")
+                return
+            }
+            var text = "Mongez accounts (\(ok.count))\nPassword for all: \(p)\n\n" + ok.joined(separator: "\n")
+            if !failed.isEmpty { text += "\n\nNot created (\(failed.count)):\n" + failed.joined(separator: "\n") }
+            created = text
         }
     }
 }
