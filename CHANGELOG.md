@@ -2,7 +2,7 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
-## Next (not released)
+## 1.36.2
 - Linking a task to Modhesh: the confirm card has a small pencil next to the hours, so you can fix the task's time before you link it.
 
 ## 1.36.1
