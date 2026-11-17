@@ -277,6 +277,10 @@ struct LinkConfirmSheet: View {
     @ObservedObject var cloud = CloudSync.shared
     let request: LinkRequest
     @Local var linking = false
+    // Changing the task's time before linking (Hosam's call)
+    @Local var editingTime = false
+    @Local var editHours = 0
+    @Local var editMinutes = 0
 
     var body: some View {
         let t = store.task(request.taskID)
@@ -302,8 +306,19 @@ struct LinkConfirmSheet: View {
                             Text(details(t)).font(.system(size: 11)).foregroundStyle(.secondary)
                         }
                         Spacer(minLength: 8)
-                        Text("\(Fmt.hoursColumn(store.seconds(of: t))) h")
-                            .font(.system(size: 16, weight: .semibold, design: .rounded).monospacedDigit())
+                        if editingTime {
+                            timeEditor(t)
+                        } else {
+                            HStack(spacing: 6) {
+                                Text("\(Fmt.hoursColumn(store.seconds(of: t))) h")
+                                    .font(.system(size: 16, weight: .semibold, design: .rounded).monospacedDigit())
+                                Button { startEditing(t) } label: {
+                                    Image(systemName: "pencil").font(.system(size: 11, weight: .semibold))
+                                }
+                                .buttonStyle(CircleIconButtonStyle(size: 24))
+                                .help("Change the time")
+                            }
+                        }
                     }
                     if t.isGroupItem {
                         let members = store.members(of: t.id)
@@ -353,6 +368,46 @@ struct LinkConfirmSheet: View {
             }
         }
         .frame(width: 560)
+    }
+
+    private func timeEditor(_ t: TaskItem) -> some View {
+        HStack(spacing: 5) {
+            TextField("", value: $editHours, format: .number)
+                .textFieldStyle(.roundedBorder).frame(width: 40)
+                .multilineTextAlignment(.trailing)
+            Text("h").foregroundStyle(.secondary)
+            TextField("", value: $editMinutes, format: .number)
+                .textFieldStyle(.roundedBorder).frame(width: 40)
+                .multilineTextAlignment(.trailing)
+            Text("m").foregroundStyle(.secondary)
+            Button { saveTime(t) } label: {
+                Image(systemName: "checkmark").font(.system(size: 11, weight: .bold))
+            }
+            .buttonStyle(CircleIconButtonStyle(size: 24))
+            .help("Save the time")
+            Button { editingTime = false } label: {
+                Image(systemName: "xmark").font(.system(size: 10, weight: .bold))
+            }
+            .buttonStyle(CircleIconButtonStyle(size: 24))
+            .help("Cancel")
+        }
+        .font(.system(size: 12))
+    }
+
+    private func startEditing(_ t: TaskItem) {
+        let mins = Int((store.seconds(of: t) / 60).rounded())
+        editHours = mins / 60
+        editMinutes = mins % 60
+        editingTime = true
+    }
+
+    /// Same as Done's time edit: stored as an adjustment, so a running timer keeps adding on top.
+    private func saveTime(_ t: TaskItem) {
+        let total = TimeInterval(max(0, editHours) * 3600 + max(0, editMinutes) * 60)
+        let raw = t.isGroupItem ? store.membersSeconds(t.id) : t.rawSeconds()
+        store.update(t.id) { $0.manualAdjust = total - raw }
+        store.flash("“\(store.displayName(t))” · \(Fmt.hours(total)) h")
+        editingTime = false
     }
 
     private func details(_ t: TaskItem) -> String {

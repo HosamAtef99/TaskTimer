@@ -2,6 +2,9 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
+## Next (not released)
+- Linking a task to Modhesh: the confirm card has a small pencil next to the hours, so you can fix the task's time before you link it.
+
 ## 1.36.1
 - Admin: the Now tab (who's free or busy) is gone for now; the admin window opens on Hours.
 
