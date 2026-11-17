@@ -23,7 +23,7 @@ struct ModheshView: View {
         let linked = all.filter { $0.taskID != nil && store.task($0.taskID!) != nil }
 
         SheetFrame(title: "Modhesh", subtitle: "Link each Modhesh task to the task you timed", icon: "link", scrolls: false) {
-            if !cloud.extensionConnected && !monitor.installed {
+            if (!cloud.extensionConnected && !monitor.installed) || ExtensionStatusRow.outdated(cloud, monitor) {
                 ExtensionStatusRow()
             }
             ModheshOwnerRow()

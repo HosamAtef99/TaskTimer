@@ -2,6 +2,11 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
+## Next (not released yet — rename to the version when VERSION is bumped)
+- Mongez tells you when Chrome is running an old copy of the extension (it doesn't update, so groups and approvals don't work there) and how to replace it.
+- On Modhesh, a linked group shows and fills its tasks' total hours.
+- The Chrome extension is now called "Mongez for Modhesh", and everything it shows says Mongez.
+
 ## 1.35
 - Admin → Now: every team with its people, and who's free or busy right now (busy = a timer is running).
 

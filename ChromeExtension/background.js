@@ -104,7 +104,7 @@ async function readModhesh(force) {
       });
       const type = r.headers.get('content-type') || '';
       if (!r.ok || !type.includes('json')) {
-        console.log('[TaskTimer] Modhesh needs you to sign in there');
+        console.log('[Mongez] Modhesh needs you to sign in there');
         await report('Not signed in to Modhesh in Chrome — open Modhesh and sign in.');
         return;
       }
@@ -121,9 +121,9 @@ async function readModhesh(force) {
     if (!seen.size) { await report('Modhesh has no tasks for you this month or last.'); return; }
     const uid = await TT.userId();
 
-    // Only take Modhesh tasks that belong to this TaskTimer account.
+    // Only take Modhesh tasks that belong to this Mongez account.
     if (!(await sameOwner(uid, owner))) {
-      console.log(`[TaskTimer] Modhesh is signed in as "${owner}", not this TaskTimer account — not taking its tasks`);
+      console.log(`[Mongez] Modhesh is signed in as "${owner}", not this Mongez account — not taking its tasks`);
       await report(`Modhesh in Chrome is “${owner}”, not this account — its tasks aren't taken.`);
       return;
     }
@@ -138,10 +138,10 @@ async function readModhesh(force) {
     await TT.rest('POST', 'modhesh_tasks', rows, 'resolution=merge-duplicates,return=minimal');
     for (const t of changed) sentModhesh[t.code] = JSON.stringify(t);
     await chrome.storage.local.set({ [key]: sentModhesh });
-    console.log(`[TaskTimer] sent ${rows.length} changed Modhesh tasks`);
+    console.log(`[Mongez] sent ${rows.length} changed Modhesh tasks`);
     tick();
   } catch (e) {
-    console.log('[TaskTimer] reading Modhesh failed', e.message);
+    console.log('[Mongez] reading Modhesh failed', e.message);
   }
 }
 
@@ -160,7 +160,7 @@ function namesMatch(a, b) {
   return short.every((w) => long.has(w));
 }
 
-/// True when the Modhesh open in Chrome is this TaskTimer account's person — matched by name
+/// True when the Modhesh open in Chrome is this Mongez account's person — matched by name
 /// (TaskTimer name or email), or confirmed in TaskTimer → Settings → Modhesh.
 async function sameOwner(uid, owner) {
   const st = await TT.settings(true);
@@ -343,7 +343,7 @@ async function tick() {
       // The page asks for its jobs when it loads.
     }
   } catch (e) {
-    console.log('[TaskTimer] tick failed', e.message);
+    console.log('[Mongez] tick failed', e.message);
   } finally {
     running = false;
   }
@@ -504,7 +504,7 @@ async function approvalsTick(force) {
       });
     }
   } catch (e) {
-    console.log('[TaskTimer] approvals failed', e.message);
+    console.log('[Mongez] approvals failed', e.message);
   } finally {
     approvalsBusy = false;
   }

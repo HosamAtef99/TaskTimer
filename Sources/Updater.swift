@@ -212,7 +212,7 @@ final class UpdateManager: ObservableObject {
         let newApp = unpack.appendingPathComponent("TaskTimer.app")
         guard let info = NSDictionary(contentsOf: newApp.appendingPathComponent("Contents/Info.plist")),
               (info["CFBundleIdentifier"] as? String) == Bundle.main.bundleIdentifier else {
-            throw UpdateError("The download isn't a TaskTimer app.")
+            throw UpdateError("The download isn't a Mongez app.")
         }
 
         let dest = Bundle.main.bundleURL

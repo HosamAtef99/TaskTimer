@@ -195,7 +195,7 @@ enum AEProjectTools {
         """
         (function () {
         \(open)
-          app.beginUndoGroup("TaskTimer: Organize project");
+          app.beginUndoGroup("Mongez: Organize project");
           var root = app.project.rootFolder;
           var bins = {};
           function bin(name) {

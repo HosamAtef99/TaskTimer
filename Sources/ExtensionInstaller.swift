@@ -115,7 +115,7 @@ struct AddExtensionSheet: View {
             VStack(alignment: .leading, spacing: 12) {
                 step(1, "In the Chrome tab that just opened (chrome://extensions), turn on **Developer mode** — top right.")
                 step(2, "Drag the **TaskTimer Chrome Extension** folder from the Finder window onto that Chrome page.\nOr press **Load unpacked**, then ⌘⇧G, paste the path (**Copy Path** below) and press Select.")
-                step(3, "Click the puzzle icon 🧩 in Chrome's toolbar → **TaskTimer for Modhesh**, and sign in with the same account as Mongez.")
+                step(3, "Click the puzzle icon 🧩 in Chrome's toolbar → **Mongez for Modhesh**, and sign in with the same account as Mongez.")
                 step(4, "Stay signed in to Modhesh in Chrome. That's it — Mongez shows “Extension connected” within a few minutes.")
             }
             .padding(14)
@@ -190,6 +190,8 @@ struct AddExtensionSheet: View {
 final class ExtensionMonitor: ObservableObject {
     static let shared = ExtensionMonitor()
     @Published private(set) var installed = false
+    /// Chrome loads the extension from another folder (an old download): that copy never updates.
+    @Published private(set) var elsewhere: String?
     private var timer: Timer?
 
     private init() {
@@ -206,12 +208,17 @@ final class ExtensionMonitor: ObservableObject {
     func check() {
         let target = ExtensionInstaller.folder.standardizedFileURL.path
         Task.detached(priority: .utility) {
-            let found = Self.scan(target)
-            await MainActor.run { if self.installed != found { self.installed = found } }
+            let (found, other) = Self.scan(target)
+            await MainActor.run {
+                if self.installed != found { self.installed = found }
+                if self.elsewhere != other { self.elsewhere = other }
+            }
         }
     }
 
-    nonisolated private static func scan(_ target: String) -> Bool {
+    /// (our folder is loaded, another folder holding this extension is loaded instead)
+    nonisolated private static func scan(_ target: String) -> (Bool, String?) {
+        var other: String?
         let fm = FileManager.default
         let base = fm.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Google")
         for chrome in ["Chrome", "Chrome Beta", "Chrome Canary"] {
@@ -227,12 +234,17 @@ final class ExtensionMonitor: ObservableObject {
                     for case let e as [String: Any] in settings.values {
                         guard let path = e["path"] as? String else { continue }
                         let full = URL(fileURLWithPath: path).standardizedFileURL.path
-                        if full == target || path.hasSuffix("/TaskTimer Chrome Extension") { return true }
+                        if full == target { return (true, nil) }
+                        // An old copy: a folder with our extension's files (or its old name).
+                        if path.hasSuffix("/TaskTimer Chrome Extension") || path.contains("TaskTimer-Chrome")
+                            || fm.fileExists(atPath: URL(fileURLWithPath: path).appendingPathComponent("tasktimer.js").path) {
+                            other = path
+                        }
                     }
                 }
             }
         }
-        return false
+        return (other != nil, other)
     }
 }
 
@@ -245,11 +257,19 @@ struct ExtensionStatusRow: View {
 
     private var added: Bool { monitor.installed || cloud.extensionConnected }
 
+    /// Chrome runs an older extension than the one inside Mongez (an old copy that doesn't update).
+    static func outdated(_ cloud: CloudSync, _ monitor: ExtensionMonitor) -> Bool {
+        if monitor.elsewhere != nil { return true }
+        guard let have = cloud.extensionVersion, let want = ExtensionInstaller.bundledVersion else { return false }
+        return have.compare(want, options: .numeric) == .orderedAscending
+    }
+    private var old: Bool { Self.outdated(cloud, monitor) }
+
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "puzzlepiece.extension.fill")
                 .font(.system(size: 18))
-                .foregroundStyle(added ? AnyShapeStyle(Theme.green) : AnyShapeStyle(Theme.cool))
+                .foregroundStyle(old ? AnyShapeStyle(Theme.orange) : added ? AnyShapeStyle(Theme.green) : AnyShapeStyle(Theme.cool))
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.system(size: 13, weight: .semibold))
                 Text(detail)
@@ -257,7 +277,10 @@ struct ExtensionStatusRow: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 8)
-            if added {
+            if old {
+                Button { showHelp = true } label: { Label("Update Extension", systemImage: "arrow.clockwise") }
+                    .buttonStyle(GradientButtonStyle(compact: true))
+            } else if added {
                 Button("Help") { showHelp = true }
                     .buttonStyle(.borderless)
                     .font(.system(size: 11))
@@ -267,7 +290,7 @@ struct ExtensionStatusRow: View {
             }
         }
         .padding(12)
-        .glassCard(radius: 12, highlight: !added)
+        .glassCard(radius: 12, highlight: !added || old)
         .sheet(isPresented: $showHelp) {
             AddExtensionSheet().environmentObject(Store.shared)
         }
@@ -275,17 +298,22 @@ struct ExtensionStatusRow: View {
     }
 
     private var title: String {
+        if old { return "Chrome is using an old copy of the extension" }
         if cloud.extensionConnected { return "Chrome extension connected" }
         if monitor.installed { return "Chrome extension added" }
         return "Chrome extension not added"
     }
 
     private var detail: String {
+        if old {
+            let have = cloud.extensionVersion.map { "Chrome has \($0)" } ?? "Chrome loads it from another folder"
+            return "\(have), Mongez has \(ExtensionInstaller.bundledVersion ?? "a newer one"). The old copy doesn't update, so new things (groups, approvals) don't work. In chrome://extensions remove the old one, then add it again with Update Extension."
+        }
         if let d = cloud.extensionSeen, cloud.extensionConnected {
             return "Version \(cloud.extensionVersion ?? "?") · checked in \(Fmt.relative(d))"
         }
         if monitor.installed {
-            return "Sign in to it with your Mongez account: click 🧩 in Chrome → TaskTimer for Modhesh."
+            return "Sign in to it with your Mongez account: click 🧩 in Chrome → Mongez for Modhesh."
         }
         return "Needed to read Modhesh and log your time there."
     }

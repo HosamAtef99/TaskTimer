@@ -1,12 +1,12 @@
-// TaskTimer on Modhesh.
-// 1. Adds a "Fill from TaskTimer" bar to Log Time (you check it and press Save yourself).
+// Mongez on Modhesh.
+// 1. Adds a "Fill from Mongez" bar to Log Time (you check it and press Save yourself).
 // 2. Logs finished tasks by itself when the background worker asks (jobs).
-// 3. Before logging, sets the Modhesh task's Start Date to the day picked at Done in TaskTimer.
+// 3. Before logging, sets the Modhesh task's Start Date to the day picked at Done in Mongez.
 // Reading your Modhesh tasks happens only when you press "Check now" in the extension.
 
 (() => {
   const STATUS = { 1: 'Pending to Start', 6: 'In Progress', 4: 'Completed', 5: 'Pending Approver', 2: 'Rejected' };
-  const log = (...a) => console.log('[TaskTimer]', ...a);
+  const log = (...a) => console.log('[Mongez]', ...a);
 
   // ───────────── Helpers ─────────────
 
@@ -15,6 +15,7 @@
   const hours = (s) => Math.round((s / 3600) * 100) / 100;
 
   function liveSeconds(t) {
+    if (t.is_group) return Math.max(0, Number(t.group_seconds) || 0);   // a group: its tasks' total
     let s = Number(t.seconds) || 0;
     if (t.running_since) s += Math.max(0, (Date.now() - new Date(t.running_since).getTime()) / 1000);
     return Math.max(0, s);
@@ -52,7 +53,7 @@
     return e;
   }
 
-  // ───────────── Data from TaskTimer ─────────────
+  // ───────────── Data from Mongez ─────────────
 
   let myTasksCache = null;
   async function myTasks(force) {
@@ -105,7 +106,7 @@
     return leaderCache;
   }
 
-  // ───────────── 1. Send Modhesh tasks to TaskTimer ─────────────
+  // ───────────── 1. Send Modhesh tasks to Mongez ─────────────
 
   function parseCard(html, status) {
     const doc = new DOMParser().parseFromString(html, 'text/html');
@@ -155,7 +156,7 @@
       const uid = await TT.userId();
       const rows = [...seen.values()].map((t) => ({ ...t, user_id: uid, updated_at: new Date().toISOString() }));
       await TT.rest('POST', 'modhesh_tasks', rows, 'resolution=merge-duplicates,return=minimal');
-      log(`sent ${rows.length} Modhesh tasks to TaskTimer`);
+      log(`sent ${rows.length} Modhesh tasks to Mongez`);
     } catch (e) {
       log('sync failed:', e.message);
     } finally {
@@ -166,7 +167,7 @@
   // ───────────── 2. Fill bar ─────────────
 
   function bar(form, kind) {
-    const box = el('div', { class: 'tt-bar' }, el('div', { class: 'tt-title' }, 'TaskTimer'));
+    const box = el('div', { class: 'tt-bar' }, el('div', { class: 'tt-title' }, 'Mongez'));
     const body = el('div', { class: 'tt-body' }, 'Loading…');
     box.append(body);
     form.prepend(box);
@@ -174,10 +175,10 @@
   }
 
   function signedOut(body) {
-    body.replaceChildren('Sign in to TaskTimer from the extension button in Chrome\'s toolbar to fill this from your timer.');
+    body.replaceChildren('Sign in to Mongez from the extension button in Chrome\'s toolbar to fill this from your timer.');
   }
 
-  /// Waits for a link made in the TaskTimer app while this form is open.
+  /// Waits for a link made in the Mongez app while this form is open.
   function watchForLink(form, code, onLinked) {
     const timer = setInterval(async () => {
       if (!document.contains(form)) return clearInterval(timer);
@@ -196,8 +197,8 @@
     if (!tasks.length) {
       const s = await TT.session();
       body.replaceChildren(
-        `No TaskTimer tasks found for ${(s && s.email) || 'this account'}. ` +
-        'Sign in to the TaskTimer app (the Sign In button at the top of Mongez) with the same account — your tasks appear here a few seconds later.');
+        `No Mongez tasks found for ${(s && s.email) || 'this account'}. ` +
+        'Sign in to the Mongez app (the Sign In button at its top) with the same account — your tasks appear here a few seconds later.');
       return;
     }
     const ranked = tasks
@@ -205,7 +206,7 @@
       .sort((a, b) => b.score - a.score || new Date(b.t.created_at) - new Date(a.t.created_at));
     // Amends (subtasks) show as "Task - Amend 1"; they can be linked like any task.
     const select = el('select', { class: 'tt-select' },
-      el('option', { value: '' }, 'Choose the TaskTimer task…'),
+      el('option', { value: '' }, 'Choose the Mongez task…'),
       ...ranked.slice(0, 60).map(({ t }) => el('option', { value: t.id }, `${t.display}  ·  ${hours(liveSeconds(t))} h`)));
     if (ranked[0] && ranked[0].score >= 0.34) select.value = ranked[0].t.id;
     const btn = el('button', { type: 'button', class: 'tt-btn', onclick: async () => {
@@ -218,7 +219,7 @@
         body.replaceChildren(`Couldn't link: ${e.message}`);
       }
     } }, 'Link & Fill');
-    body.replaceChildren(el('div', {}, 'Which TaskTimer task is this?'), el('div', { class: 'tt-row' }, select, btn));
+    body.replaceChildren(el('div', {}, 'Which Mongez task is this?'), el('div', { class: 'tt-row' }, select, btn));
   }
 
   // Log Time
@@ -252,7 +253,7 @@
         watchForLink(form, code, (t, r) => showLogTime(form, body, t, r));
       }
     } catch (e) {
-      body.replaceChildren(`Couldn't reach TaskTimer: ${e.message}`);
+      body.replaceChildren(`Couldn't reach Mongez: ${e.message}`);
     }
   }
 
@@ -268,11 +269,11 @@
 
     const info = el('div', {},
       el('b', {}, t.display), el('br'),
-      `${hours(total)} h in TaskTimer` + (logged ? ` − ${hours(logged)} h already logged here = ${hours(toLog)} h` : '') +
+      `${hours(total)} h in Mongez` + (logged ? ` − ${hours(logged)} h already logged here = ${hours(toLog)} h` : '') +
       ` · ${deliverables} deliverable${deliverables === 1 ? '' : 's'} · ${'★'.repeat(rating)}` +
       (complete ? ' · Completed' : ''));
     const btn = el('button', { type: 'button', class: 'tt-btn', onclick: () => fillLogTime(form, body, { toLog, deliverables, rating, complete, challenge: t.challenge || st.challenge, approver }) },
-      'Fill from TaskTimer');
+      'Fill from Mongez');
     body.replaceChildren(info, el('div', { class: 'tt-row' }, btn));
   }
 
@@ -295,7 +296,7 @@
     if (v.complete) {
       await new Promise((r) => setTimeout(r, 400));
       const select = form.querySelector('[name=approver]');
-      // The approver picked at Done in TaskTimer; otherwise the team leader.
+      // The approver picked at Done in Mongez; otherwise the team leader.
       const leader = v.approver ? { full_name: v.approver } : await leaderName();
       if (select && leader) {
         const want = [leader.full_name, leader.email].filter(Boolean).map((s) => s.toLowerCase());
@@ -313,7 +314,7 @@
           approverNote = ` · Couldn't find ${leader.full_name || 'your leader'} in the Approver list — pick them`;
         }
       } else if (select) {
-        approverNote = ' · No team leader found in TaskTimer — pick the approver';
+        approverNote = ' · No team leader found in Mongez — pick the approver';
       }
     }
     if (body) {
@@ -351,7 +352,7 @@
   }
 
   /// Through Task Details, before logging: the Start Date becomes the day picked at Done in
-  /// TaskTimer, and a Pending to Start task becomes In Progress. Estimate and the deliverables
+  /// Mongez, and a Pending to Start task becomes In Progress. Estimate and the deliverables
   /// link stay as they are. Returns true when it saved something.
   async function prepareInModhesh(job) {
     const open = document.querySelector(`[data-act="drawer-modal"][data-post-task_id="${CSS.escape(job.code)}"]`);
@@ -497,7 +498,7 @@
   });
 
   // ───────────── Badges on the board ─────────────
-  // Each Modhesh card that is linked shows its TaskTimer task and hours, refreshed every few
+  // Each Modhesh card that is linked shows its Mongez task and hours, refreshed every few
   // seconds — so a link made in the app shows up here right away.
 
   let badgeBusy = false;
@@ -510,7 +511,7 @@
       const rows = await TT.rest('GET', `modhesh_tasks?user_id=eq.${uid}&task_id=not.is.null&status=in.(1,6)&select=code,task_id`);
       const ids = [...new Set(rows.map((r) => r.task_id))];
       const tasks = ids.length
-        ? await TT.rest('GET', `tasks?id=in.(${ids.join(',')})&select=id,name,parent_id,seconds,running_since`)
+        ? await TT.rest('GET', `tasks?id=in.(${ids.join(',')})&select=id,name,parent_id,seconds,running_since,is_group,group_seconds`)
         : [];
       for (const t of tasks) t.display = t.name;
       const byId = Object.fromEntries(tasks.map((t) => [t.id, t]));
@@ -526,7 +527,7 @@
           (card.querySelector('.card-body') || card).append(badge);
         }
         const running = t.running_since ? ' · ⏺ running' : '';
-        const text = `⏱ TaskTimer: ${t.display} · ${hours(liveSeconds(t))} h${running}`;
+        const text = `⏱ Mongez: ${t.display} · ${hours(liveSeconds(t))} h${running}`;
         if (badge.textContent !== text) badge.textContent = text;
       }
     } catch (e) {

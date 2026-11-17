@@ -122,7 +122,7 @@ enum AfterEffects {
             }
             return { ids: ids, names: names, files: files };
           }
-          app.beginUndoGroup("TaskTimer import");
+          app.beginUndoGroup("Mongez import");
           var n = 0, errs = [], skipped = [];
           for (var k = 0; k < list.length; k++) {
             var f = new File(list[k][0]);

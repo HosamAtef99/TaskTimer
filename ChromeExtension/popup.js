@@ -11,7 +11,7 @@ $('runNow').addEventListener('click', async () => {
   $('runMsg').textContent = 'Checking Modhesh…';
   await chrome.storage.local.set({ attempts: {} });
   await chrome.runtime.sendMessage({ type: 'readNow' }).catch(() => {});
-  $('runMsg').textContent = 'Done — your Modhesh tasks are in TaskTimer, and finished ones are being logged.';
+  $('runMsg').textContent = 'Done — your Modhesh tasks are in Mongez, and finished ones are being logged.';
   $('runNow').disabled = false;
 });
 
