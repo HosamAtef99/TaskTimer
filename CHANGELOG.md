@@ -2,7 +2,7 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
-## Next (not released)
+## 1.36.1
 - Admin: the Now tab (who's free or busy) is gone for now; the admin window opens on Hours.
 
 ## 1.36
