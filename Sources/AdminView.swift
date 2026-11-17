@@ -19,7 +19,7 @@ struct AdminView: View {
     }
 
     enum Tab: String, CaseIterable, Identifiable {
-        case now = "Now", stats = "Hours", clients = "Clients", people = "People", teams = "Teams"
+        case stats = "Hours", clients = "Clients", people = "People", teams = "Teams"
         var id: String { rawValue }
     }
 
@@ -35,9 +35,7 @@ struct AdminView: View {
     @Local var showClosed = false
     @Local var confirmFresh = false
 
-    @Local var tab: Tab = .now
-    /// People with a timer running now (the Now tab).
-    @Local var busyIDs: Set<String> = []
+    @Local var tab: Tab = .stats
     @Local var people: [TeamProfile] = []
     @Local var lastSignIn: [String: Date] = [:]
     @Local var teams: [Team] = []
@@ -101,7 +99,6 @@ struct AdminView: View {
         }
         Group {
             switch tab {
-            case .now: nowTab
             case .stats: statsTab
             case .clients: clientsTab
             case .people: peopleTab
@@ -385,72 +382,6 @@ struct AdminView: View {
         } catch {
             self.error = error.localizedDescription
         }
-    }
-
-    // MARK: Now — who's free (Hosam's call, 1.35): every team and its people, free or busy, nothing else
-
-    private var nowTab: some View {
-        let groups = teams.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-            .map { t in (t.name, people.filter { $0.teamID == t.id && !$0.isAdmin }) }
-            .filter { !$0.1.isEmpty }
-        let all = groups.flatMap(\.1)
-        let free = all.filter { !busyIDs.contains($0.id) }.count
-        return VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 14) {
-                dot(true); Text("Free \(free)").font(.system(size: 12, weight: .semibold))
-                dot(false); Text("Busy \(all.count - free)").font(.system(size: 12, weight: .semibold))
-                Spacer()
-                Text("Busy = a timer is running now").font(.system(size: 11)).foregroundStyle(.secondary)
-            }
-            ScrollView {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 230), spacing: 12, alignment: .top)], spacing: 12) {
-                    ForEach(groups, id: \.0) { g in
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Text(g.0).font(.system(size: 14, weight: .semibold)).lineLimit(1)
-                                Spacer()
-                                Text("\(g.1.filter { !busyIDs.contains($0.id) }.count)/\(g.1.count) free")
-                                    .font(.system(size: 11)).foregroundStyle(.secondary)
-                            }
-                            ForEach(g.1.sorted { a, b in
-                                let fa = !busyIDs.contains(a.id), fb = !busyIDs.contains(b.id)
-                                if fa != fb { return fa }
-                                return a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
-                            }) { p in
-                                let isFree = !busyIDs.contains(p.id)
-                                HStack(spacing: 8) {
-                                    dot(isFree)
-                                    Text(p.name).font(.system(size: 12.5)).lineLimit(1)
-                                    Spacer()
-                                    Text(isFree ? "Free" : "Busy")
-                                        .font(.system(size: 11, weight: .semibold))
-                                        .foregroundStyle(isFree ? Theme.green : Theme.coral)
-                                }
-                            }
-                        }
-                        .padding(12)
-                        .glassCard(radius: 14)
-                    }
-                }
-                .padding(2)
-            }
-        }
-        .task {
-            // Fresh while this tab is open (one small query a minute).
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 60_000_000_000)
-                if Task.isCancelled { break }
-                await loadBusy()
-            }
-        }
-    }
-
-    private func dot(_ free: Bool) -> some View {
-        Circle().fill(free ? Theme.green : Theme.coral).frame(width: 9, height: 9)
-    }
-
-    func loadBusy() async {
-        if let ids = await cloud.runningUserIDs() { busyIDs = ids }
     }
 
     // MARK: Clients and pitches
@@ -1017,7 +948,6 @@ struct AdminView: View {
 
     func loadAll() async {
         await load()
-        await loadBusy()
         await loadHours()
         clientRows = await cloud.loadClients()
     }

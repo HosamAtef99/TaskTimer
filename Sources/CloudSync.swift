@@ -1051,21 +1051,6 @@ final class CloudSync: ObservableObject {
         return (inRange, live)
     }
 
-    /// Admins: who has a timer running now (only their ids — the Now tab).
-    func runningUserIDs() async -> Set<String>? {
-        guard isAdmin else { return nil }
-        do {
-            let rows = try await CloudAPI.select("tasks", [
-                URLQueryItem(name: "select", value: "user_id"),
-                URLQueryItem(name: "deleted", value: "eq.false"),
-                URLQueryItem(name: "running_since", value: "not.is.null"),
-            ])
-            return Set(rows.compactMap { ($0["user_id"] as? String)?.lowercased() })
-        } catch {
-            return nil
-        }
-    }
-
     // MARK: - Weekly report (leaders)
 
     private var weeklyChecking = false

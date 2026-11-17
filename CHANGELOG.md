@@ -2,6 +2,9 @@
 
 Newest first. The top section becomes the release notes shown in the app.
 
+## Next (not released)
+- Admin: the Now tab (who's free or busy) is gone for now; the admin window opens on Hours.
+
 ## 1.36
 - Mongez tells you when Chrome is running an old copy of the extension (it doesn't update, so groups and approvals don't work there) and how to replace it.
 - On Modhesh, a linked group shows and fills its tasks' total hours.
